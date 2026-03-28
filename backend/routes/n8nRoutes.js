@@ -2,6 +2,92 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
+function sanitizeText(value, maxLen = 200) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLen);
+}
+
+function extractLatestMessageText(messages, preferredRole = 'user') {
+  if (!Array.isArray(messages)) return '';
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message.content !== 'string') continue;
+    if (preferredRole && message.role !== preferredRole) continue;
+
+    const content = message.content.trim();
+    if (content) return content;
+  }
+
+  return preferredRole ? extractLatestMessageText(messages, '') : '';
+}
+
+function buildProductionWebhookUrl(webhookUrl) {
+  if (typeof webhookUrl !== 'string') return null;
+  if (!webhookUrl.includes('/webhook-test/')) return null;
+
+  return webhookUrl.replace('/webhook-test/', '/webhook/');
+}
+
+function buildChatPayload({ messages, currentYaml, cicdPlatform, aiProvider, userContext }) {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const yamlContext = typeof currentYaml === 'string' ? currentYaml : '';
+
+  const rawContext = userContext && typeof userContext === 'object' ? userContext : {};
+  const fallbackUserId = `anon-${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+
+  const userId = sanitizeText(rawContext.userId, 120) || fallbackUserId;
+  const username = sanitizeText(rawContext.username, 120) || `flowforge-${userId.slice(-6)}`;
+  const conversationId =
+    sanitizeText(rawContext.conversationId, 160) ||
+    sanitizeText(rawContext.chatId, 160) ||
+    `${userId}-default`;
+  const chatId = sanitizeText(rawContext.chatId, 160) || conversationId;
+  const text = extractLatestMessageText(safeMessages, 'user') || extractLatestMessageText(safeMessages, '');
+
+  return {
+    text,
+    input: text,
+    userId,
+    username,
+    chatId,
+    conversationId,
+    currentYaml: yamlContext,
+    yamlContext,
+    messages: safeMessages,
+    messageCount: safeMessages.length,
+    cicdPlatform: cicdPlatform || 'gitlab',
+    aiProvider: aiProvider || null,
+    source: 'flowforge-chat-proxy',
+    timestamp: new Date().toISOString(),
+    userContext: {
+      userId,
+      username,
+      chatId,
+      conversationId,
+    },
+  };
+}
+
+function extractReply(data) {
+  if (typeof data === 'string' && data.trim()) return data;
+  if (Array.isArray(data) && data.length > 0) return extractReply(data[0]);
+
+  if (data && typeof data === 'object') {
+    const keys = ['reply', 'response', 'message', 'output', 'text'];
+    for (const key of keys) {
+      const value = data[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+  }
+
+  return JSON.stringify(data);
+}
+
 /**
  * POST /api/n8n/forward
  * Forward pipeline data to an n8n webhook URL.
@@ -40,26 +126,53 @@ router.post('/forward', async (req, res) => {
 /**
  * POST /api/n8n/chat
  * Route chat messages through an n8n webhook instead of direct AI.
- * Body: { chatWebhookUrl, messages, currentYaml, cicdPlatform }
+ * Body: {
+ *   chatWebhookUrl,
+ *   messages,
+ *   currentYaml,
+ *   cicdPlatform,
+ *   aiProvider,
+ *   userContext: { userId, username, chatId, conversationId }
+ * }
  */
 router.post('/chat', async (req, res) => {
-  const { chatWebhookUrl, messages, currentYaml, cicdPlatform } = req.body;
+  const { chatWebhookUrl, messages, currentYaml, cicdPlatform, aiProvider, userContext } = req.body;
 
   if (!chatWebhookUrl || typeof chatWebhookUrl !== 'string') {
     return res.status(400).json({ error: 'chatWebhookUrl is required' });
   }
 
-  try {
-    const { data } = await axios.post(chatWebhookUrl, {
-      messages,
-      currentYaml,
-      cicdPlatform,
-    }, {
-      timeout: 30000,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  const payload = buildChatPayload({
+    messages,
+    currentYaml,
+    cicdPlatform,
+    aiProvider,
+    userContext,
+  });
 
-    res.json({ reply: data.reply || data.message || JSON.stringify(data) });
+  try {
+    let data;
+
+    try {
+      const response = await axios.post(chatWebhookUrl, payload, {
+        timeout: 30000,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      data = response.data;
+    } catch (err) {
+      const fallbackUrl = buildProductionWebhookUrl(chatWebhookUrl);
+      if (err.response?.status !== 404 || !fallbackUrl || fallbackUrl === chatWebhookUrl) {
+        throw err;
+      }
+
+      const fallbackResponse = await axios.post(fallbackUrl, payload, {
+        timeout: 30000,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      data = fallbackResponse.data;
+    }
+
+    res.json({ reply: extractReply(data) });
   } catch (err) {
     res.status(502).json({
       error: 'Failed to get response from n8n chat webhook',

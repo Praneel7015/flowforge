@@ -1055,6 +1055,145 @@ Return ONLY raw JSON — no markdown fences:
 // 6. Pipeline Chat Assistant
 // ─────────────────────────────────────────────────────────────────────────────
 
+function sanitizeChatContextValue(value, maxLen = 200) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLen);
+}
+
+function extractLatestMessageText(messages, preferredRole = 'user') {
+  if (!Array.isArray(messages)) return '';
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message.content !== 'string') continue;
+    if (preferredRole && message.role !== preferredRole) continue;
+
+    const content = message.content.trim();
+    if (content) return content;
+  }
+
+  return preferredRole ? extractLatestMessageText(messages, '') : '';
+}
+
+function sanitizeN8NAIOptions(aiOptions) {
+  if (!aiOptions || typeof aiOptions !== 'object' || Array.isArray(aiOptions)) {
+    return null;
+  }
+
+  const blockedKeys = new Set([
+    'apikey',
+    'api_key',
+    'token',
+    'auth',
+    'authorization',
+    'authtoken',
+    'access_token',
+  ]);
+
+  const sanitized = {};
+
+  for (const [key, rawValue] of Object.entries(aiOptions)) {
+    if (blockedKeys.has(String(key || '').toLowerCase())) continue;
+
+    if (typeof rawValue === 'string') {
+      const value = rawValue.trim();
+      if (value) sanitized[key] = value.slice(0, 500);
+      continue;
+    }
+
+    if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+      sanitized[key] = rawValue;
+    }
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : null;
+}
+
+function buildN8NUserContext(messages, options = {}) {
+  const rawContext =
+    options.userContext && typeof options.userContext === 'object' ? options.userContext : {};
+
+  const fallbackUserId = `anon-${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+
+  const userId = sanitizeChatContextValue(rawContext.userId, 120) || fallbackUserId;
+  const username =
+    sanitizeChatContextValue(rawContext.username, 120) || `flowforge-${userId.slice(-6)}`;
+
+  const conversationId =
+    sanitizeChatContextValue(rawContext.conversationId, 160) ||
+    sanitizeChatContextValue(rawContext.chatId, 160) ||
+    `${userId}-default`;
+
+  const chatId = sanitizeChatContextValue(rawContext.chatId, 160) || conversationId;
+
+  const text = extractLatestMessageText(messages, 'user') || extractLatestMessageText(messages, '');
+
+  return {
+    userId,
+    username,
+    chatId,
+    conversationId,
+    text,
+  };
+}
+
+function buildN8NChatPayload(messages, currentYaml, options, cicdPlatform, metadata) {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const yamlContext = typeof currentYaml === 'string' ? currentYaml : '';
+  const userContext = buildN8NUserContext(safeMessages, options);
+
+  return {
+    text: userContext.text,
+    input: userContext.text,
+    userId: userContext.userId,
+    username: userContext.username,
+    chatId: userContext.chatId,
+    conversationId: userContext.conversationId,
+    currentYaml: yamlContext,
+    yamlContext,
+    messages: safeMessages,
+    messageCount: safeMessages.length,
+    aiProvider: options.aiProvider || null,
+    aiOptions: sanitizeN8NAIOptions(options.aiOptions),
+    cicdPlatform,
+    platformDisplayName: metadata.displayName,
+    source: 'flowforge-pipeline-chat',
+    timestamp: new Date().toISOString(),
+    userContext: {
+      userId: userContext.userId,
+      username: userContext.username,
+      chatId: userContext.chatId,
+      conversationId: userContext.conversationId,
+    },
+  };
+}
+
+function buildProductionWebhookUrl(webhookUrl) {
+  if (typeof webhookUrl !== 'string') return null;
+  if (!webhookUrl.includes('/webhook-test/')) return null;
+
+  return webhookUrl.replace('/webhook-test/', '/webhook/');
+}
+
+async function postN8NChatPayload(webhookUrl, payload, requestConfig) {
+  try {
+    return await axios.post(webhookUrl, payload, requestConfig);
+  } catch (err) {
+    const status = err.response?.status;
+    const productionUrl = buildProductionWebhookUrl(webhookUrl);
+
+    if (status === 404 && productionUrl && productionUrl !== webhookUrl) {
+      return axios.post(productionUrl, payload, requestConfig);
+    }
+
+    throw err;
+  }
+}
+
 async function pipelineChat(messages, currentYaml, options = {}) {
   const cicdPlatform = options.cicdPlatform || 'gitlab';
   const generator = getCICDGenerator(cicdPlatform);
@@ -1067,18 +1206,9 @@ async function pipelineChat(messages, currentYaml, options = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (authToken) headers[authHeader] = authToken;
 
-    const payload = {
-      messages,
-      currentYaml,
-      aiProvider: options.aiProvider || null,
-      aiOptions: options.aiOptions || null,
-      cicdPlatform,
-      platformDisplayName: metadata.displayName,
-      source: 'flowforge-pipeline-chat',
-      timestamp: new Date().toISOString(),
-    };
+    const payload = buildN8NChatPayload(messages, currentYaml, options, cicdPlatform, metadata);
 
-    const { data } = await axios.post(n8nWebhookUrl, payload, {
+    const { data } = await postN8NChatPayload(n8nWebhookUrl, payload, {
       headers,
       timeout: Number(process.env.N8N_CHAT_TIMEOUT_MS || 30000),
     });

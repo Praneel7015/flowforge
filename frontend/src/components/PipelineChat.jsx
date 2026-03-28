@@ -7,6 +7,57 @@ function formatTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const CHAT_IDENTITY_STORAGE_KEY = 'flowforge.chatIdentity.v1';
+
+function createRandomId(prefix = 'ff') {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createConversationId(userId) {
+  const userFragment = String(userId || 'anon').replace(/[^a-zA-Z0-9_-]/g, '').slice(-8) || 'anon';
+  return `${userFragment}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readOrCreateChatIdentity() {
+  if (typeof window === 'undefined') {
+    const userId = createRandomId('user');
+    return { userId, username: `FlowForge-${userId.slice(-6)}` };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CHAT_IDENTITY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const userId = typeof parsed?.userId === 'string' ? parsed.userId.trim() : '';
+      if (userId) {
+        const username =
+          typeof parsed?.username === 'string' && parsed.username.trim()
+            ? parsed.username.trim()
+            : `FlowForge-${userId.slice(-6)}`;
+
+        return { userId, username };
+      }
+    }
+  } catch {
+    // Ignore malformed local identity data and recreate.
+  }
+
+  const userId = createRandomId('user');
+  const identity = { userId, username: `FlowForge-${userId.slice(-6)}` };
+
+  try {
+    window.localStorage.setItem(CHAT_IDENTITY_STORAGE_KEY, JSON.stringify(identity));
+  } catch {
+    // Ignore storage write failures.
+  }
+
+  return identity;
+}
+
 function Message({ role, content, timestamp }) {
   const isUser = role === 'user';
   const displayContent = decodeEscapedNewlines(content);
@@ -72,6 +123,8 @@ const SUGGESTION_CATEGORIES = [
 ];
 
 export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, aiOptions }) {
+  const [chatIdentity] = useState(() => readOrCreateChatIdentity());
+  const [conversationId, setConversationId] = useState(() => createConversationId(chatIdentity.userId));
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -129,6 +182,12 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         aiProvider,
         cicdPlatform,
         aiOptions,
+        userContext: {
+          userId: chatIdentity.userId,
+          username: chatIdentity.username,
+          chatId: conversationId,
+          conversationId,
+        },
       }, { signal: controller.signal });
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply, timestamp: new Date() }]);
     } catch (err) {
@@ -151,8 +210,9 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         timestamp: new Date(),
       },
     ]);
+    setConversationId(createConversationId(chatIdentity.userId));
     setLoading(false);
-  }, []);
+  }, [chatIdentity.userId]);
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
