@@ -23,9 +23,21 @@ class GitHubActionsGenerator extends CICDGenerator {
       trigger_push: { event: 'push' },
       trigger_mr: { event: 'pull_request' },
       build: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Building..."' }] },
+      matrix_build: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running matrix build..."' }] },
+      lint: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running lint checks..."' }] },
       test: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running tests..."' }] },
+      integration_test: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running integration tests..."' }] },
+      smoke_test: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running smoke tests..."' }] },
+      cache_restore: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Restoring cache..."' }] },
+      cache_save: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Saving cache..."' }] },
       security_scan: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running security scan..."' }] },
+      package: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Packaging build artifacts..."' }] },
+      release: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Creating release..."' }] },
+      approval_gate: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Waiting for approval..."' }] },
       deploy: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Deploying..."' }] },
+      canary_deploy: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Deploying canary release..."' }] },
+      blue_green_deploy: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Running blue/green deployment..."' }] },
+      rollback: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Rolling back deployment..."' }] },
       notify: { runsOn: 'ubuntu-latest', steps: [{ run: 'echo "Sending notification..."' }] },
       conditional: {},
     };
@@ -63,15 +75,85 @@ class GitHubActionsGenerator extends CICDGenerator {
       });
 
       // Add setup steps based on node type
-      if (node.type === 'build' || node.type === 'test') {
+      if (node.type === 'build' || node.type === 'test' || node.type === 'matrix_build') {
         job.steps.push({
           uses: 'actions/setup-node@v4',
-          with: { 'node-version': '20' },
+          with: {
+            'node-version':
+              node.type === 'matrix_build' ? '${{ matrix.NODE_VERSION }}' : '20',
+          },
         });
       }
 
+      if (node.type === 'matrix_build') {
+        const matrix = this._parseMatrix(node.data?.config?.matrix, {
+          NODE_VERSION: ['18', '20'],
+        });
+        job.strategy = {
+          'fail-fast': false,
+          matrix,
+        };
+      }
+
+      if (node.type === 'cache_restore' || node.type === 'cache_save') {
+        const cachePaths = this._parseList(node.data?.config?.cachePaths, ['node_modules']);
+        const cacheKey =
+          node.data?.config?.cacheKey || "${{ runner.os }}-deps-${{ hashFiles('**/package-lock.json') }}";
+
+        job.steps.push({
+          name: node.type === 'cache_restore' ? 'Restore cache' : 'Save cache',
+          uses:
+            node.type === 'cache_restore'
+              ? 'actions/cache/restore@v4'
+              : 'actions/cache/save@v4',
+          with: {
+            path: cachePaths.join('\n'),
+            key: cacheKey,
+          },
+        });
+      }
+
+      if (node.type === 'approval_gate') {
+        const environment = node.data?.config?.environment || 'production';
+        const approver = node.data?.config?.approver;
+        job.environment = environment;
+        if (!node.data?.config?.script) {
+          const text = approver
+            ? `echo "Approval required from ${approver}. Configure environment reviewers in GitHub."`
+            : 'echo "Approval gate enabled. Configure environment reviewers in GitHub."';
+          job.steps.push({ name: 'Approval gate', run: text });
+        }
+      }
+
+      if (node.type === 'canary_deploy') {
+        const environment = node.data?.config?.environment || 'production';
+        const trafficPercent = String(node.data?.config?.trafficPercent || '10');
+        job.environment = `${environment}-canary`;
+        if (!node.data?.config?.script) {
+          job.steps.push({
+            name: 'Canary rollout',
+            run: `echo "Deploying canary with ${trafficPercent}% traffic"`,
+          });
+        }
+      }
+
+      if (node.type === 'blue_green_deploy') {
+        const environment = node.data?.config?.environment || 'production';
+        const activeColor = String(node.data?.config?.activeColor || 'green').toLowerCase();
+        job.environment = environment;
+        if (!node.data?.config?.script) {
+          job.steps.push({
+            name: 'Blue/Green switch',
+            run: `echo "Switching active stack to ${activeColor}"`,
+          });
+        }
+      }
+
       // Add main step
-      const scripts = node.data?.config?.script || [`echo "Running ${node.data?.label || node.type}..."`];
+      const scripts = this._normalizeScripts(
+        node.data?.config?.script,
+        `echo "Running ${node.data?.label || node.type}..."`
+      );
       for (const script of scripts) {
         job.steps.push({
           name: node.data?.label || node.type,

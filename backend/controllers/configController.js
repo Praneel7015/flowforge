@@ -1,8 +1,9 @@
 /**
  * Config Controller - Provider configuration API
  */
-const { getProviderSummary, getAIConfig, getCICDConfig } = require('../config');
-const { getAIProvider, isProviderAvailable } = require('../providers/ai');
+const { getProviderSummary, getAIConfig, getCICDConfig, getFeatureFlags } = require('../config');
+const { getAIProvider } = require('../providers/ai');
+const { buildAIOptions } = require('../utils/aiOptions');
 
 /**
  * GET /api/config/providers
@@ -69,7 +70,51 @@ async function getProviderStatus(req, res) {
   }
 }
 
+/**
+ * POST /api/config/providers/ai/:name/self-test
+ * Validate provider credentials/model/base URL for this request only.
+ */
+async function selfTestProvider(req, res) {
+  const { type, name } = req.params;
+
+  if (type !== 'ai') {
+    return res.status(400).json({ error: 'Self-test is only supported for AI providers' });
+  }
+
+  const featureFlags = getFeatureFlags();
+  if (!featureFlags.providerSelfTest) {
+    return res.status(404).json({ error: 'Provider self-test is disabled by feature flag' });
+  }
+
+  try {
+    const config = getAIConfig(name);
+    if (!config) {
+      return res.status(404).json({ error: `Unknown AI provider: ${name}` });
+    }
+
+    const aiOptions = buildAIOptions(req.body?.aiOptions);
+    const provider = getAIProvider(name, aiOptions);
+    const validation = await provider.validateConfig();
+
+    return res.json({
+      configured: validation.valid,
+      valid: validation.valid,
+      error: validation.error,
+      warning: validation.warning,
+      metadata: provider.getMetadata(),
+      usedRuntimeConfig: Object.keys(aiOptions).length > 0,
+    });
+  } catch (err) {
+    return res.status(400).json({
+      configured: false,
+      valid: false,
+      error: err.message,
+    });
+  }
+}
+
 module.exports = {
   getProviders,
   getProviderStatus,
+  selfTestProvider,
 };

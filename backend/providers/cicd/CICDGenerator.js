@@ -83,6 +83,117 @@ class CICDGenerator {
       node.data?.label?.toLowerCase().replace(/\s+/g, '_') || `job_${node.id}`
     );
   }
+
+  /**
+   * Normalize script config to an array of commands.
+   * @param {string|string[]|undefined} input
+   * @param {string|string[]} fallback
+   * @returns {string[]}
+   */
+  _normalizeScripts(input, fallback = 'echo "Running job..."') {
+    const normalize = (value) => {
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+          .filter(Boolean);
+      }
+
+      if (typeof value === 'string') {
+        return value
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
+
+      return [];
+    };
+
+    const normalized = normalize(input);
+    if (normalized.length > 0) {
+      return normalized;
+    }
+
+    const fallbackNormalized = normalize(fallback);
+    if (fallbackNormalized.length > 0) {
+      return fallbackNormalized;
+    }
+
+    return ['echo "Running job..."'];
+  }
+
+  /**
+   * Normalize comma/newline-separated values into a string list.
+   * @param {string|string[]|undefined} input
+   * @param {string[]} fallback
+   * @returns {string[]}
+   */
+  _parseList(input, fallback = []) {
+    const normalize = (value) => {
+      if (Array.isArray(value)) {
+        return value.map((entry) => String(entry).trim()).filter(Boolean);
+      }
+
+      if (typeof value === 'string') {
+        return value
+          .split(/[\n,]+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      }
+
+      return [];
+    };
+
+    const parsed = normalize(input);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+
+    return normalize(fallback);
+  }
+
+  /**
+   * Parse matrix configuration from object or JSON string.
+   * @param {object|string|undefined} input
+   * @param {object} fallback
+   * @returns {object<string, string[]>}
+   */
+  _parseMatrix(input, fallback = { NODE_VERSION: ['18', '20'] }) {
+    const normalizeObject = (value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+      }
+
+      const result = {};
+      for (const [key, rawValue] of Object.entries(value)) {
+        const values = this._parseList(rawValue, []);
+        if (!values.length) continue;
+        result[String(key).trim()] = values;
+      }
+
+      return result;
+    };
+
+    let parsedInput = input;
+    if (typeof input === 'string') {
+      try {
+        parsedInput = JSON.parse(input);
+      } catch {
+        parsedInput = {};
+      }
+    }
+
+    const normalized = normalizeObject(parsedInput);
+    if (Object.keys(normalized).length > 0) {
+      return normalized;
+    }
+
+    const normalizedFallback = normalizeObject(fallback);
+    if (Object.keys(normalizedFallback).length > 0) {
+      return normalizedFallback;
+    }
+
+    return { NODE_VERSION: ['18', '20'] };
+  }
 }
 
 module.exports = CICDGenerator;

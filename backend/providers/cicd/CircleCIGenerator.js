@@ -23,9 +23,21 @@ class CircleCIGenerator extends CICDGenerator {
       trigger_push: { filter: 'branches' },
       trigger_mr: { filter: 'pull_request' },
       build: { executor: 'default', steps: ['echo "Building..."'] },
+      matrix_build: { executor: 'default', steps: ['echo "Running matrix build..."'] },
+      lint: { executor: 'default', steps: ['echo "Running lint checks..."'] },
       test: { executor: 'default', steps: ['echo "Running tests..."'] },
+      integration_test: { executor: 'default', steps: ['echo "Running integration tests..."'] },
+      smoke_test: { executor: 'default', steps: ['echo "Running smoke tests..."'] },
+      cache_restore: { executor: 'default', steps: ['echo "Restoring cache..."'] },
+      cache_save: { executor: 'default', steps: ['echo "Saving cache..."'] },
       security_scan: { executor: 'default', steps: ['echo "Running security scan..."'] },
+      package: { executor: 'default', steps: ['echo "Packaging build artifacts..."'] },
+      release: { executor: 'default', steps: ['echo "Creating release..."'] },
+      approval_gate: { executor: 'default', steps: ['echo "Waiting for approval..."'] },
       deploy: { executor: 'default', steps: ['echo "Deploying..."'] },
+      canary_deploy: { executor: 'default', steps: ['echo "Deploying canary release..."'] },
+      blue_green_deploy: { executor: 'default', steps: ['echo "Running blue/green deployment..."'] },
+      rollback: { executor: 'default', steps: ['echo "Rolling back deployment..."'] },
       notify: { executor: 'default', steps: ['echo "Sending notification..."'] },
       conditional: {},
     };
@@ -44,13 +56,99 @@ class CircleCIGenerator extends CICDGenerator {
       }
 
       const jobName = this._getJobName(node);
-      const scripts = node.data?.config?.script || [`echo "Running ${node.data?.label || node.type}..."`];
+      const deps = (dependsOn[node.id] || [])
+        .map((srcId) => {
+          const srcNode = nodes.find((n) => n.id === srcId);
+          if (!srcNode || srcNode.type.startsWith('trigger_') || srcNode.type === 'conditional') {
+            return null;
+          }
+          return this._getJobName(srcNode);
+        })
+        .filter(Boolean);
+
+      if (node.type === 'approval_gate') {
+        const workflowJob = {
+          [jobName]: {
+            type: 'approval',
+          },
+        };
+
+        if (deps.length > 0) {
+          workflowJob[jobName].requires = deps;
+        }
+
+        workflowJobs.push(workflowJob);
+        continue;
+      }
+
+      const scripts = this._normalizeScripts(
+        node.data?.config?.script,
+        `echo "Running ${node.data?.label || node.type}..."`
+      );
 
       // Build job definition
       const job = {
         docker: [{ image: node.data?.config?.image || 'cimg/node:20.0' }],
         steps: ['checkout'],
       };
+
+      if (node.type === 'matrix_build') {
+        const matrix = this._parseMatrix(node.data?.config?.matrix, {
+          NODE_VERSION: ['18', '20'],
+        });
+        const maxDimension = Math.max(...Object.values(matrix).map((vals) => vals.length));
+        job.parallelism = Math.max(2, maxDimension);
+        job.steps.push({
+          run: {
+            name: 'Matrix dimensions',
+            command: `echo "Matrix: ${Object.entries(matrix)
+              .map(([k, vals]) => `${k}=${vals.join('|')}`)
+              .join('; ')}"`,
+          },
+        });
+      }
+
+      if (node.type === 'cache_restore') {
+        const cacheKey =
+          node.data?.config?.cacheKey || 'v1-deps-{{ checksum "package-lock.json" }}';
+        job.steps.push({
+          restore_cache: {
+            keys: [cacheKey],
+          },
+        });
+      }
+
+      if (node.type === 'cache_save') {
+        const cacheKey =
+          node.data?.config?.cacheKey || 'v1-deps-{{ checksum "package-lock.json" }}';
+        const cachePaths = this._parseList(node.data?.config?.cachePaths, ['node_modules']);
+        job.steps.push({
+          save_cache: {
+            key: cacheKey,
+            paths: cachePaths,
+          },
+        });
+      }
+
+      if (node.type === 'canary_deploy' && !node.data?.config?.script) {
+        const trafficPercent = String(node.data?.config?.trafficPercent || '10');
+        job.steps.push({
+          run: {
+            name: 'Canary rollout',
+            command: `echo "Deploying canary with ${trafficPercent}% traffic"`,
+          },
+        });
+      }
+
+      if (node.type === 'blue_green_deploy' && !node.data?.config?.script) {
+        const activeColor = String(node.data?.config?.activeColor || 'green').toLowerCase();
+        job.steps.push({
+          run: {
+            name: 'Blue/Green switch',
+            command: `echo "Switching active stack to ${activeColor}"`,
+          },
+        });
+      }
 
       // Add run steps
       for (const script of scripts) {
@@ -82,17 +180,6 @@ class CircleCIGenerator extends CICDGenerator {
 
       // Build workflow job reference
       const workflowJob = { [jobName]: {} };
-
-      // Add requires (dependencies)
-      const deps = (dependsOn[node.id] || [])
-        .map((srcId) => {
-          const srcNode = nodes.find((n) => n.id === srcId);
-          if (!srcNode || srcNode.type.startsWith('trigger_') || srcNode.type === 'conditional') {
-            return null;
-          }
-          return this._getJobName(srcNode);
-        })
-        .filter(Boolean);
 
       if (deps.length > 0) {
         workflowJob[jobName].requires = deps;

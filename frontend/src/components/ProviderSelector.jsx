@@ -1,17 +1,15 @@
 import React from 'react';
 
-const icons = {
-  // AI Providers
-  anthropic: '🤖',
-  gemini: '💎',
-  openai: '🧠',
-  featherless: '🪶',
-  ollama: '🦙',
-  // CI/CD Platforms
-  gitlab: '🦊',
-  github: '🐙',
-  jenkins: '🔧',
-  circleci: '⚡',
+const prefixes = {
+  anthropic: 'AN',
+  gemini: 'GM',
+  openai: 'OA',
+  featherless: 'FL',
+  ollama: 'OL',
+  gitlab: 'GL',
+  github: 'GH',
+  jenkins: 'JK',
+  circleci: 'CC',
 };
 
 export default function ProviderSelector({
@@ -48,7 +46,8 @@ export default function ProviderSelector({
       >
         {visibleProviders.map((p) => (
           <option key={p.name} value={p.name}>
-            {icons[p.name] || '📦'} {p.displayName}{p.enabled ? '' : ' (BYOM)'}
+            [{prefixes[p.name] || 'PR'}] {p.displayName}
+            {p.enabled ? '' : ' (Custom Key)'}
           </option>
         ))}
       </select>
@@ -56,16 +55,19 @@ export default function ProviderSelector({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-slate-500 whitespace-nowrap">{typeLabels[type]}:</span>
+    <div className="space-y-1.5">
+      <span className="text-xs uppercase tracking-[0.14em] text-slate-500 whitespace-nowrap">
+        {typeLabels[type]}
+      </span>
       <select
         value={selected || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="ff-select text-xs cursor-pointer min-w-[150px]"
+        className="ff-select text-sm cursor-pointer min-w-[220px]"
       >
         {visibleProviders.map((p) => (
           <option key={p.name} value={p.name}>
-            {icons[p.name] || '📦'} {p.displayName}{p.enabled ? '' : ' (BYOM)'}
+            [{prefixes[p.name] || 'PR'}] {p.displayName}
+            {p.enabled ? '' : ' (Custom Key)'}
           </option>
         ))}
       </select>

@@ -5,6 +5,7 @@
 const { getAIProvider } = require('../providers/ai');
 const { getCICDGenerator } = require('../providers/cicd');
 const axios = require('axios');
+const yaml = require('js-yaml');
 
 /**
  * Helper to get provider instance.
@@ -30,6 +31,384 @@ async function ask(system, userMessage, options = {}) {
   });
 }
 
+const STANDARD_NODE_TYPES = [
+  'trigger_push',
+  'trigger_mr',
+  'build',
+  'matrix_build',
+  'lint',
+  'test',
+  'integration_test',
+  'smoke_test',
+  'cache_restore',
+  'cache_save',
+  'security_scan',
+  'package',
+  'release',
+  'approval_gate',
+  'deploy',
+  'canary_deploy',
+  'blue_green_deploy',
+  'rollback',
+  'notify',
+  'conditional',
+];
+
+const ADVANCED_NODE_TYPES = [
+  'matrix_build',
+  'cache_restore',
+  'cache_save',
+  'approval_gate',
+  'canary_deploy',
+  'blue_green_deploy',
+];
+
+function getSupportedNodeTypes() {
+  if (process.env.ENABLE_ADVANCED_NODES === 'false') {
+    return STANDARD_NODE_TYPES.filter((type) => !ADVANCED_NODE_TYPES.includes(type));
+  }
+
+  return STANDARD_NODE_TYPES;
+}
+
+function safeJsonParse(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function stripCodeFences(text) {
+  if (typeof text !== 'string') return '';
+
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/```(?:json|yaml)?\s*([\s\S]*?)```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    return fenceMatch[1].trim();
+  }
+
+  return trimmed;
+}
+
+function normalizeYamlString(rawYaml) {
+  if (typeof rawYaml !== 'string') return '';
+
+  let yamlText = rawYaml.trim();
+  if (!yamlText) return '';
+
+  if (yamlText.startsWith('"') && yamlText.endsWith('"')) {
+    const parsedQuoted = safeJsonParse(yamlText);
+    if (typeof parsedQuoted === 'string') {
+      yamlText = parsedQuoted;
+    }
+  }
+
+  if (/\\n/.test(yamlText)) {
+    yamlText = yamlText
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '  ')
+      .replace(/\\"/g, '"');
+  }
+
+  return yamlText;
+}
+
+function extractPipelinePayload(text) {
+  const cleaned = stripCodeFences(text);
+  const candidates = [cleaned];
+
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(cleaned.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    const parsed = safeJsonParse(candidate);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+
+    if (typeof parsed === 'string') {
+      const nested = safeJsonParse(parsed);
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractYamlFromText(text) {
+  const cleaned = stripCodeFences(text);
+
+  const yamlFieldMatch = cleaned.match(/"yaml"\s*:\s*"([\s\S]*)/);
+  if (yamlFieldMatch && yamlFieldMatch[1]) {
+    let fragment = yamlFieldMatch[1];
+    const stopIndex = fragment.search(/",\s*"(nodes|edges)"/);
+    if (stopIndex !== -1) {
+      fragment = fragment.slice(0, stopIndex);
+    }
+
+    fragment = fragment.replace(/"\s*}\s*$/, '');
+    return normalizeYamlString(fragment);
+  }
+
+  return normalizeYamlString(cleaned);
+}
+
+function humanizeLabel(value) {
+  return String(value || 'build')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function classifyNodeType(value, supportedNodeTypes) {
+  const text = String(value || '').toLowerCase();
+
+  const rules = [
+    { type: 'matrix_build', includes: ['matrix'] },
+    { type: 'cache_restore', includes: ['cache restore', 'restore cache'] },
+    { type: 'cache_save', includes: ['cache save', 'save cache'] },
+    { type: 'approval_gate', includes: ['approval', 'manual gate', 'manual'] },
+    { type: 'canary_deploy', includes: ['canary'] },
+    { type: 'blue_green_deploy', includes: ['blue green', 'blue/green', 'blue-green'] },
+    { type: 'rollback', includes: ['rollback', 'roll back'] },
+    { type: 'release', includes: ['release'] },
+    { type: 'package', includes: ['package', 'artifact', 'bundle'] },
+    { type: 'security_scan', includes: ['security', 'sast', 'scan', 'vulnerability'] },
+    { type: 'integration_test', includes: ['integration'] },
+    { type: 'smoke_test', includes: ['smoke'] },
+    { type: 'lint', includes: ['lint', 'static analysis'] },
+    { type: 'test', includes: ['test'] },
+    { type: 'deploy', includes: ['deploy', 'ship', 'publish'] },
+    { type: 'notify', includes: ['notify', 'notification', 'slack', 'teams'] },
+    { type: 'build', includes: ['build', 'compile'] },
+  ];
+
+  for (const rule of rules) {
+    if (!supportedNodeTypes.includes(rule.type)) continue;
+    if (rule.includes.some((keyword) => text.includes(keyword))) {
+      return rule.type;
+    }
+  }
+
+  return supportedNodeTypes.includes('build') ? 'build' : supportedNodeTypes[0] || 'build';
+}
+
+function sanitizeNodes(rawNodes, supportedNodeTypes) {
+  if (!Array.isArray(rawNodes)) return [];
+
+  const seenIds = new Set();
+
+  return rawNodes.map((node, index) => {
+    let id = typeof node?.id === 'string' && node.id.trim() ? node.id.trim() : `node_${index + 1}`;
+    while (seenIds.has(id)) {
+      id = `${id}_${index + 1}`;
+    }
+    seenIds.add(id);
+
+    const preferredType =
+      typeof node?.type === 'string' && supportedNodeTypes.includes(node.type)
+        ? node.type
+        : classifyNodeType(`${node?.type || ''} ${node?.data?.label || ''}`, supportedNodeTypes);
+
+    const x = Number(node?.position?.x);
+    const y = Number(node?.position?.y);
+
+    return {
+      id,
+      type: preferredType,
+      position: {
+        x: Number.isFinite(x) ? x : 220 + (index % 2) * 280,
+        y: Number.isFinite(y) ? y : 120 + index * 130,
+      },
+      data: {
+        label:
+          typeof node?.data?.label === 'string' && node.data.label.trim()
+            ? node.data.label.trim()
+            : humanizeLabel(node?.id || preferredType),
+        config:
+          node?.data?.config && typeof node.data.config === 'object' && !Array.isArray(node.data.config)
+            ? node.data.config
+            : {},
+      },
+    };
+  });
+}
+
+function sanitizeEdges(rawEdges, nodes) {
+  if (!Array.isArray(rawEdges) || nodes.length === 0) return [];
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+
+  return rawEdges
+    .map((edge, index) => {
+      const source = typeof edge?.source === 'string' ? edge.source : '';
+      const target = typeof edge?.target === 'string' ? edge.target : '';
+      return {
+        id: typeof edge?.id === 'string' && edge.id.trim() ? edge.id : `e_${source}_${target}_${index}`,
+        source,
+        target,
+        animated: edge?.animated !== false,
+      };
+    })
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
+}
+
+function extractJobNamesFromConfig(configText, cicdPlatform) {
+  if (!configText || typeof configText !== 'string') {
+    return [];
+  }
+
+  if (cicdPlatform === 'jenkins') {
+    const jobs = [];
+    const stageRegex = /stage\(\s*['"]([^'"]+)['"]\s*\)/g;
+    let match = stageRegex.exec(configText);
+    while (match) {
+      jobs.push(match[1]);
+      match = stageRegex.exec(configText);
+    }
+    return jobs;
+  }
+
+  let document = null;
+  try {
+    document = yaml.load(configText);
+  } catch {
+    return [];
+  }
+
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    return [];
+  }
+
+  if ((cicdPlatform === 'github' || cicdPlatform === 'circleci') && document.jobs) {
+    const jobs = Object.keys(document.jobs || {});
+    return jobs.filter((jobName) => jobName && !jobName.startsWith('.'));
+  }
+
+  const reservedTopLevel = new Set([
+    'stages',
+    'variables',
+    'workflow',
+    'default',
+    'include',
+    'image',
+    'services',
+    'before_script',
+    'after_script',
+    'cache',
+    'name',
+    'on',
+    'env',
+    'version',
+    'executors',
+    'workflows',
+  ]);
+
+  return Object.keys(document).filter((key) => {
+    if (!key || key.startsWith('.')) return false;
+    if (reservedTopLevel.has(key)) return false;
+
+    const value = document[key];
+    return value && typeof value === 'object' && !Array.isArray(value);
+  });
+}
+
+function buildFallbackWorkflow(configText, cicdPlatform) {
+  const supportedNodeTypes = getSupportedNodeTypes();
+  const jobNames = extractJobNamesFromConfig(configText, cicdPlatform);
+  const inferredJobs = jobNames.length > 0 ? jobNames : ['build', 'test', 'deploy'];
+
+  const nodes = [
+    {
+      id: 'node_1',
+      type: supportedNodeTypes.includes('trigger_push') ? 'trigger_push' : supportedNodeTypes[0],
+      position: { x: 220, y: 80 },
+      data: { label: 'Git Push Trigger', config: {} },
+    },
+  ];
+
+  let previousId = 'node_1';
+  const edges = [];
+
+  inferredJobs.forEach((jobName, index) => {
+    const nodeId = `node_${index + 2}`;
+    const type = classifyNodeType(jobName, supportedNodeTypes);
+
+    nodes.push({
+      id: nodeId,
+      type,
+      position: {
+        x: 220 + (index % 2) * 280,
+        y: 220 + index * 130,
+      },
+      data: {
+        label: humanizeLabel(jobName),
+        config: {},
+      },
+    });
+
+    edges.push({
+      id: `e_${previousId}_${nodeId}`,
+      source: previousId,
+      target: nodeId,
+      animated: true,
+    });
+
+    previousId = nodeId;
+  });
+
+  return { nodes, edges };
+}
+
+function parsePipelineResult(text, cicdPlatform) {
+  const supportedNodeTypes = getSupportedNodeTypes();
+  const payload = extractPipelinePayload(text);
+
+  if (payload) {
+    const yamlText = normalizeYamlString(payload.yaml || '');
+    let nodes = sanitizeNodes(payload.nodes, supportedNodeTypes);
+    let edges = sanitizeEdges(payload.edges, nodes);
+
+    if (nodes.length > 0 && edges.length === 0) {
+      edges = nodes.slice(1).map((node, index) => ({
+        id: `e_${nodes[index].id}_${node.id}`,
+        source: nodes[index].id,
+        target: node.id,
+        animated: true,
+      }));
+    }
+
+    if (nodes.length === 0 && yamlText) {
+      const fallback = buildFallbackWorkflow(yamlText, cicdPlatform);
+      nodes = fallback.nodes;
+      edges = fallback.edges;
+    }
+
+    return {
+      yaml: yamlText,
+      nodes,
+      edges,
+    };
+  }
+
+  const yamlText = extractYamlFromText(text);
+  const fallback = buildFallbackWorkflow(yamlText, cicdPlatform);
+
+  return {
+    yaml: yamlText,
+    nodes: fallback.nodes,
+    edges: fallback.edges,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. AI Pipeline Generator (Platform-Agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,7 +424,7 @@ Given a description, produce:
 2. React Flow workflow nodes for the visual editor.
 
 Node shape: { "id": "<unique>", "type": "<nodeType>", "data": { "label": "<name>", "config": {} }, "position": { "x": <n>, "y": <n> } }
-Valid nodeTypes: trigger_push, trigger_mr, build, test, security_scan, deploy, notify, conditional.
+Valid nodeTypes: ${getSupportedNodeTypes().join(', ')}.
 Edge shape: { "id": "e<src>-<tgt>", "source": "<id>", "target": "<id>", "animated": true }
 
 Target platform: ${metadata.displayName}
@@ -60,11 +439,7 @@ Return ONLY raw JSON, no markdown fences:
     maxTokens: 4096,
   });
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { yaml: text, nodes: [], edges: [] };
-  }
+  return parsePipelineResult(text, cicdPlatform);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,7 +493,7 @@ async function convertJenkinsfile(jenkinsfile, options = {}) {
 
   const system = `You are an expert in Jenkins and ${metadata.displayName}.
 Convert the Jenkinsfile to a valid ${metadata.fileName} and React Flow nodes.
-Valid nodeTypes: trigger_push, build, test, security_scan, deploy, notify, conditional.
+Valid nodeTypes: ${getSupportedNodeTypes().join(', ')}.
 
 Target platform: ${metadata.displayName}
 ${getPlatformGuidelines(cicdPlatform)}
@@ -132,11 +507,7 @@ Return ONLY raw JSON — no markdown fences:
     maxTokens: 4096,
   });
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { yaml: text, nodes: [], edges: [] };
-  }
+  return parsePipelineResult(text, cicdPlatform);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

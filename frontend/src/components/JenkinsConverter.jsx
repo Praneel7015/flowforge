@@ -74,26 +74,26 @@ export default function JenkinsConverter({ onConverted, aiProvider, cicdPlatform
   };
 
   return (
-    <div className="flex items-center justify-center h-full p-8">
-      <div className="max-w-2xl w-full space-y-6 ff-enter">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-teal-300">Migration</p>
-          <h2 className="text-3xl font-bold">Pipeline Migration</h2>
-          <p className="text-slate-400 text-sm leading-relaxed">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Migration</p>
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">Convert Jenkinsfile</h2>
+          <p className="text-slate-600 text-sm leading-relaxed">
             Paste a Jenkinsfile or upload one. The AI will convert it to{' '}
-            <span className="text-amber-300 font-medium">{platformNames[cicdPlatform] || 'CI/CD'}</span>{' '}
+            <span className="font-semibold text-slate-800">{platformNames[cicdPlatform] || 'CI/CD'}</span>{' '}
             and generate a visual workflow.
           </p>
         </div>
 
         <div className="flex gap-3">
-          <label className="px-4 py-2 rounded-lg text-sm cursor-pointer transition-colors ff-btn-secondary hover:border-slate-500">
+          <label className="px-4 py-2 rounded-lg text-sm cursor-pointer transition-colors ff-btn-secondary hover:border-slate-400">
             Upload Jenkinsfile
             <input type="file" className="hidden" onChange={handleFileUpload} accept=".groovy,.jenkinsfile,Jenkinsfile" />
           </label>
           <button
             onClick={() => setJenkinsfile(exampleJenkinsfile)}
-            className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary hover:border-slate-500"
+            className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary hover:border-slate-400"
           >
             Load Example
           </button>
@@ -110,12 +110,12 @@ export default function JenkinsConverter({ onConverted, aiProvider, cicdPlatform
         <button
           onClick={handleConvert}
           disabled={loading || !jenkinsfile.trim()}
-          className="w-full py-3 rounded-xl font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity ff-btn-primary"
+          className="w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 transition-opacity ff-btn-primary"
         >
           {loading ? 'Converting...' : `Convert to ${platformNames[cicdPlatform] || 'CI/CD'}`}
         </button>
 
-        {error && <p className="text-rose-300 text-sm">{error}</p>}
+        {error && <p className="text-rose-700 text-sm">{error}</p>}
       </div>
     </div>
   );

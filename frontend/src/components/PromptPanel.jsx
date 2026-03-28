@@ -40,37 +40,42 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
   };
 
   return (
-    <div className="flex items-center justify-center h-full p-8">
-      <div className="max-w-2xl w-full space-y-6 ff-enter">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-teal-300">Assistant</p>
-          <h2 className="text-3xl font-bold">AI Pipeline Generator</h2>
-          <p className="text-slate-400 text-sm leading-relaxed">
-            Describe your project and desired CI/CD pipeline in natural language.
-            The AI will generate a <span className="text-amber-300 font-medium">{platformNames[cicdPlatform] || 'CI/CD'}</span> configuration and visual workflow.
+          <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Generator</p>
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">
+            Build a pipeline from plain language
+          </h2>
+          <p className="text-slate-600 text-sm leading-relaxed">
+            Describe your project goals and constraints. FlowForge will generate a
+            {' '}
+            <span className="font-semibold text-slate-800">{platformNames[cicdPlatform] || 'CI/CD'}</span>
+            {' '}
+            config and visual workflow.
           </p>
         </div>
 
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe your pipeline..."
-          rows={5}
+          placeholder="Example: Build and test a Node.js app, run security scan, then deploy to production only from main branch."
+          rows={7}
           className="ff-input p-4 text-sm resize-none leading-relaxed"
         />
 
         <button
           onClick={handleGenerate}
           disabled={loading || !prompt.trim()}
-          className="w-full py-3 rounded-xl font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity ff-btn-primary"
+          className="w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 transition-opacity ff-btn-primary"
         >
           {loading ? 'Generating...' : `Generate ${platformNames[cicdPlatform] || 'Pipeline'}`}
         </button>
 
-        {error && <p className="text-rose-300 text-sm">{error}</p>}
+        {error && <p className="text-rose-700 text-sm">{error}</p>}
 
-        <div>
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+        <div className="pt-2">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-[0.14em] mb-3">
             Example prompts
           </h3>
           <div className="space-y-2">
@@ -78,8 +83,8 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
               <button
                 key={i}
                 onClick={() => setPrompt(example)}
-                className="w-full text-left px-4 py-2.5 ff-surface-soft
-                  text-sm text-slate-200 hover:border-slate-500/80 transition-colors"
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-300 bg-white
+                  text-sm text-slate-700 hover:border-slate-400 transition-colors"
               >
                 {example}
               </button>

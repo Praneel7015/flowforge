@@ -79,7 +79,7 @@ export default function Header({
           <div className="hidden lg:flex items-center gap-1.5 border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 rounded-md">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
             <span className="text-xs text-emerald-200 whitespace-nowrap">
-              {selectedAI?.displayName || 'Ready'}{byomEnabled ? ' + BYOM' : ''}
+              {selectedAI?.displayName || 'Ready'}{byomEnabled ? ' + Custom Key' : ''}
             </span>
           </div>
         </div>

@@ -3,6 +3,17 @@
  * Reads from environment variables and tracks which providers are enabled.
  */
 
+function readFeatureFlag(name, defaultValue = true) {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+
+  return defaultValue;
+}
+
 const config = {
   ai: {
     anthropic: {
@@ -72,6 +83,10 @@ const config = {
     aiProvider: process.env.DEFAULT_AI_PROVIDER || 'featherless',
     cicdPlatform: process.env.DEFAULT_CICD_PLATFORM || 'gitlab',
   },
+  features: {
+    advancedNodes: readFeatureFlag('ENABLE_ADVANCED_NODES', true),
+    providerSelfTest: readFeatureFlag('ENABLE_PROVIDER_SELF_TEST', true),
+  },
 };
 
 /**
@@ -117,6 +132,14 @@ function getDefaults() {
 }
 
 /**
+ * Get server feature flags.
+ * @returns {{advancedNodes: boolean, providerSelfTest: boolean}}
+ */
+function getFeatureFlags() {
+  return { ...config.features };
+}
+
+/**
  * Get full provider summary for API response.
  * @returns {object}
  */
@@ -134,6 +157,7 @@ function getProviderSummary() {
       enabled: p.enabled,
     })),
     defaults: config.defaults,
+    features: getFeatureFlags(),
   };
 }
 
@@ -144,5 +168,6 @@ module.exports = {
   getEnabledAIProviders,
   getCICDPlatforms,
   getDefaults,
+  getFeatureFlags,
   getProviderSummary,
 };

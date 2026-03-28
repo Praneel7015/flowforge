@@ -27,13 +27,36 @@ const instances = {};
  * @returns {AIProvider}
  * @throws {Error} If provider is not found or not configured.
  */
+function hasConfiguredValue(value) {
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  return value !== undefined && value !== null;
+}
+
 function hasRuntimeConfig(runtimeConfig) {
-  return !!(runtimeConfig && Object.keys(runtimeConfig).length > 0);
+  if (!runtimeConfig || typeof runtimeConfig !== 'object') {
+    return false;
+  }
+
+  return Object.values(runtimeConfig).some(hasConfiguredValue);
+}
+
+function cleanRuntimeConfig(runtimeConfig) {
+  if (!runtimeConfig || typeof runtimeConfig !== 'object') {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(runtimeConfig).filter(([, value]) => hasConfiguredValue(value))
+  );
 }
 
 function getAIProvider(name, runtimeConfig = {}) {
   const providerName = name || getDefaults().aiProvider;
-  const useRuntimeConfig = hasRuntimeConfig(runtimeConfig);
+  const requestConfig = cleanRuntimeConfig(runtimeConfig);
+  const useRuntimeConfig = hasRuntimeConfig(requestConfig);
 
   // Return cached instance if available
   if (!useRuntimeConfig && instances[providerName]) {
@@ -58,9 +81,16 @@ function getAIProvider(name, runtimeConfig = {}) {
     );
   }
 
+  const providerRequiresApiKey = providerName !== 'ollama';
+  if (!config.enabled && providerRequiresApiKey && !requestConfig.apiKey) {
+    throw new Error(
+      `AI provider '${providerName}' requires an API key. Provide aiOptions.apiKey when using a custom key.`
+    );
+  }
+
   const mergedConfig = {
     ...config,
-    ...runtimeConfig,
+    ...requestConfig,
     enabled: config.enabled || useRuntimeConfig,
   };
 

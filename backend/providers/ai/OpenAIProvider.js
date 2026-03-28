@@ -13,7 +13,10 @@ class OpenAIProvider extends AIProvider {
 
   _getClient() {
     if (!this.client) {
-      this.client = new OpenAI({ apiKey: this.config.apiKey });
+      this.client = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+      });
     }
     return this.client;
   }

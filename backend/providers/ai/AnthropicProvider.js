@@ -13,7 +13,10 @@ class AnthropicProvider extends AIProvider {
 
   _getClient() {
     if (!this.client) {
-      this.client = new Anthropic({ apiKey: this.config.apiKey });
+      this.client = new Anthropic({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+      });
     }
     return this.client;
   }

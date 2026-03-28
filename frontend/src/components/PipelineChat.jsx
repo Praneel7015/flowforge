@@ -6,15 +6,15 @@ function Message({ role, content }) {
   return (
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-cyan-700 flex-shrink-0 flex items-center justify-center text-xs font-bold shadow shadow-cyan-950/40">
+        <div className="w-7 h-7 rounded-full bg-slate-900 text-slate-100 flex-shrink-0 flex items-center justify-center text-xs font-bold">
           FF
         </div>
       )}
       <div
         className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed
           ${isUser
-            ? 'bg-teal-700/85 text-white rounded-tr-sm border border-teal-500/45'
-            : 'bg-slate-800/95 text-slate-100 rounded-tl-sm border border-slate-700/70'}`}
+            ? 'bg-slate-900 text-slate-100 rounded-tr-sm border border-slate-900'
+            : 'bg-white text-slate-800 rounded-tl-sm border border-slate-300'}`}
       >
         {content}
       </div>
@@ -26,7 +26,8 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hi! I'm FlowForge Assistant powered by n8n. I can see your current pipeline — ask me anything about it, or try:\n• \"Why might this pipeline be slow?\"\n• \"Add a Docker build stage\"\n• \"What security improvements should I make?\"",
+      content:
+        "I can review your current pipeline and help improve it. Try asking:\n• \"Why might this pipeline be slow?\"\n• \"Add a Docker build stage\"\n• \"What security improvements should I make?\"",
     },
   ]);
   const [input, setInput] = useState('');
@@ -89,33 +90,33 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
   return (
     <div className="flex flex-col h-full ff-enter">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-slate-700/70 flex items-center gap-3 bg-slate-900/25">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-cyan-700 flex items-center justify-center text-xs font-bold">
+      <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-3 bg-white/75">
+        <div className="w-8 h-8 rounded-full bg-slate-900 text-slate-100 flex items-center justify-center text-xs font-bold">
           FF
         </div>
         <div>
-          <div className="text-sm font-semibold">FlowForge Assistant</div>
-          <div className="text-xs text-slate-500">n8n Webhook Pipeline Help</div>
+          <div className="text-sm font-semibold text-slate-900">FlowForge Assistant</div>
+          <div className="text-xs text-slate-500">Pipeline reasoning and optimization</div>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
           <span className="text-xs text-slate-500">online</span>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-slate-50/70">
         {messages.map((msg, i) => (
           <Message key={i} role={msg.role} content={msg.content} />
         ))}
         {loading && (
           <div className="flex gap-3">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-cyan-700 flex-shrink-0 flex items-center justify-center text-xs font-bold">FF</div>
-            <div className="bg-slate-800 border border-slate-700/70 px-4 py-3 rounded-2xl rounded-tl-sm">
+            <div className="w-7 h-7 rounded-full bg-slate-900 text-slate-100 flex-shrink-0 flex items-center justify-center text-xs font-bold">FF</div>
+            <div className="bg-white border border-slate-300 px-4 py-3 rounded-2xl rounded-tl-sm">
               <span className="inline-flex gap-1">
-                <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 rounded-full bg-slate-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '300ms' }} />
               </span>
             </div>
           </div>
@@ -130,7 +131,7 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
             <button
               key={s}
               onClick={() => sendMessage(s)}
-              className="px-3 py-1.5 bg-slate-800/70 hover:bg-slate-700/75 border border-slate-700 rounded-full text-xs text-slate-300 transition-colors"
+              className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-full text-xs text-slate-700 transition-colors"
             >
               {s}
             </button>
@@ -139,20 +140,20 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
       )}
 
       {/* Input */}
-      <div className="px-6 py-4 border-t border-slate-700/70 bg-slate-900/25">
+      <div className="px-6 py-4 border-t border-slate-200 bg-white/80">
         <div className="flex gap-3 items-end">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
             placeholder="Ask about your pipeline..."
-            rows={1}
+            rows={2}
             className="ff-input flex-1 rounded-xl px-4 py-3 text-sm resize-none leading-relaxed"
           />
           <button
             onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
-            className="px-4 py-3 rounded-xl text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity whitespace-nowrap ff-btn-primary"
+            className="px-4 py-3 rounded-xl text-sm font-medium disabled:opacity-50 transition-opacity whitespace-nowrap ff-btn-primary"
           >
             Send
           </button>
