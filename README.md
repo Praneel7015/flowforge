@@ -48,9 +48,10 @@ Frontend (React + Vite + React Flow + TailwindCSS)
     ▼
 Backend (Node.js + Express)
     │
-    ├── AI Providers (Claude, Gemini, OpenAI, Ollama)
+    ├── AI Providers (Featherless, Claude, Gemini, OpenAI, Ollama)
     ├── CI/CD Generators (GitLab, GitHub, Jenkins, CircleCI)
-    └── Config API (/api/config/providers)
+    ├── Config API (/api/config/providers)
+    └── Optional n8n chat webhook bridge (/api/advisor/chat)
 ```
 
 ## Quick Start
@@ -198,6 +199,7 @@ flowforge/
 │   │   │   ├── Header.jsx            # Nav with provider selectors
 │   │   │   ├── Sidebar.jsx           # Draggable node palette
 │   │   │   ├── ProviderSelector.jsx  # AI/CI-CD provider dropdown
+│   │   │   ├── BringYourOwnModelPanel.jsx # BYOM key/model/base URL
 │   │   │   ├── PromptPanel.jsx       # Natural language generator
 │   │   │   ├── JenkinsConverter.jsx  # Pipeline migration
 │   │   │   ├── YamlPreview.jsx       # Config preview + download
@@ -215,6 +217,7 @@ flowforge/
 │   ├── providers/
 │   │   ├── ai/                       # AI provider implementations
 │   │   │   ├── AIProvider.js
+│   │   │   ├── FeatherlessProvider.js
 │   │   │   ├── AnthropicProvider.js
 │   │   │   ├── GeminiProvider.js
 │   │   │   ├── OpenAIProvider.js
@@ -230,8 +233,11 @@ flowforge/
 │   ├── controllers/
 │   ├── routes/
 │   ├── services/
-│   │   ├── aiService.js              # AI operations (uses provider factory)
-│   │   └── workflowService.js        # Nodes → CI/CD config
+│   │   ├── aiService.js              # AI operations + optional n8n chat bridge
+│   │   ├── workflowService.js        # Nodes → CI/CD config
+│   │   └── gitlabService.js          # GitLab API client
+│   ├── utils/
+│   │   └── aiOptions.js              # BYOM request option sanitizer
 │   └── server.js
 ├── docker-compose.yml
 └── README.md
@@ -243,20 +249,21 @@ flowforge/
 |--------|----------|-------------|
 | GET | `/api/config/providers` | List available AI/CI-CD providers |
 | GET | `/api/config/providers/:type/:name/status` | Check provider status |
-| POST | `/api/pipelines/generate` | AI pipeline generation from prompt |
+| POST | `/api/pipelines/generate` | AI pipeline generation from prompt (`aiOptions` supported) |
 | POST | `/api/pipelines/export` | Export workflow nodes to config |
-| POST | `/api/migration/jenkinsfile` | Convert Jenkinsfile to target platform |
-| POST | `/api/advisor/health` | Pipeline health score |
-| POST | `/api/advisor/remediate` | Auto-remediate broken config |
-| POST | `/api/advisor/chat` | Pipeline chat assistant |
+| POST | `/api/migration/jenkinsfile` | Convert Jenkinsfile to target platform (`aiOptions` supported) |
+| POST | `/api/advisor/health` | Pipeline health score (`aiOptions` supported) |
+| POST | `/api/advisor/remediate` | Auto-remediate broken config (`aiOptions` supported) |
+| POST | `/api/advisor/chat` | Pipeline chat assistant (`aiOptions` supported, can route to n8n webhook) |
 | GET | `/api/health` | Health check |
 
 ## Tech Stack
 
 - **Frontend:** React 18, Vite, React Flow, TailwindCSS, Axios
 - **Backend:** Node.js, Express, js-yaml
-- **AI:** Anthropic Claude, Google Gemini, OpenAI GPT-4, Ollama
+- **AI:** Featherless AI, Anthropic Claude, Google Gemini, OpenAI GPT-4, Ollama
 - **CI/CD:** GitLab CI, GitHub Actions, Jenkins, CircleCI
+- **Orchestration:** n8n webhook integration for pipeline chat
 
 ## License
 
