@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import MarkdownContent from './MarkdownContent';
+import { decodeEscapedNewlines } from '../utils/contentFormat';
 
 function Message({ role, content }) {
   const isUser = role === 'user';
+  const displayContent = decodeEscapedNewlines(content);
+
   return (
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
@@ -11,12 +15,15 @@ function Message({ role, content }) {
         </div>
       )}
       <div
-        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed
+        className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed
           ${isUser
             ? 'bg-slate-900 text-slate-100 rounded-tr-sm border border-slate-900'
             : 'bg-white text-slate-800 rounded-tl-sm border border-slate-300'}`}
       >
-        {content}
+        <MarkdownContent
+          content={displayContent}
+          className={isUser ? 'text-slate-100' : 'text-slate-800'}
+        />
       </div>
     </div>
   );

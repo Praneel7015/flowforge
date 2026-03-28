@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { normalizeConfigText } from '../utils/contentFormat';
 
 const DEFAULT_PLATFORMS = [
   { name: 'gitlab', displayName: 'GitLab CI' },
@@ -169,7 +170,7 @@ export default function JenkinsConverter({
     sourcePlatform !== targetPlatform &&
     Boolean(sourcePlatform) &&
     Boolean(targetPlatform) &&
-    pipelineConfig.trim().length > 0;
+    normalizeConfigText(pipelineConfig).trim().length > 0;
 
   const handleConvert = async () => {
     if (!canConvert) return;
@@ -178,8 +179,9 @@ export default function JenkinsConverter({
     setError('');
 
     try {
+      const normalizedConfig = normalizeConfigText(pipelineConfig);
       const { data } = await axios.post('/api/migration/convert', {
-        pipelineConfig,
+        pipelineConfig: normalizedConfig,
         sourcePlatform,
         targetPlatform,
         aiProvider,
@@ -202,7 +204,10 @@ export default function JenkinsConverter({
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => setPipelineConfig(typeof ev.target?.result === 'string' ? ev.target.result : '');
+    reader.onload = (ev) => {
+      const rawContent = typeof ev.target?.result === 'string' ? ev.target.result : '';
+      setPipelineConfig(normalizeConfigText(rawContent));
+    };
     reader.readAsText(file);
   };
 
@@ -223,7 +228,7 @@ export default function JenkinsConverter({
           </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
             Choose a source and target platform, paste your configuration, and FlowForge will convert
-            it while preserving pipeline intent.
+            it while preserving pipeline intent. Markdown fenced code blocks are supported.
           </p>
         </div>
 

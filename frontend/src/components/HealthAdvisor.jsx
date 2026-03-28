@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import MarkdownContent from './MarkdownContent';
+import { normalizeConfigText } from '../utils/contentFormat';
 
 const GRADE_COLORS = {
   A: 'text-emerald-600',
@@ -228,7 +230,7 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
 
   useEffect(() => {
     if (typeof currentYaml === 'string' && currentYaml.trim()) {
-      setYamlInput(currentYaml);
+      setYamlInput(normalizeConfigText(currentYaml));
     }
   }, [currentYaml]);
 
@@ -249,8 +251,23 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
       return;
     }
 
-    setYamlInput(currentYaml);
+    setYamlInput(normalizeConfigText(currentYaml));
     setError('');
+  };
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const rawContent = typeof loadEvent.target?.result === 'string' ? loadEvent.target.result : '';
+      setYamlInput(normalizeConfigText(rawContent));
+      setError('');
+    };
+    reader.readAsText(file);
   };
 
   const handleAnalyze = async () => {
@@ -263,8 +280,9 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
     setError('');
 
     try {
+      const normalizedYaml = normalizeConfigText(yamlInput);
       const { data } = await axios.post('/api/advisor/health', {
-        yaml: yamlInput,
+        yaml: normalizedYaml,
         aiProvider,
         cicdPlatform,
         aiOptions,
@@ -316,6 +334,15 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
             >
               Use latest Builder YAML
             </button>
+            <label className="px-3 py-2 rounded-lg text-xs ff-btn-secondary cursor-pointer">
+              Upload YAML/Markdown file
+              <input
+                type="file"
+                className="hidden"
+                accept=".yml,.yaml,.md,.txt,.groovy,.jenkinsfile"
+                onChange={handleFileUpload}
+              />
+            </label>
             <button
               onClick={handleLoadSample}
               className="px-3 py-2 rounded-lg text-xs ff-btn-secondary"
@@ -373,7 +400,13 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
 
             {normalizedReport.summary && (
               <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                {normalizedReport.summary}
+                <MarkdownContent content={normalizedReport.summary} className="text-sm text-slate-700" />
+              </div>
+            )}
+
+            {normalizedReport.warning && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <MarkdownContent content={normalizedReport.warning} className="text-sm text-amber-900" />
               </div>
             )}
 
@@ -394,7 +427,12 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                       <ul className="space-y-1">
                         {d.issues.map((issue, i) => (
                           <li key={i} className="text-xs text-slate-700 flex gap-2">
-                            <span className="text-rose-600">✗</span>{issue}
+                            <span className="text-rose-600">✗</span>
+                            <MarkdownContent
+                              content={issue}
+                              className="text-xs text-slate-700"
+                              compact
+                            />
                           </li>
                         ))}
                       </ul>
@@ -406,7 +444,12 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                       <ul className="space-y-1">
                         {d.tips.map((tip, i) => (
                           <li key={i} className="text-xs text-slate-700 flex gap-2">
-                            <span className="text-emerald-600">→</span>{tip}
+                            <span className="text-emerald-600">→</span>
+                            <MarkdownContent
+                              content={tip}
+                              className="text-xs text-slate-700"
+                              compact
+                            />
                           </li>
                         ))}
                       </ul>
@@ -423,7 +466,8 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                 <ol className="space-y-2">
                   {normalizedReport.topRecommendations.map((rec, i) => (
                     <li key={i} className="text-sm text-slate-700 flex gap-3">
-                      <span className="text-sky-700 font-bold">{i + 1}.</span>{rec}
+                      <span className="text-sky-700 font-bold">{i + 1}.</span>
+                      <MarkdownContent content={rec} className="text-sm text-slate-700" compact />
                     </li>
                   ))}
                 </ol>
