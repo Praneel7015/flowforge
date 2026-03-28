@@ -15,6 +15,7 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
+import { saveCurrentAsTemplate } from '../components/NodeTemplates';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -127,13 +128,17 @@ const createInitialEditorState = () => {
   }
 };
 
-function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied }) {
+function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode }) {
   const reactFlowWrapper = useRef(null);
   const [editorState, setEditorState] = useState(createInitialEditorState);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [configNodeId, setConfigNodeId] = useState(null);
   const [rightDragSelection, setRightDragSelection] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
   const canRedo = editorState.future.length > 0;
@@ -401,6 +406,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         return;
       }
 
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedEdgeIds.size > 0) {
+        event.preventDefault();
+        const edgeIdsToRemove = new Set(selectedEdgeIds);
+
+        applyTrackedWorkflowChange((current) => ({
+          ...current,
+          edges: current.edges.filter((edge) => !edgeIdsToRemove.has(edge.id)),
+        }));
+
+        setSelectedEdgeIds(new Set());
+        return;
+      }
+
       const boxSelectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
       const nodeIdsToDelete = Array.from(
         new Set([selectedNodeId, configNodeId, ...boxSelectedNodeIds].filter(Boolean))
@@ -436,6 +454,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     handleRedo,
     handleUndo,
     nodes,
+    selectedEdgeIds,
     selectedNodeId,
   ]);
 
@@ -503,8 +522,44 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     [applyTrackedWorkflowChange, reactFlowInstance]
   );
 
+  const addNodeFromKeyboard = useCallback(
+    (type, label) => {
+      const offset = nodes.length * 30;
+      const newNode = {
+        id: getNextId(),
+        type,
+        position: { x: 250 + offset, y: 100 + offset },
+        data: { label, config: {} },
+      };
+
+      applyTrackedWorkflowChange((current) => ({
+        ...current,
+        nodes: current.nodes.concat(newNode),
+      }));
+      setSelectedNodeId(newNode.id);
+    },
+    [applyTrackedWorkflowChange, nodes.length]
+  );
+
+  useEffect(() => {
+    onRegisterAddNode?.(addNodeFromKeyboard);
+  }, [addNodeFromKeyboard, onRegisterAddNode]);
+
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeIds(new Set());
+  }, []);
+
+  const onEdgeClick = useCallback((_event, edge) => {
+    setSelectedNodeId(null);
+    setConfigNodeId(null);
+    setSelectedEdgeIds((prev) => {
+      const next = new Set();
+      if (!prev.has(edge.id)) {
+        next.add(edge.id);
+      }
+      return next;
+    });
   }, []);
 
   const onNodeContextMenu = useCallback((event, node) => {
@@ -620,6 +675,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
     setSelectedNodeId(null);
     setConfigNodeId(null);
+    setSelectedEdgeIds(new Set());
   }, [applyUntrackedWorkflowChange]);
 
   const handleNodeConfigSave = (nodeId, config) => {
@@ -656,17 +712,16 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     if (nodes.length === 0 && edges.length === 0) {
       return;
     }
+    setShowClearConfirm(true);
+  }, [edges.length, nodes.length]);
 
-    const confirmed = window.confirm('Clear the entire canvas and start from scratch?');
-    if (!confirmed) {
-      return;
-    }
-
+  const confirmClearCanvas = useCallback(() => {
     applyTrackedWorkflowChange({ nodes: [], edges: [] });
     setSelectedNodeId(null);
     setConfigNodeId(null);
     setRightDragSelection(null);
-  }, [applyTrackedWorkflowChange, edges.length, nodes.length]);
+    setShowClearConfirm(false);
+  }, [applyTrackedWorkflowChange]);
 
   return (
     <div
@@ -677,7 +732,13 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={edges.map((edge) => ({
+          ...edge,
+          style: selectedEdgeIds.has(edge.id)
+            ? { stroke: 'var(--ff-danger)', strokeWidth: 2.5 }
+            : undefined,
+          selected: selectedEdgeIds.has(edge.id),
+        }))}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -685,6 +746,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onNodeContextMenu={onNodeContextMenu}
         onNodeDragStart={onNodeDragStart}
         onPaneClick={onPaneClick}
@@ -698,7 +760,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         fitView
         className="bg-transparent"
       >
-        <Background variant="dots" gap={20} size={1} color="#c4d2df" />
+        <Background variant="dots" gap={20} size={1} color="var(--ff-dots-color)" />
         <Controls />
         <MiniMap
           nodeColor={(node) => {
@@ -726,7 +788,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
             };
             return colors[node.type] || '#6b7280';
           }}
-          className="!bg-white !border !border-slate-300"
+          className="!bg-[var(--ff-minimap-bg)] !border !border-[var(--ff-card-border-strong)]"
         />
       </ReactFlow>
 
@@ -750,7 +812,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         <button
           onClick={handleDeleteSelectedNode}
           disabled={!(selectedNodeId || configNodeId || nodes.some((node) => node.selected))}
-          className="px-3 py-2 rounded-lg text-xs bg-rose-50 border border-rose-200 text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/20 text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
           title="Delete selected node"
         >
           Delete
@@ -764,6 +826,14 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           Clear
         </button>
         <button
+          onClick={() => { if (nodes.length > 0) setShowSaveTemplate(true); }}
+          disabled={nodes.length === 0}
+          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Save current workflow as a reusable template"
+        >
+          Save Template
+        </button>
+        <button
           onClick={handleExport}
           className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity ff-btn-primary"
         >
@@ -772,13 +842,13 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       </div>
 
       {/* Node count indicator */}
-      <div className="absolute top-4 left-20 px-3 py-1 bg-white/90 border border-slate-300 rounded-lg text-xs text-slate-600 z-10 ff-code">
+      <div className="absolute top-4 left-20 px-3 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] z-10 ff-code">
         {nodes.length} nodes | {edges.length} connections
       </div>
 
       {selectionOverlay && (
         <div
-          className="absolute z-20 pointer-events-none rounded-sm border border-slate-700/70 border-dashed bg-slate-900/5"
+          className="absolute z-20 pointer-events-none rounded-sm border border-[var(--ff-border-strong)] border-dashed bg-[var(--ff-accent-soft)]"
           style={{
             left: selectionOverlay.left,
             top: selectionOverlay.top,
@@ -786,6 +856,21 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
             height: selectionOverlay.height,
           }}
         />
+      )}
+
+      {/* Empty state */}
+      {nodes.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
+          <div className="text-center max-w-xs pointer-events-auto">
+            <div className="w-10 h-10 rounded-lg bg-[var(--ff-accent-soft)] flex items-center justify-center mx-auto mb-3">
+              <span className="text-[var(--ff-accent)] text-sm font-bold">FF</span>
+            </div>
+            <p className="text-sm font-semibold text-[var(--ff-text-secondary)]">No nodes yet</p>
+            <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
+              Drag nodes from the sidebar or press Enter on a node to add it. Use Generate or Migrate to auto-build a pipeline.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Node config panel */}
@@ -797,6 +882,90 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           onClose={() => setConfigNodeId(null)}
         />
       )}
+
+      {/* Save template dialog */}
+      {showSaveTemplate && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm">
+          <div
+            className="bg-[var(--ff-modal-bg)] rounded-2xl border border-[var(--ff-card-border-strong)] shadow-[0_20px_40px_rgba(0,0,0,0.4)] p-6 max-w-sm mx-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <h3 className="text-sm font-semibold text-[var(--ff-text)]">Save as Template</h3>
+            <p className="text-xs text-[var(--ff-text-secondary)] mt-2 leading-relaxed">
+              Save the current {nodes.length} nodes as a reusable template.
+            </p>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name"
+              className="ff-input px-3 py-2 text-sm mt-3"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && templateName.trim()) {
+                  saveCurrentAsTemplate(templateName.trim(), `${nodes.length} nodes`, nodes, edges);
+                  setShowSaveTemplate(false);
+                  setTemplateName('');
+                }
+              }}
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setShowSaveTemplate(false); setTemplateName(''); }}
+                className="flex-1 px-4 py-2 rounded-lg text-sm ff-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (templateName.trim()) {
+                    saveCurrentAsTemplate(templateName.trim(), `${nodes.length} nodes`, nodes, edges);
+                    setShowSaveTemplate(false);
+                    setTemplateName('');
+                  }
+                }}
+                disabled={!templateName.trim()}
+                className="flex-1 px-4 py-2 rounded-lg text-sm ff-btn-primary disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear canvas confirmation modal */}
+      {showClearConfirm && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm">
+          <div
+            className="bg-[var(--ff-modal-bg)] rounded-2xl border border-[var(--ff-card-border-strong)] shadow-[0_20px_40px_rgba(0,0,0,0.4)] p-6 max-w-sm mx-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-confirm-title"
+          >
+            <h3 id="clear-confirm-title" className="text-sm font-semibold text-[var(--ff-text)]">Clear canvas?</h3>
+            <p className="text-xs text-[var(--ff-text-secondary)] mt-2 leading-relaxed">
+              This will remove all nodes and connections. You can undo this action with Ctrl+Z.
+            </p>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 px-4 py-2 rounded-lg text-sm ff-btn-secondary"
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmClearCanvas}
+                className="flex-1 px-4 py-2 rounded-lg text-sm bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 font-medium"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -804,7 +973,13 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 export default function WorkflowEditor(props) {
   return (
     <ReactFlowProvider>
-      <WorkflowEditorInner {...props} />
+      <WorkflowEditorInner
+        onYamlExport={props.onYamlExport}
+        importedWorkflow={props.importedWorkflow}
+        onImportedWorkflowApplied={props.onImportedWorkflowApplied}
+        cicdPlatform={props.cicdPlatform}
+        onRegisterAddNode={props.onRegisterAddNode}
+      />
     </ReactFlowProvider>
   );
 }

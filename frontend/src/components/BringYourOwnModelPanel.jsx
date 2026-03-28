@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+
+const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
 const providerHints = {
   featherless: {
@@ -24,6 +26,27 @@ const providerHints = {
   },
 };
 
+function readSavedApiKey() {
+  try {
+    const raw = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return typeof parsed?.key === 'string' ? parsed.key : '';
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+function persistApiKey(key) {
+  try {
+    if (key) {
+      localStorage.setItem(API_KEY_STORAGE_KEY, JSON.stringify({ key, savedAt: new Date().toISOString() }));
+    } else {
+      localStorage.removeItem(API_KEY_STORAGE_KEY);
+    }
+  } catch { /* ignore */ }
+}
+
 export default function BringYourOwnModelPanel({
   selectedProvider,
   value,
@@ -32,21 +55,49 @@ export default function BringYourOwnModelPanel({
 }) {
   const hints = providerHints[selectedProvider] || providerHints.featherless;
   const [testState, setTestState] = useState({ status: 'idle', message: '' });
+  const [rememberKey, setRememberKey] = useState(() => Boolean(readSavedApiKey()));
+  const abortRef = useRef(null);
+
+  // On mount, restore saved API key if available
+  useEffect(() => {
+    const savedKey = readSavedApiKey();
+    if (savedKey && !value.apiKey) {
+      onChange({ ...value, apiKey: savedKey, enabled: true });
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
 
   useEffect(() => {
     setTestState({ status: 'idle', message: '' });
   }, [selectedProvider, value.enabled, value.apiKey, value.model, value.baseUrl]);
 
-  const handleSelfTest = async () => {
-    if (!selectedProvider) {
-      return;
+  // Persist or clear key when remember toggle changes
+  useEffect(() => {
+    if (rememberKey && value.apiKey) {
+      persistApiKey(value.apiKey);
+    } else if (!rememberKey) {
+      persistApiKey('');
     }
+  }, [rememberKey, value.apiKey]);
+
+  const handleSelfTest = async () => {
+    if (!selectedProvider) return;
 
     setTestState({ status: 'loading', message: '' });
     try {
-      const { data } = await axios.post(`/api/config/providers/ai/${selectedProvider}/self-test`, {
-        aiOptions: value,
-      });
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const { data } = await axios.post(
+        `/api/config/providers/ai/${selectedProvider}/self-test`,
+        { aiOptions: value },
+        { signal: controller.signal }
+      );
 
       if (data.valid) {
         const info = data.warning || `Connection successful (${data.metadata?.model || 'default model'})`;
@@ -55,6 +106,7 @@ export default function BringYourOwnModelPanel({
         setTestState({ status: 'error', message: data.error || 'Provider test failed' });
       }
     } catch (err) {
+      if (axios.isCancel(err)) return;
       setTestState({
         status: 'error',
         message: err.response?.data?.error || 'Provider test failed',
@@ -62,30 +114,40 @@ export default function BringYourOwnModelPanel({
     }
   };
 
+  const handleClearSavedKey = () => {
+    persistApiKey('');
+    setRememberKey(false);
+    onChange({ ...value, apiKey: '' });
+  };
+
   const feedbackColor =
     testState.status === 'success'
-      ? 'text-emerald-700'
+      ? 'text-[var(--ff-success)]'
       : testState.status === 'warning'
-        ? 'text-amber-700'
-        : 'text-rose-700';
+        ? 'text-[var(--ff-warning)]'
+        : 'text-[var(--ff-danger)]';
+
+  const hasSavedKey = Boolean(readSavedApiKey());
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+    <div className="rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Runtime Overrides</p>
-          <p className="text-xs text-slate-500 mt-1">
-            API key values are used per request and are not persisted in local storage.
+          <p className="text-sm font-semibold text-[var(--ff-text)]">Runtime Overrides</p>
+          <p className="text-xs text-[var(--ff-muted)] mt-1">
+            {rememberKey
+              ? 'API key is saved locally and will persist across refreshes.'
+              : 'API key is session-only and will be cleared on refresh.'}
           </p>
         </div>
 
-        <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+        <label className="inline-flex items-center gap-2 rounded-full border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] px-3 py-1.5 text-xs font-medium text-[var(--ff-text-secondary)] cursor-pointer">
           <input
             id="byom-toggle"
             type="checkbox"
             checked={value.enabled}
             onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
-            className="accent-slate-800"
+            className="accent-current"
           />
           Use custom API key
         </label>
@@ -93,7 +155,7 @@ export default function BringYourOwnModelPanel({
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             Model preference
           </label>
           <input
@@ -106,7 +168,7 @@ export default function BringYourOwnModelPanel({
         </div>
 
         <div>
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             Base URL (optional)
           </label>
           <input
@@ -119,7 +181,7 @@ export default function BringYourOwnModelPanel({
         </div>
 
         <div>
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             API key (optional)
           </label>
           <input
@@ -128,9 +190,32 @@ export default function BringYourOwnModelPanel({
             onChange={(e) => onChange({ ...value, apiKey: e.target.value })}
             disabled={!value.enabled}
             placeholder={value.enabled ? 'Paste your key' : 'Enable custom key to edit'}
-            className="ff-input px-3 py-2 text-sm disabled:opacity-60"
+            className="ff-input px-3 py-2 text-sm disabled:opacity-40"
           />
         </div>
+      </div>
+
+      {/* Remember key + clear */}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <label className="inline-flex items-center gap-2 text-xs text-[var(--ff-text-secondary)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rememberKey}
+            onChange={(e) => setRememberKey(e.target.checked)}
+            disabled={!value.enabled}
+            className="accent-current"
+          />
+          Remember API key across sessions
+        </label>
+
+        {hasSavedKey && (
+          <button
+            onClick={handleClearSavedKey}
+            className="text-xs text-[var(--ff-danger)] hover:underline"
+          >
+            Clear saved key
+          </button>
+        )}
       </div>
 
       {providerSelfTestEnabled && (

@@ -78,6 +78,12 @@ const config = {
       fileName: '.circleci/config.yml',
       enabled: true,
     },
+    bitbucket: {
+      name: 'bitbucket',
+      displayName: 'Bitbucket Pipelines',
+      fileName: 'bitbucket-pipelines.yml',
+      enabled: true,
+    },
   },
   defaults: {
     aiProvider: process.env.DEFAULT_AI_PROVIDER || 'featherless',
