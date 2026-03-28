@@ -35,7 +35,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
           ),
           blockquote: ({ node, ...props }) => (
             <blockquote
-              className="my-2 border-l-2 border-slate-300 pl-3 italic text-slate-600"
+              className="my-2 border-l-2 border-[var(--ff-border-strong)] pl-3 italic text-[var(--ff-text-secondary)]"
               {...props}
             />
           ),
@@ -45,7 +45,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
             if (inline) {
               return (
                 <code
-                  className="ff-code rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[0.85em] text-slate-800"
+                  className="ff-code rounded bg-[var(--ff-card-bg-hover)] border border-[var(--ff-card-border-strong)] px-1.5 py-0.5 text-[0.85em] text-emerald-300"
                   {...props}
                 >
                   {codeValue}
@@ -54,7 +54,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
             }
 
             return (
-              <pre className="my-2 overflow-x-auto rounded-lg border border-slate-300 bg-slate-100 p-3 text-xs text-slate-800 ff-code">
+              <pre className="my-2 overflow-x-auto rounded-lg border border-[var(--ff-card-border-strong)] bg-[var(--ff-code-bg)] p-3 text-xs text-[var(--ff-text-secondary)] ff-code">
                 <code className={codeClassName} {...props}>
                   {codeValue}
                 </code>
@@ -63,7 +63,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
           },
           a: ({ node, ...props }) => (
             <a
-              className="text-sky-700 underline underline-offset-2 hover:text-sky-900"
+              className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300"
               target="_blank"
               rel="noreferrer"
               {...props}

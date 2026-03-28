@@ -222,11 +222,11 @@ export default function JenkinsConverter({
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Migration</p>
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--ff-muted)]">Migration</p>
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-[var(--ff-text)]">
             Convert CI/CD Configurations
           </h2>
-          <p className="text-slate-600 text-sm leading-relaxed">
+          <p className="text-[var(--ff-text-secondary)] text-sm leading-relaxed">
             Choose a source and target platform, paste your configuration, and FlowForge will convert
             it while preserving pipeline intent. Markdown fenced code blocks are supported.
           </p>
@@ -234,7 +234,7 @@ export default function JenkinsConverter({
 
         <div className="ff-surface-soft p-4 grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-[0.15em] text-slate-500">Source Platform</label>
+            <label className="text-xs uppercase tracking-[0.15em] text-[var(--ff-muted)]">Source Platform</label>
             <select
               value={sourcePlatform}
               onChange={(event) => setSourcePlatform(event.target.value)}
@@ -249,7 +249,7 @@ export default function JenkinsConverter({
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-[0.15em] text-slate-500">Target Platform</label>
+            <label className="text-xs uppercase tracking-[0.15em] text-[var(--ff-muted)]">Target Platform</label>
             <select
               value={targetPlatform}
               onChange={(event) => setTargetPlatform(event.target.value)}
@@ -270,17 +270,17 @@ export default function JenkinsConverter({
         </div>
 
         {sourcePlatform === targetPlatform && (
-          <p className="text-amber-700 text-sm">
+          <p className="text-amber-400 text-sm">
             Source and target formats are identical. Select a different target to convert.
           </p>
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <div className="rounded-xl border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] px-4 py-3 text-sm text-[var(--ff-text-secondary)]">
           <span className="font-semibold">Conversion:</span> {sourceDisplay}{' -> '}{targetDisplay}
         </div>
 
         <div className="flex gap-3">
-          <label className="px-4 py-2 rounded-lg text-sm cursor-pointer transition-colors ff-btn-secondary hover:border-slate-400">
+          <label className="px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ff-btn-secondary hover:border-slate-400">
             Upload Config File
             <input
               type="file"
@@ -291,7 +291,7 @@ export default function JenkinsConverter({
           </label>
           <button
             onClick={loadExample}
-            className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary hover:border-slate-400"
+            className="px-3 py-1.5 rounded-lg text-xs transition-colors ff-btn-secondary hover:border-slate-400"
           >
             Load Example
           </button>
@@ -313,7 +313,12 @@ export default function JenkinsConverter({
           {loading ? 'Converting...' : `Convert ${sourceDisplay} -> ${targetDisplay}`}
         </button>
 
-        {error && <p className="text-rose-700 text-sm">{error}</p>}
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+            <p className="flex-1">{error}</p>
+            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">✕</button>
+          </div>
+        )}
       </div>
     </div>
   );

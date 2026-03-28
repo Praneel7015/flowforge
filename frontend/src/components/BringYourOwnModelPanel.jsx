@@ -64,28 +64,28 @@ export default function BringYourOwnModelPanel({
 
   const feedbackColor =
     testState.status === 'success'
-      ? 'text-emerald-700'
+      ? 'text-emerald-400'
       : testState.status === 'warning'
-        ? 'text-amber-700'
-        : 'text-rose-700';
+        ? 'text-amber-400'
+        : 'text-red-400';
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+    <div className="rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Runtime Overrides</p>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-sm font-semibold text-[var(--ff-text)]">Runtime Overrides</p>
+          <p className="text-xs text-[var(--ff-muted)] mt-1">
             API key values are used per request and are not persisted in local storage.
           </p>
         </div>
 
-        <label className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+        <label className="inline-flex items-center gap-2 rounded-full border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] px-3 py-1.5 text-xs font-medium text-[var(--ff-text-secondary)] cursor-pointer">
           <input
             id="byom-toggle"
             type="checkbox"
             checked={value.enabled}
             onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
-            className="accent-slate-800"
+            className="accent-emerald-500"
           />
           Use custom API key
         </label>
@@ -93,7 +93,7 @@ export default function BringYourOwnModelPanel({
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             Model preference
           </label>
           <input
@@ -106,7 +106,7 @@ export default function BringYourOwnModelPanel({
         </div>
 
         <div>
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             Base URL (optional)
           </label>
           <input
@@ -119,7 +119,7 @@ export default function BringYourOwnModelPanel({
         </div>
 
         <div>
-          <label className="text-[11px] uppercase tracking-[0.14em] text-slate-500 block mb-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
             API key (optional)
           </label>
           <input
@@ -128,7 +128,7 @@ export default function BringYourOwnModelPanel({
             onChange={(e) => onChange({ ...value, apiKey: e.target.value })}
             disabled={!value.enabled}
             placeholder={value.enabled ? 'Paste your key' : 'Enable custom key to edit'}
-            className="ff-input px-3 py-2 text-sm disabled:opacity-60"
+            className="ff-input px-3 py-2 text-sm disabled:opacity-40"
           />
         </div>
       </div>

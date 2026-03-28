@@ -54,13 +54,13 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
   };
 
   return (
-    <div className="absolute top-4 left-4 w-80 ff-surface shadow-[0_20px_40px_rgba(15,23,42,0.18)] z-20 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+    <div className="absolute top-4 left-4 w-80 bg-[var(--ff-modal-bg)] border border-[var(--ff-card-border-strong)] rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl z-20 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ff-card-border)]">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">{node.data.label}</h3>
-          <span className="text-xs text-slate-500 ff-code">{node.type}</span>
+          <h3 className="text-sm font-semibold text-[var(--ff-text)]">{node.data.label}</h3>
+          <span className="text-xs text-[var(--ff-muted)] ff-code">{node.type}</span>
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-slate-800 text-sm">
+        <button onClick={onClose} aria-label="Close node configuration" className="text-[var(--ff-muted)] hover:text-[var(--ff-text)] text-sm transition-colors">
           ✕
         </button>
       </div>
@@ -68,7 +68,7 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
       <div className="p-4 space-y-3">
         {fields.map((field) => (
           <div key={field}>
-            <label className="block text-xs text-slate-500 mb-1 capitalize">{field}</label>
+            <label className="block text-xs text-[var(--ff-muted)] mb-1 capitalize">{field}</label>
             {field === 'script' ? (
               <textarea
                 value={config[field] || ''}
@@ -90,10 +90,10 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
         ))}
       </div>
 
-      <div className="flex gap-2 px-4 py-3 border-t border-slate-200">
+      <div className="flex gap-2 px-4 py-3 border-t border-[var(--ff-card-border)]">
         <button
           onClick={() => onDelete?.(node.id)}
-          className="px-4 py-2 rounded-lg text-sm transition-colors bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100"
+          className="px-4 py-2 rounded-lg text-sm transition-colors bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20"
         >
           Delete
         </button>
@@ -105,7 +105,7 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
         </button>
         <button
           onClick={onClose}
-          className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary hover:border-slate-400"
+          className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary"
         >
           Cancel
         </button>

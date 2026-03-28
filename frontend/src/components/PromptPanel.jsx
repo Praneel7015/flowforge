@@ -113,40 +113,40 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Generator</p>
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--ff-muted)]">Generator</p>
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-[var(--ff-text)]">
             Build a pipeline from plain language
           </h2>
-          <p className="text-slate-600 text-sm leading-relaxed">
+          <p className="text-[var(--ff-text-secondary)] text-sm leading-relaxed">
             Describe your project goals and constraints. FlowForge will generate a
             {' '}
-            <span className="font-semibold text-slate-800">{platformNames[cicdPlatform] || 'CI/CD'}</span>
+            <span className="font-semibold text-[var(--ff-text)]">{platformNames[cicdPlatform] || 'CI/CD'}</span>
             {' '}
             config and visual workflow.
           </p>
         </div>
 
         <section className="ff-surface-soft p-4 space-y-3">
-          <p className="text-xs font-semibold text-slate-700 uppercase tracking-[0.14em]">
+          <p className="text-xs font-semibold text-[var(--ff-text-secondary)] uppercase tracking-[0.14em]">
             Prompt Boosters
           </p>
 
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setPrompt(buildProductionTemplate(targetPlatformLabel))}
-              className="px-3 py-2 rounded-lg text-xs ff-btn-secondary"
+              className="px-3 py-1.5 rounded-lg text-xs ff-btn-secondary"
             >
               Load Production Template
             </button>
             <button
               onClick={() => setPrompt(buildFullCoverageExample(targetPlatformLabel))}
-              className="px-3 py-2 rounded-lg text-xs ff-btn-secondary"
+              className="px-3 py-1.5 rounded-lg text-xs ff-btn-secondary"
             >
               Load Full Node Coverage Example
             </button>
           </div>
 
-          <p className="text-xs text-slate-600 leading-relaxed">
+          <p className="text-xs text-[var(--ff-text-secondary)] leading-relaxed">
             High-quality prompts should include triggers, quality gates, security checks, deploy strategy,
             rollback behavior, notifications, and branch/environment conditions.
           </p>
@@ -168,19 +168,25 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
           {loading ? 'Generating...' : `Generate ${platformNames[cicdPlatform] || 'Pipeline'}`}
         </button>
 
-        {error && <p className="text-rose-700 text-sm">{error}</p>}
+        {error && (
+          <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+            <p className="flex-1">{error}</p>
+            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">✕</button>
+          </div>
+        )}
 
         <div className="pt-2">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-[0.14em] mb-3">
+          <h3 className="text-xs font-semibold text-[var(--ff-muted)] uppercase tracking-[0.14em] mb-3">
             Example prompts
           </h3>
+
           <div className="space-y-2">
             {examplePrompts.map((example, i) => (
               <button
                 key={i}
                 onClick={() => setPrompt(example)}
-                className="w-full text-left px-4 py-3 rounded-xl border border-slate-300 bg-white
-                  text-sm text-slate-700 hover:border-slate-400 transition-colors"
+                className="w-full text-left px-4 py-3 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)]
+                  text-sm text-[var(--ff-text-secondary)] hover:border-[var(--ff-border-strong)] hover:bg-[var(--ff-card-bg-hover)] transition-colors"
               >
                 {example}
               </button>

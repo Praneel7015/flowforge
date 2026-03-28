@@ -9,6 +9,7 @@ import HealthAdvisor from './components/HealthAdvisor';
 import PipelineChat from './components/PipelineChat';
 import SettingsPage from './pages/SettingsPage';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
+import { useTheme } from './utils/theme';
 
 const clientFeatureFlags = getClientFeatureFlags();
 const SETTINGS_STORAGE_KEY = 'flowforge.preferences.v1';
@@ -192,9 +193,11 @@ function pickInitialSelection(providerData, storedPreferences) {
 }
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
   const [yamlOutput, setYamlOutput] = useState('');
   const [activePanel, setActivePanel] = useState('builder');
   const [importedWorkflow, setImportedWorkflow] = useState(null);
+  const [addNodeToCanvas, setAddNodeToCanvas] = useState(null);
 
   // Provider state
   const [providers, setProviders] = useState({ ai: [], cicd: [], defaults: {} });
@@ -415,6 +418,7 @@ export default function App() {
           importedWorkflow={importedWorkflow}
           onImportedWorkflowApplied={handleImportedWorkflowApplied}
           cicdPlatform={selectedProviders.cicd}
+          onRegisterAddNode={(fn) => setAddNodeToCanvas(() => fn)}
         />
       );
     }
@@ -505,150 +509,156 @@ export default function App() {
         }}
         className={`ff-nav-btn ${isActive ? 'ff-nav-btn-active' : ''} ${
           compact ? 'ff-nav-btn-compact' : ''
-        } ${isLocked ? 'opacity-55' : ''}`}
+        } ${isLocked ? 'opacity-60' : ''}`}
         title={isLocked ? lockedMessage : undefined}
       >
         <span className="text-xs opacity-70">{item.icon}</span>
         <span>{item.label}</span>
-        {isLocked && <span className="ml-auto text-[10px] font-semibold opacity-70">LOCKED</span>}
+        {isLocked && <span className="ml-auto text-xs font-semibold opacity-80">LOCKED</span>}
       </button>
     );
   };
 
   const loadingView = (
     <div className="h-full ff-surface p-6 flex items-center justify-center">
-      <p className="text-sm text-slate-500">Loading workspace configuration...</p>
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto" />
+        <p className="text-sm text-[var(--ff-text-secondary)] mt-4">Loading workspace...</p>
+      </div>
     </div>
   );
 
   return (
-    <div className="ff-app-shell text-slate-900">
-      <div className="h-screen p-3 md:p-4">
-        <div className="h-full w-full rounded-[24px] border border-slate-200/80 bg-white/70 backdrop-blur-xl shadow-[0_22px_55px_rgba(15,23,42,0.08)] overflow-hidden flex">
-          <aside className="hidden lg:flex w-64 border-r border-slate-200/80 bg-white/65 flex-col">
-            <div className="px-5 pt-6 pb-4 border-b border-slate-200/80">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">FlowForge</p>
-              <h1 className="text-2xl font-bold tracking-tight mt-1">Pipeline Studio</h1>
-              <p className="text-xs text-slate-500 mt-2">
-                A cleaner workspace for generating, editing, and shipping CI/CD pipelines.
-              </p>
+    <div className="ff-app-shell">
+      <div className="h-screen flex">
+        {/* ── Sidebar ────────────────────────── */}
+        <aside className="hidden lg:flex w-60 flex-col border-r border-[var(--ff-card-border)] bg-[var(--ff-sidebar-bg)] backdrop-blur-xl">
+          <div className="px-5 pt-6 pb-5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              </div>
+              <div>
+                <h1 className="text-base font-bold tracking-tight text-[var(--ff-text)]">FlowForge</h1>
+                <p className="text-[11px] text-[var(--ff-muted)] font-medium">Pipeline Studio</p>
+              </div>
             </div>
+          </div>
 
-            <nav className="p-4 space-y-2">{NAV_ITEMS.map((item) => renderNavigationButton(item))}</nav>
+          <nav className="flex-1 px-3 space-y-1">
+            {NAV_ITEMS.map((item) => renderNavigationButton(item))}
+          </nav>
 
-            <div className="mt-auto p-4 border-t border-slate-200/80 space-y-3">
-              <div className="ff-surface-soft p-3">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Current Stack</p>
-                <p className="mt-2 text-sm font-semibold text-slate-800">{selectedAI?.displayName || 'No AI provider selected'}</p>
-                <p className="text-xs text-slate-500">{currentCICDPlatform.displayName}</p>
-                {byomConfig.enabled && <p className="text-xs text-blue-700 mt-2">Custom key enabled</p>}
+          <div className="p-3 space-y-3 border-t border-[var(--ff-card-border)]">
+            <div className="rounded-xl bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)] p-3">
+              <p className="text-[11px] uppercase tracking-widest text-[var(--ff-muted)] font-medium">Stack</p>
+              <p className="mt-1.5 text-sm font-semibold text-[var(--ff-text)]">{selectedAI?.displayName || 'No AI selected'}</p>
+              <p className="text-xs text-[var(--ff-muted)]">{currentCICDPlatform.displayName}</p>
+              {byomConfig.enabled && (
+                <span className="inline-flex items-center gap-1 mt-2 text-xs text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  Custom key
+                </span>
+              )}
+              {isOnboardingRequired && (
+                <p className="text-xs text-amber-400 mt-2 font-medium">Setup required</p>
+              )}
+              {isLimitedMode && (
+                <p className="text-xs text-amber-400 mt-2 font-medium">Limited mode</p>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* ── Main Area ──────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* ── Top Bar ──────────────────────── */}
+          <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-4 md:px-6 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg md:text-xl font-semibold tracking-tight text-[var(--ff-text)]">
+                  {currentPanelMeta.title}
+                </h2>
+                <p className="text-sm text-[var(--ff-muted)] mt-0.5">{currentPanelMeta.subtitle}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
                 {isOnboardingRequired && (
-                  <p className="text-xs text-slate-700 mt-2 font-medium">
-                    First-run setup required
-                  </p>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                    Setup required
+                  </span>
                 )}
                 {isLimitedMode && (
-                  <p className="text-xs text-amber-700 mt-2 font-medium">
-                    Limited mode is active
-                  </p>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                    Limited
+                  </span>
+                )}
+                <span className="px-2.5 py-1 rounded-lg text-xs font-medium border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)]">
+                  {selectedAI?.displayName || 'No provider'}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg text-xs font-medium border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)]">
+                  {currentCICDPlatform.displayName}
+                </span>
+                <button
+                  onClick={toggleTheme}
+                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                  className="ff-btn-secondary rounded-lg p-1.5 text-xs"
+                >
+                  {theme === 'dark' ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActivePanel('settings')}
+                  className="ff-btn-secondary rounded-lg px-3 py-1.5 text-xs font-medium"
+                >
+                  Settings
+                </button>
+              </div>
+            </div>
+
+            <nav className="mt-3 lg:hidden flex gap-2 overflow-x-auto pb-1">
+              {NAV_ITEMS.map((item) => renderNavigationButton(item, true))}
+            </nav>
+          </header>
+
+          {/* ── Content ──────────────────────── */}
+          <main className="flex-1 min-h-0 p-2.5 md:p-3">
+            {!providersLoaded && loadingView}
+
+            {providersLoaded && activePanel === 'builder' && (
+              <div
+                className={`h-full grid gap-2.5 ${
+                  showYamlPanel
+                    ? 'xl:grid-cols-[240px_minmax(0,1fr)_minmax(320px,380px)]'
+                    : 'xl:grid-cols-[240px_minmax(0,1fr)]'
+                } grid-cols-1`}
+              >
+                {showSidebar && <Sidebar featureFlags={featureFlags} onAddNode={addNodeToCanvas} />}
+                <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
+                {showYamlPanel && (
+                  <YamlPreview yaml={yamlOutput} onClose={() => setYamlOutput('')} platform={currentCICDPlatform} />
                 )}
               </div>
-              <button
-                onClick={() => setActivePanel('settings')}
-                className="w-full ff-btn-secondary rounded-xl px-3 py-2 text-sm font-medium"
+            )}
+
+            {providersLoaded && activePanel !== 'builder' && (
+              <div
+                className={`h-full grid gap-2.5 ${
+                  showYamlPanel
+                    ? 'xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]'
+                    : 'grid-cols-1'
+                }`}
               >
-                Open Settings
-              </button>
-            </div>
-          </aside>
-
-          <div className="flex-1 min-w-0 flex flex-col">
-            <header className="border-b border-slate-200/80 bg-white/60 px-4 md:px-6 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl md:text-2xl font-semibold tracking-tight text-slate-900">
-                    {currentPanelMeta.title}
-                  </h2>
-                  <p className="text-sm text-slate-600 mt-1">{currentPanelMeta.subtitle}</p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {isOnboardingRequired && (
-                    <span className="px-3 py-1.5 rounded-full text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800">
-                      First-run setup
-                    </span>
-                  )}
-                  {isLimitedMode && (
-                    <span className="px-3 py-1.5 rounded-full text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800">
-                      Limited mode
-                    </span>
-                  )}
-                  <span className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-300 bg-white">
-                    {selectedAI?.displayName || 'No provider'}
-                  </span>
-                  <span className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-300 bg-white">
-                    {currentCICDPlatform.displayName}
-                  </span>
-                  <button
-                    onClick={() => setActivePanel('settings')}
-                    className="ff-btn-secondary rounded-full px-3 py-1.5 text-xs font-medium"
-                  >
-                    Settings
-                  </button>
-                </div>
+                <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
+                {showYamlPanel && (
+                  <YamlPreview yaml={yamlOutput} onClose={() => setYamlOutput('')} platform={currentCICDPlatform} />
+                )}
               </div>
-
-              <nav className="mt-4 lg:hidden flex gap-2 overflow-x-auto pb-1">
-                {NAV_ITEMS.map((item) => renderNavigationButton(item, true))}
-              </nav>
-            </header>
-
-            <main className="flex-1 min-h-0 p-3 md:p-4">
-              {!providersLoaded && loadingView}
-
-              {providersLoaded && activePanel === 'builder' && (
-                <div
-                  className={`h-full grid gap-3 ${
-                    showYamlPanel
-                      ? 'xl:grid-cols-[250px_minmax(0,1fr)_minmax(320px,380px)]'
-                      : 'xl:grid-cols-[250px_minmax(0,1fr)]'
-                  } grid-cols-1`}
-                >
-                  {showSidebar && <Sidebar featureFlags={featureFlags} />}
-
-                  <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
-
-                  {showYamlPanel && (
-                    <YamlPreview
-                      yaml={yamlOutput}
-                      onClose={() => setYamlOutput('')}
-                      platform={currentCICDPlatform}
-                    />
-                  )}
-                </div>
-              )}
-
-              {providersLoaded && activePanel !== 'builder' && (
-                <div
-                  className={`h-full grid gap-3 ${
-                    showYamlPanel
-                      ? 'xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]'
-                      : 'grid-cols-1'
-                  }`}
-                >
-                  <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
-
-                  {showYamlPanel && (
-                    <YamlPreview
-                      yaml={yamlOutput}
-                      onClose={() => setYamlOutput('')}
-                      platform={currentCICDPlatform}
-                    />
-                  )}
-                </div>
-              )}
-            </main>
-          </div>
+            )}
+          </main>
         </div>
       </div>
     </div>

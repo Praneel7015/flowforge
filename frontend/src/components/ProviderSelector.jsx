@@ -29,7 +29,7 @@ export default function ProviderSelector({
 
   if (visibleProviders.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-slate-500 text-xs">
+      <div className="flex items-center gap-2 text-[var(--ff-muted)] text-xs">
         <span>{typeLabels[type]}:</span>
         <span className="italic">None configured</span>
       </div>
@@ -43,6 +43,7 @@ export default function ProviderSelector({
         onChange={(e) => onChange(e.target.value)}
         className="ff-select text-xs cursor-pointer"
         title={typeLabels[type]}
+        aria-label={typeLabels[type]}
       >
         {visibleProviders.map((p) => (
           <option key={p.name} value={p.name}>
@@ -56,13 +57,14 @@ export default function ProviderSelector({
 
   return (
     <div className="space-y-1.5">
-      <span className="text-xs uppercase tracking-[0.14em] text-slate-500 whitespace-nowrap">
+      <span className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] whitespace-nowrap">
         {typeLabels[type]}
       </span>
       <select
         value={selected || ''}
         onChange={(e) => onChange(e.target.value)}
         className="ff-select text-sm cursor-pointer min-w-[220px]"
+        aria-label={typeLabels[type]}
       >
         {visibleProviders.map((p) => (
           <option key={p.name} value={p.name}>
