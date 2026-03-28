@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: flowforge-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: FRONTEND_URL
+        value: "https://highcortisol.xyz,https://www.highcortisol.xyz"
+      - key: DEFAULT_AI_PROVIDER
+        value: featherless
+      - key: DEFAULT_CICD_PLATFORM
+        value: gitlab
+      - key: FEATHERLESS_API_KEY
+        sync: false
+      - key: FEATHERLESS_BASE_URL
+        value: "https://api.featherless.ai/v1"
+      - key: FEATHERLESS_MODEL
+        value: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

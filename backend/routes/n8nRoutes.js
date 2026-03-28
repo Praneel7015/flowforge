@@ -2,6 +2,23 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
+function isSafeWebhookUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return false;
+    if (/^10\./.test(host)) return false;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
+    if (/^192\.168\./.test(host)) return false;
+    if (/^169\.254\./.test(host)) return false;
+    if (host.endsWith('.internal') || host.endsWith('.local')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * POST /api/n8n/forward
  * Forward pipeline data to an n8n webhook URL.
@@ -14,13 +31,8 @@ router.post('/forward', async (req, res) => {
     return res.status(400).json({ error: 'webhookUrl is required' });
   }
 
-  try {
-    const url = new URL(webhookUrl);
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return res.status(400).json({ error: 'Invalid webhook URL protocol' });
-    }
-  } catch {
-    return res.status(400).json({ error: 'Invalid webhook URL' });
+  if (!isSafeWebhookUrl(webhookUrl)) {
+    return res.status(400).json({ error: 'Invalid webhook URL. Must be a public HTTP(S) URL.' });
   }
 
   try {
@@ -47,6 +59,10 @@ router.post('/chat', async (req, res) => {
 
   if (!chatWebhookUrl || typeof chatWebhookUrl !== 'string') {
     return res.status(400).json({ error: 'chatWebhookUrl is required' });
+  }
+
+  if (!isSafeWebhookUrl(chatWebhookUrl)) {
+    return res.status(400).json({ error: 'Invalid webhook URL. Must be a public HTTP(S) URL.' });
   }
 
   try {

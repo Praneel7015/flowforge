@@ -13,7 +13,28 @@ const platformRoutes = require('./routes/platformRoutes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((u) => u.trim())
+  : [];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, health checks)
+    if (!origin) return callback(null, true);
+    // In dev (no FRONTEND_URL set), allow localhost
+    if (allowedOrigins.length === 0) {
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS: Set FRONTEND_URL env var for production'));
+    }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS: Origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/pipelines', pipelineRoutes);

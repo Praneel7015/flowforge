@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .env
+.env.local
+.env.production.local
+.env.development.local
 *.log
 vscode/
 CONTEXT.md
+.vercel
+.claude/
