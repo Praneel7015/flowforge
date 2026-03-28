@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://api.highcortisol.xyz/api/:path*"
+      "destination": "https://flowforge-api-bi69.onrender.com/api/:path*"
     },
     {
       "source": "/((?!assets/).*)",
