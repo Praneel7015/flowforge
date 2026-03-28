@@ -7,18 +7,25 @@ function getStoredTheme() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
-  } catch {
-    // Ignore storage read errors.
-  }
+  } catch {}
   return DEFAULT_THEME;
 }
 
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
+function applyTheme(theme, animate = false) {
+  const el = document.documentElement;
+
+  if (animate) {
+    el.classList.add('ff-theme-transitioning');
+  }
+
+  el.dataset.theme = theme;
+
   try {
     localStorage.setItem(STORAGE_KEY, theme);
-  } catch {
-    // Ignore storage write errors.
+  } catch {}
+
+  if (animate) {
+    setTimeout(() => el.classList.remove('ff-theme-transitioning'), 350);
   }
 }
 
@@ -26,15 +33,20 @@ export function useTheme() {
   const [theme, setThemeState] = useState(getStoredTheme);
 
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    applyTheme(theme, false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTheme = useCallback(() => {
-    setThemeState((current) => (current === 'dark' ? 'light' : 'dark'));
+    setThemeState((current) => {
+      const next = current === 'dark' ? 'light' : 'dark';
+      applyTheme(next, true);
+      return next;
+    });
   }, []);
 
   const setTheme = useCallback((value) => {
     if (value === 'light' || value === 'dark') {
+      applyTheme(value, true);
       setThemeState(value);
     }
   }, []);

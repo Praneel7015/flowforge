@@ -61,7 +61,7 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
           <span className="text-xs text-[var(--ff-muted)] ff-code">{node.type}</span>
         </div>
         <button onClick={onClose} aria-label="Close node configuration" className="text-[var(--ff-muted)] hover:text-[var(--ff-text)] text-sm transition-colors">
-          ✕
+          Close
         </button>
       </div>
 

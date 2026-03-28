@@ -15,6 +15,7 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
+import { saveCurrentAsTemplate } from '../components/NodeTemplates';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -135,6 +136,9 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const [rightDragSelection, setRightDragSelection] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
   const canRedo = editorState.future.length > 0;
@@ -402,6 +406,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         return;
       }
 
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedEdgeIds.size > 0) {
+        event.preventDefault();
+        const edgeIdsToRemove = new Set(selectedEdgeIds);
+
+        applyTrackedWorkflowChange((current) => ({
+          ...current,
+          edges: current.edges.filter((edge) => !edgeIdsToRemove.has(edge.id)),
+        }));
+
+        setSelectedEdgeIds(new Set());
+        return;
+      }
+
       const boxSelectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id);
       const nodeIdsToDelete = Array.from(
         new Set([selectedNodeId, configNodeId, ...boxSelectedNodeIds].filter(Boolean))
@@ -437,6 +454,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     handleRedo,
     handleUndo,
     nodes,
+    selectedEdgeIds,
     selectedNodeId,
   ]);
 
@@ -529,6 +547,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeIds(new Set());
+  }, []);
+
+  const onEdgeClick = useCallback((_event, edge) => {
+    setSelectedNodeId(null);
+    setConfigNodeId(null);
+    setSelectedEdgeIds((prev) => {
+      const next = new Set();
+      if (!prev.has(edge.id)) {
+        next.add(edge.id);
+      }
+      return next;
+    });
   }, []);
 
   const onNodeContextMenu = useCallback((event, node) => {
@@ -644,6 +675,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
     setSelectedNodeId(null);
     setConfigNodeId(null);
+    setSelectedEdgeIds(new Set());
   }, [applyUntrackedWorkflowChange]);
 
   const handleNodeConfigSave = (nodeId, config) => {
@@ -700,7 +732,13 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={edges.map((edge) => ({
+          ...edge,
+          style: selectedEdgeIds.has(edge.id)
+            ? { stroke: 'var(--ff-danger)', strokeWidth: 2.5 }
+            : undefined,
+          selected: selectedEdgeIds.has(edge.id),
+        }))}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -708,6 +746,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         onDrop={onDrop}
         onDragOver={onDragOver}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onNodeContextMenu={onNodeContextMenu}
         onNodeDragStart={onNodeDragStart}
         onPaneClick={onPaneClick}
@@ -787,6 +826,14 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           Clear
         </button>
         <button
+          onClick={() => { if (nodes.length > 0) setShowSaveTemplate(true); }}
+          disabled={nodes.length === 0}
+          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Save current workflow as a reusable template"
+        >
+          Save Template
+        </button>
+        <button
           onClick={handleExport}
           className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity ff-btn-primary"
         >
@@ -801,7 +848,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
       {selectionOverlay && (
         <div
-          className="absolute z-20 pointer-events-none rounded-sm border border-emerald-400/50 border-dashed bg-emerald-500/5"
+          className="absolute z-20 pointer-events-none rounded-sm border border-[var(--ff-border-strong)] border-dashed bg-[var(--ff-accent-soft)]"
           style={{
             left: selectionOverlay.left,
             top: selectionOverlay.top,
@@ -815,8 +862,8 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       {nodes.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
           <div className="text-center max-w-xs pointer-events-auto">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <div className="w-10 h-10 rounded-lg bg-[var(--ff-accent-soft)] flex items-center justify-center mx-auto mb-3">
+              <span className="text-[var(--ff-accent)] text-sm font-bold">FF</span>
             </div>
             <p className="text-sm font-semibold text-[var(--ff-text-secondary)]">No nodes yet</p>
             <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
@@ -834,6 +881,58 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           onDelete={handleDeleteNodeById}
           onClose={() => setConfigNodeId(null)}
         />
+      )}
+
+      {/* Save template dialog */}
+      {showSaveTemplate && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm">
+          <div
+            className="bg-[var(--ff-modal-bg)] rounded-2xl border border-[var(--ff-card-border-strong)] shadow-[0_20px_40px_rgba(0,0,0,0.4)] p-6 max-w-sm mx-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <h3 className="text-sm font-semibold text-[var(--ff-text)]">Save as Template</h3>
+            <p className="text-xs text-[var(--ff-text-secondary)] mt-2 leading-relaxed">
+              Save the current {nodes.length} nodes as a reusable template.
+            </p>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name"
+              className="ff-input px-3 py-2 text-sm mt-3"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && templateName.trim()) {
+                  saveCurrentAsTemplate(templateName.trim(), `${nodes.length} nodes`, nodes, edges);
+                  setShowSaveTemplate(false);
+                  setTemplateName('');
+                }
+              }}
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setShowSaveTemplate(false); setTemplateName(''); }}
+                className="flex-1 px-4 py-2 rounded-lg text-sm ff-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (templateName.trim()) {
+                    saveCurrentAsTemplate(templateName.trim(), `${nodes.length} nodes`, nodes, edges);
+                    setShowSaveTemplate(false);
+                    setTemplateName('');
+                  }
+                }}
+                disabled={!templateName.trim()}
+                className="flex-1 px-4 py-2 rounded-lg text-sm ff-btn-primary disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Clear canvas confirmation modal */}

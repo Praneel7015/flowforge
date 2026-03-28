@@ -79,9 +79,9 @@ export default function YamlPreview({ yaml, onClose, platform }) {
           <button
             onClick={onClose}
             aria-label="Close YAML preview"
-            className="px-2 py-1 text-xs text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors"
+            className="px-2.5 py-1 text-xs text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors"
           >
-            ✕
+            Close
           </button>
         </div>
       </div>

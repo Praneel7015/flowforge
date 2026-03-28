@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 
 const FULL_NODE_COVERAGE = [
@@ -72,6 +72,11 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const abortRef = useRef(null);
+
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
 
   const platformNames = {
     gitlab: 'GitLab CI',
@@ -95,14 +100,18 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
     setError('');
 
     try {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       const { data } = await axios.post('/api/pipelines/generate', {
         prompt,
         aiProvider,
         cicdPlatform,
         aiOptions,
-      });
+      }, { signal: controller.signal });
       onGenerated(data);
     } catch (err) {
+      if (axios.isCancel(err)) return;
       setError(err.response?.data?.error || 'Failed to generate pipeline. Check backend connection.');
     } finally {
       setLoading(false);
@@ -171,7 +180,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
         {error && (
           <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
             <p className="flex-1">{error}</p>
-            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">✕</button>
+            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">Dismiss</button>
           </div>
         )}
 

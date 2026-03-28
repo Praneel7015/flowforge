@@ -45,7 +45,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
             if (inline) {
               return (
                 <code
-                  className="ff-code rounded bg-[var(--ff-card-bg-hover)] border border-[var(--ff-card-border-strong)] px-1.5 py-0.5 text-[0.85em] text-emerald-300"
+                  className="ff-code rounded bg-[var(--ff-code-bg-inline)] border border-[var(--ff-card-border-strong)] px-1.5 py-0.5 text-[0.85em] text-[var(--ff-accent)]"
                   {...props}
                 >
                   {codeValue}
@@ -63,7 +63,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
           },
           a: ({ node, ...props }) => (
             <a
-              className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300"
+              className="text-[var(--ff-accent)] underline underline-offset-2 hover:opacity-70"
               target="_blank"
               rel="noreferrer"
               {...props}

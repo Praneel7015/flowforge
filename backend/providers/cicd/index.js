@@ -7,6 +7,7 @@ const GitLabCIGenerator = require('./GitLabCIGenerator');
 const GitHubActionsGenerator = require('./GitHubActionsGenerator');
 const JenkinsGenerator = require('./JenkinsGenerator');
 const CircleCIGenerator = require('./CircleCIGenerator');
+const BitbucketPipelinesGenerator = require('./BitbucketPipelinesGenerator');
 
 // Generator registry
 const generators = {
@@ -14,6 +15,7 @@ const generators = {
   github: GitHubActionsGenerator,
   jenkins: JenkinsGenerator,
   circleci: CircleCIGenerator,
+  bitbucket: BitbucketPipelinesGenerator,
 };
 
 // Cached generator instances

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import MarkdownContent from './MarkdownContent';
 import { normalizeConfigText } from '../utils/contentFormat';
@@ -233,7 +233,12 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const abortRef = useRef(null);
   const normalizedReport = useMemo(() => normalizeReport(report), [report]);
+
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
 
   useEffect(() => {
     if (typeof currentYaml === 'string' && currentYaml.trim()) {
@@ -287,16 +292,20 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
     setError('');
 
     try {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       const normalizedYaml = normalizeConfigText(yamlInput);
       const { data } = await axios.post('/api/advisor/health', {
         yaml: normalizedYaml,
         aiProvider,
         cicdPlatform,
         aiOptions,
-      });
+      }, { signal: controller.signal });
 
       setReport(data);
     } catch (err) {
+      if (axios.isCancel(err)) return;
       setError(err.response?.data?.error || 'Analysis failed');
     } finally {
       setLoading(false);
@@ -370,7 +379,7 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
         {error && (
           <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
             <p className="flex-1">{error}</p>
-            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-rose-500 hover:text-rose-800 flex-shrink-0">✕</button>
+            <button onClick={() => setError('')} aria-label="Dismiss error" className="text-rose-500 hover:text-rose-800 flex-shrink-0">Dismiss</button>
           </div>
         )}
 
@@ -439,7 +448,7 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                       <ul className="space-y-1">
                         {d.issues.map((issue, i) => (
                           <li key={i} className="text-xs text-[var(--ff-text-secondary)] flex gap-2">
-                            <span className="text-rose-400">✗</span>
+                            <span className="text-rose-400 font-medium">-</span>
                             <MarkdownContent
                               content={issue}
                               className="text-xs text-[var(--ff-text-secondary)]"
@@ -456,7 +465,7 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                       <ul className="space-y-1">
                         {d.tips.map((tip, i) => (
                           <li key={i} className="text-xs text-[var(--ff-text-secondary)] flex gap-2">
-                            <span className="text-emerald-400">→</span>
+                            <span className="text-emerald-400 font-medium">+</span>
                             <MarkdownContent
                               content={tip}
                               className="text-xs text-[var(--ff-text-secondary)]"
