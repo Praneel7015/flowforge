@@ -109,11 +109,31 @@ PORT=3001
 FlowForge pipeline chat can be routed through n8n by setting these backend env vars:
 
 ```env
-N8N_CHAT_WEBHOOK_URL=https://your-n8n-domain/webhook/flowforge-chat
+N8N_CHAT_WEBHOOK_URL=https://your-n8n-domain/webhook-test/flowforge
 N8N_WEBHOOK_AUTH_HEADER=X-FlowForge-Token
 N8N_WEBHOOK_AUTH_TOKEN=your_secret_token
 N8N_CHAT_TIMEOUT_MS=30000
 ```
+
+FlowForge sends a JSON POST payload to this webhook with these key fields:
+
+- `text` / `input`: latest user message text
+- `userId`, `username`, `chatId`, `conversationId`: user-scoped session identifiers
+- `currentYaml` and `yamlContext`: full pipeline YAML context
+- `messages`: full chat message history for context
+- `cicdPlatform`, `platformDisplayName`, `aiProvider`, `source`, `timestamp`
+
+For n8n workflows using the Webhook node output, map fields from `body`:
+
+- `{{$json.body.text}}`
+- `{{$json.body.userId}}`
+- `{{$json.body.username}}`
+- `{{$json.body.chatId}}`
+- `{{$json.body.currentYaml}}`
+
+To keep chat memory personal per user, set your n8n memory session key to either
+`{{$json.body.userId}}` (all chats for a user) or `{{$json.body.chatId}}`
+(separate memory per conversation).
 
 Expected n8n response can be either a plain string or JSON with one of these fields:
 `reply`, `response`, `message`, `output`, or `text`.

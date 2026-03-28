@@ -1,6 +1,50 @@
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
 
+function sanitizeText(value, maxLen = 200) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLen);
+}
+
+function readHeaderValue(headers, name) {
+  const value = headers?.[name];
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function buildChatUserContext(reqBody, reqHeaders) {
+  const rawContext =
+    reqBody?.userContext && typeof reqBody.userContext === 'object' ? reqBody.userContext : {};
+
+  const userId =
+    sanitizeText(rawContext.userId, 120) ||
+    sanitizeText(reqBody?.userId, 120) ||
+    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-user-id'), 120) ||
+    sanitizeText(readHeaderValue(reqHeaders, 'x-user-id'), 120);
+
+  const username =
+    sanitizeText(rawContext.username, 120) ||
+    sanitizeText(reqBody?.username, 120) ||
+    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-username'), 120);
+
+  const conversationId =
+    sanitizeText(rawContext.conversationId, 160) || sanitizeText(reqBody?.conversationId, 160);
+
+  const chatId =
+    sanitizeText(rawContext.chatId, 160) ||
+    sanitizeText(reqBody?.chatId, 160) ||
+    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-chat-id'), 160);
+
+  return {
+    userId,
+    username,
+    conversationId,
+    chatId,
+  };
+}
+
 /**
  * Score the health of a CI/CD configuration submitted in the request body.
  */
@@ -46,7 +90,13 @@ async function remediate(req, res) {
 
 /**
  * Conversational chat with the pipeline assistant.
- * Body: { messages: [{role, content}], currentYaml: "...", aiProvider, cicdPlatform }
+ * Body: {
+ *   messages: [{role, content}],
+ *   currentYaml: "...",
+ *   aiProvider,
+ *   cicdPlatform,
+ *   userContext: { userId, username, chatId, conversationId }
+ * }
  */
 async function chat(req, res) {
   try {
@@ -55,10 +105,13 @@ async function chat(req, res) {
       return res.status(400).json({ error: 'messages array is required' });
     }
 
+    const userContext = buildChatUserContext(req.body, req.headers);
+
     const reply = await aiService.pipelineChat(messages, currentYaml || '', {
       aiProvider,
       cicdPlatform,
       aiOptions: buildAIOptions(aiOptions),
+      userContext,
     });
     res.json({ reply });
   } catch (err) {
