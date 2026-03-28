@@ -1,0 +1,70 @@
+const aiService = require('../services/aiService');
+const { buildAIOptions } = require('../utils/aiOptions');
+
+/**
+ * Score the health of a CI/CD configuration submitted in the request body.
+ */
+async function healthScore(req, res) {
+  try {
+    const { yaml, aiProvider, cicdPlatform, aiOptions } = req.body;
+    if (!yaml) return res.status(400).json({ error: 'yaml is required' });
+
+    const report = await aiService.scorePipelineHealth(yaml, {
+      aiProvider,
+      cicdPlatform,
+      aiOptions: buildAIOptions(aiOptions),
+    });
+    res.json(report);
+  } catch (err) {
+    console.error('healthScore error:', err.message);
+    res.status(500).json({ error: 'Health analysis failed: ' + err.message });
+  }
+}
+
+/**
+ * Auto-remediate a pipeline given its YAML and a pre-fetched failure analysis.
+ * Returns a patched YAML and a changelog suitable for creating an MR/PR.
+ */
+async function remediate(req, res) {
+  try {
+    const { yaml, failureAnalysis, aiProvider, cicdPlatform, aiOptions } = req.body;
+    if (!yaml || !failureAnalysis) {
+      return res.status(400).json({ error: 'yaml and failureAnalysis are required' });
+    }
+
+    const result = await aiService.autoRemediatePipeline(yaml, failureAnalysis, {
+      aiProvider,
+      cicdPlatform,
+      aiOptions: buildAIOptions(aiOptions),
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('remediate error:', err.message);
+    res.status(500).json({ error: 'Auto-remediation failed: ' + err.message });
+  }
+}
+
+/**
+ * Conversational chat with the pipeline assistant.
+ * Body: { messages: [{role, content}], currentYaml: "...", aiProvider, cicdPlatform }
+ */
+async function chat(req, res) {
+  try {
+    const { messages, currentYaml, aiProvider, cicdPlatform, aiOptions } = req.body;
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    const reply = await aiService.pipelineChat(messages, currentYaml || '', {
+      aiProvider,
+      cicdPlatform,
+      aiOptions: buildAIOptions(aiOptions),
+    });
+    res.json({ reply });
+  } catch (err) {
+    console.error('chat error:', err.message);
+    res.status(500).json({ error: 'Chat failed: ' + err.message });
+  }
+}
+
+module.exports = { healthScore, remediate, chat };

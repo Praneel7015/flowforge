@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ff-bg: #0c1216;
+  --ff-bg-soft: #111a20;
+  --ff-surface: #152129;
+  --ff-surface-2: #1a2a33;
+  --ff-border: #253844;
+  --ff-border-strong: #365365;
+  --ff-text: #e6edf2;
+  --ff-muted: #94a8b8;
+  --ff-accent: #14b8a6;
+  --ff-accent-2: #f59e0b;
+  --ff-danger: #ef4444;
+  --ff-success: #22c55e;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  color: var(--ff-text);
+  background:
+    radial-gradient(1200px circle at 8% -20%, rgba(20, 184, 166, 0.12), transparent 40%),
+    radial-gradient(900px circle at 100% 0%, rgba(245, 158, 11, 0.1), transparent 35%),
+    var(--ff-bg);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.ff-app-shell {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+
+.ff-surface {
+  background: linear-gradient(165deg, rgba(22, 33, 40, 0.96), rgba(16, 25, 31, 0.96));
+  border: 1px solid var(--ff-border);
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(3, 8, 12, 0.25);
+}
+
+.ff-surface-soft {
+  background: rgba(19, 29, 36, 0.82);
+  border: 1px solid rgba(37, 56, 68, 0.8);
+  border-radius: 14px;
+}
+
+.ff-select {
+  background: rgba(17, 27, 33, 0.9);
+  border: 1px solid var(--ff-border);
+  border-radius: 10px;
+  color: var(--ff-text);
+  padding: 0.45rem 0.65rem;
+}
+
+.ff-select:focus {
+  outline: none;
+  border-color: var(--ff-border-strong);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+}
+
+.ff-input {
+  width: 100%;
+  background: rgba(16, 25, 31, 0.85);
+  border: 1px solid var(--ff-border);
+  border-radius: 12px;
+  color: var(--ff-text);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.ff-input:focus {
+  outline: none;
+  border-color: var(--ff-border-strong);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.13);
+}
+
+.ff-btn-primary {
+  background: linear-gradient(120deg, #0ea5a1, #0f766e);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  color: #ecfeff;
+}
+
+.ff-btn-secondary {
+  background: rgba(22, 34, 42, 0.92);
+  border: 1px solid var(--ff-border);
+  color: var(--ff-text);
+}
+
+.ff-code {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+}
+
+.react-flow__node {
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.react-flow__edge-path {
+  stroke: #2f5161;
+  stroke-width: 2;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+}
+
+.react-flow__controls {
+  border: 1px solid var(--ff-border) !important;
+  background: rgba(16, 24, 30, 0.92) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+
+.react-flow__controls button {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(37, 56, 68, 0.65) !important;
+  color: var(--ff-muted) !important;
+}
+
+.react-flow__controls button:hover {
+  color: var(--ff-text) !important;
+  background: rgba(36, 56, 68, 0.4) !important;
+}
+
+.ff-enter {
+  animation: ff-enter 260ms ease-out both;
+}
+
+@keyframes ff-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "pipeline_id": 12345,
+  "project_id": 678,
+  "status": "failed",
+  "failed_jobs": [
+    {
+      "jobId": 99001,
+      "jobName": "unit_tests",
+      "stage": "test",
+      "log": "$ npm test -- --coverage\n\n> myapp@1.0.0 test\n> jest --coverage\n\nFAILED TESTS:\n  FAIL src/__tests__/auth.test.js\n    Authentication\n      ✕ should validate JWT token (15 ms)\n\n    ● Authentication › should validate JWT token\n\n      Cannot find module 'jsonwebtoken' from 'src/auth.js'\n\n      Require stack:\n        src/auth.js\n        src/__tests__/auth.test.js\n\n      at Resolver.resolveModule (node_modules/jest-resolve/build/resolver.js:324:11)\n\nTest Suites: 1 failed, 5 passed, 6 total\nTests:       1 failed, 23 passed, 24 total\nERROR: Job failed: exit code 1"
+    }
+  ],
+  "ai_analysis": {
+    "summary": "Pipeline failed during unit tests because the dependency 'jsonwebtoken' is missing from the project.",
+    "explanation": "The test file 'src/__tests__/auth.test.js' imports 'src/auth.js' which requires the 'jsonwebtoken' npm package. This package is not listed in package.json dependencies, so it is not available in the CI environment after 'npm ci'.",
+    "rootCause": "Missing npm dependency: jsonwebtoken",
+    "suggestedFixes": [
+      "Run: npm install jsonwebtoken --save",
+      "Verify the package is in package.json under 'dependencies'",
+      "Re-run the pipeline after committing the updated package.json and package-lock.json"
+    ]
+  },
+  "comment_posted": {
+    "target": "merge_request",
+    "mr_iid": 42,
+    "comment": "## Pipeline Failure Analysis\n\n**Pipeline:** #12345\n**Summary:** Pipeline failed during unit tests because the dependency 'jsonwebtoken' is missing.\n\n### Root Cause\nMissing npm dependency: jsonwebtoken\n\n### Suggested Fixes\n1. Run: npm install jsonwebtoken --save\n2. Verify the package is in package.json under 'dependencies'\n3. Re-run the pipeline after committing updates\n\n---\n*Automated analysis by FlowForge*"
+  }
+}

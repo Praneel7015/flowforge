@@ -1,0 +1,116 @@
+{
+  "version": "2.1",
+  "name": "Node.js Full CI/CD Pipeline",
+  "description": "A complete pipeline with build, test, security scan, Docker deploy, and n8n notification",
+  "metadata": {
+    "generatedBy": "FlowForge",
+    "sponsors": {
+      "orchestration": "n8n",
+      "modelGateway": "Featherless"
+    },
+    "assistant": {
+      "provider": "featherless",
+      "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+      "webhookPath": "/webhook/flowforge-chat"
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_1",
+      "type": "trigger_push",
+      "position": { "x": 300, "y": 0 },
+      "data": {
+        "label": "Git Push Trigger",
+        "config": { "branch": "main" }
+      }
+    },
+    {
+      "id": "node_2",
+      "type": "build",
+      "position": { "x": 300, "y": 120 },
+      "data": {
+        "label": "Install Dependencies",
+        "config": {
+          "image": "node:18-alpine",
+          "script": "npm ci",
+          "stage": "build"
+        }
+      }
+    },
+    {
+      "id": "node_3",
+      "type": "build",
+      "position": { "x": 300, "y": 240 },
+      "data": {
+        "label": "Build App",
+        "config": {
+          "image": "node:18-alpine",
+          "script": "npm run build",
+          "stage": "build"
+        }
+      }
+    },
+    {
+      "id": "node_4",
+      "type": "test",
+      "position": { "x": 120, "y": 360 },
+      "data": {
+        "label": "Unit Tests",
+        "config": {
+          "image": "node:18-alpine",
+          "script": "npm test -- --coverage",
+          "stage": "test"
+        }
+      }
+    },
+    {
+      "id": "node_5",
+      "type": "security_scan",
+      "position": { "x": 480, "y": 360 },
+      "data": {
+        "label": "Security Scan",
+        "config": {
+          "image": "node:18-alpine",
+          "script": "npx audit-ci --moderate",
+          "stage": "security"
+        }
+      }
+    },
+    {
+      "id": "node_6",
+      "type": "deploy",
+      "position": { "x": 300, "y": 500 },
+      "data": {
+        "label": "Docker Deploy",
+        "config": {
+          "image": "docker:24.0.5",
+          "script": "docker build -t $CI_REGISTRY_IMAGE:latest . && docker push $CI_REGISTRY_IMAGE:latest",
+          "stage": "deploy",
+          "environment": "production"
+        }
+      }
+    },
+    {
+      "id": "node_7",
+      "type": "notify",
+      "position": { "x": 300, "y": 620 },
+      "data": {
+        "label": "n8n Deployment Notification",
+        "config": {
+          "script": "curl -X POST \"$N8N_DEPLOY_WEBHOOK\" -H \"Content-Type: application/json\" -d '{\"event\":\"deployment_complete\",\"pipeline\":\"$CI_PIPELINE_ID\"}'",
+          "stage": ".post",
+          "channel": "#deployments"
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1-2", "source": "node_1", "target": "node_2", "animated": true },
+    { "id": "e2-3", "source": "node_2", "target": "node_3", "animated": true },
+    { "id": "e3-4", "source": "node_3", "target": "node_4", "animated": true },
+    { "id": "e3-5", "source": "node_3", "target": "node_5", "animated": true },
+    { "id": "e4-6", "source": "node_4", "target": "node_6", "animated": true },
+    { "id": "e5-6", "source": "node_5", "target": "node_6", "animated": true },
+    { "id": "e6-7", "source": "node_6", "target": "node_7", "animated": true }
+  ]
+}

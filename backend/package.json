@@ -1,0 +1,24 @@
+{
+  "name": "flowforge-backend",
+  "version": "2.0.0",
+  "description": "FlowForge - AI-powered low-code/no-code CI/CD automation platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.3",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "js-yaml": "^4.1.0",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^6.32.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
