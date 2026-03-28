@@ -291,6 +291,17 @@ export default function App() {
       nodes: Array.isArray(result?.nodes) ? result.nodes : [],
       edges: Array.isArray(result?.edges) ? result.edges : [],
     });
+
+    if (
+      typeof result?.targetPlatform === 'string' &&
+      providers.cicd.some((platform) => platform.name === result.targetPlatform)
+    ) {
+      setSelectedProviders((prev) => ({
+        ...prev,
+        cicd: result.targetPlatform,
+      }));
+    }
+
     setActivePanel('builder');
   };
 
@@ -426,6 +437,7 @@ export default function App() {
           aiProvider={selectedProviders.ai}
           cicdPlatform={selectedProviders.cicd}
           aiOptions={aiOptions}
+          availablePlatforms={providers.cicd}
         />
       );
     }

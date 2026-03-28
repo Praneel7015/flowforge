@@ -1,63 +1,196 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
-export default function JenkinsConverter({ onConverted, aiProvider, cicdPlatform, aiOptions }) {
-  const [jenkinsfile, setJenkinsfile] = useState('');
+const DEFAULT_PLATFORMS = [
+  { name: 'gitlab', displayName: 'GitLab CI' },
+  { name: 'github', displayName: 'GitHub Actions' },
+  { name: 'jenkins', displayName: 'Jenkins' },
+  { name: 'circleci', displayName: 'CircleCI' },
+];
+
+const SAMPLE_CONFIGS = {
+  jenkins: `pipeline {
+  agent any
+  stages {
+    stage('Install') {
+      steps {
+        sh 'npm ci'
+      }
+    }
+    stage('Test') {
+      steps {
+        sh 'npm test'
+      }
+    }
+    stage('Build') {
+      steps {
+        sh 'npm run build'
+      }
+    }
+    stage('Deploy') {
+      steps {
+        sh 'echo Deploying application'
+      }
+    }
+  }
+}`,
+  gitlab: `stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  image: node:20-alpine
+  script:
+    - npm ci
+    - npm run build
+
+test_job:
+  stage: test
+  image: node:20-alpine
+  script:
+    - npm test
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo "Deploying to production"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'`,
+  github: `name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+      - run: npm run build`,
+  circleci: `version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/node:20.10
+    steps:
+      - checkout
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+workflows:
+  build_and_test:
+    jobs:
+      - build`,
+};
+
+function normalizePlatforms(availablePlatforms = []) {
+  if (!Array.isArray(availablePlatforms) || availablePlatforms.length === 0) {
+    return DEFAULT_PLATFORMS;
+  }
+
+  return availablePlatforms
+    .map((platform) => ({
+      name: platform.name,
+      displayName: platform.displayName || platform.name,
+    }))
+    .filter((platform) => typeof platform.name === 'string' && platform.name.trim().length > 0);
+}
+
+export default function JenkinsConverter({
+  onConverted,
+  aiProvider,
+  cicdPlatform,
+  aiOptions,
+  availablePlatforms,
+}) {
+  const platforms = useMemo(() => normalizePlatforms(availablePlatforms), [availablePlatforms]);
+  const firstPlatform = platforms[0]?.name || 'gitlab';
+  const [sourcePlatform, setSourcePlatform] = useState('jenkins');
+  const [targetPlatform, setTargetPlatform] = useState(cicdPlatform || firstPlatform);
+  const [pipelineConfig, setPipelineConfig] = useState(SAMPLE_CONFIGS.jenkins);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const platformNames = {
-    gitlab: 'GitLab CI',
-    github: 'GitHub Actions',
-    jenkins: 'Jenkins',
-    circleci: 'CircleCI',
-  };
+  useEffect(() => {
+    if (!platforms.some((platform) => platform.name === sourcePlatform)) {
+      setSourcePlatform(firstPlatform);
+    }
+  }, [firstPlatform, platforms, sourcePlatform]);
 
-  const exampleJenkinsfile = `pipeline {
-    agent any
-    stages {
-        stage('Install') {
-            steps {
-                sh 'npm install'
-            }
-        }
-        stage('Test') {
-            steps {
-                sh 'npm test'
-            }
-        }
-        stage('Build') {
-            steps {
-                sh 'npm run build'
-            }
-        }
-        stage('Deploy') {
-            steps {
-                sh 'docker build -t myapp .'
-                sh 'docker push myapp'
-            }
-        }
+  useEffect(() => {
+    if (!platforms.some((platform) => platform.name === targetPlatform)) {
+      const fallbackTarget = platforms.find((platform) => platform.name !== sourcePlatform)?.name;
+      if (fallbackTarget) {
+        setTargetPlatform(fallbackTarget);
+      }
+      return;
     }
-    post {
-        failure {
-            mail to: 'team@example.com', subject: 'Build failed'
-        }
+
+    if (sourcePlatform === targetPlatform) {
+      const fallbackTarget = platforms.find((platform) => platform.name !== sourcePlatform)?.name;
+      if (fallbackTarget) {
+        setTargetPlatform(fallbackTarget);
+      }
     }
-}`;
+  }, [platforms, sourcePlatform, targetPlatform]);
+
+  useEffect(() => {
+    if (
+      cicdPlatform &&
+      cicdPlatform !== sourcePlatform &&
+      platforms.some((platform) => platform.name === cicdPlatform)
+    ) {
+      setTargetPlatform(cicdPlatform);
+    }
+  }, [cicdPlatform, platforms, sourcePlatform]);
+
+  const platformNameMap = useMemo(
+    () =>
+      platforms.reduce((acc, platform) => {
+        acc[platform.name] = platform.displayName;
+        return acc;
+      }, {}),
+    [platforms]
+  );
+
+  const canConvert =
+    sourcePlatform !== targetPlatform &&
+    Boolean(sourcePlatform) &&
+    Boolean(targetPlatform) &&
+    pipelineConfig.trim().length > 0;
 
   const handleConvert = async () => {
-    if (!jenkinsfile.trim()) return;
+    if (!canConvert) return;
+
     setLoading(true);
     setError('');
 
     try {
-      const { data } = await axios.post('/api/migration/jenkinsfile', {
-        jenkinsfile,
+      const { data } = await axios.post('/api/migration/convert', {
+        pipelineConfig,
+        sourcePlatform,
+        targetPlatform,
         aiProvider,
-        cicdPlatform,
         aiOptions,
       });
-      onConverted(data);
+
+      onConverted({
+        ...data,
+        sourcePlatform,
+        targetPlatform,
+      });
     } catch (err) {
       setError(err.response?.data?.error || 'Conversion failed. Check backend connection.');
     } finally {
@@ -69,30 +202,90 @@ export default function JenkinsConverter({ onConverted, aiProvider, cicdPlatform
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => setJenkinsfile(ev.target.result);
+    reader.onload = (ev) => setPipelineConfig(typeof ev.target?.result === 'string' ? ev.target.result : '');
     reader.readAsText(file);
   };
+
+  const loadExample = () => {
+    setPipelineConfig(SAMPLE_CONFIGS[sourcePlatform] || '');
+  };
+
+  const sourceDisplay = platformNameMap[sourcePlatform] || 'Source CI/CD';
+  const targetDisplay = platformNameMap[targetPlatform] || 'Target CI/CD';
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         <div className="space-y-2">
           <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Migration</p>
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">Convert Jenkinsfile</h2>
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-900">
+            Convert CI/CD Configurations
+          </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
-            Paste a Jenkinsfile or upload one. The AI will convert it to{' '}
-            <span className="font-semibold text-slate-800">{platformNames[cicdPlatform] || 'CI/CD'}</span>{' '}
-            and generate a visual workflow.
+            Choose a source and target platform, paste your configuration, and FlowForge will convert
+            it while preserving pipeline intent.
           </p>
+        </div>
+
+        <div className="ff-surface-soft p-4 grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-xs uppercase tracking-[0.15em] text-slate-500">Source Platform</label>
+            <select
+              value={sourcePlatform}
+              onChange={(event) => setSourcePlatform(event.target.value)}
+              className="ff-select w-full text-sm"
+            >
+              {platforms.map((platform) => (
+                <option key={platform.name} value={platform.name}>
+                  {platform.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs uppercase tracking-[0.15em] text-slate-500">Target Platform</label>
+            <select
+              value={targetPlatform}
+              onChange={(event) => setTargetPlatform(event.target.value)}
+              className="ff-select w-full text-sm"
+            >
+              {platforms.map((platform) => (
+                <option
+                  key={platform.name}
+                  value={platform.name}
+                  disabled={platform.name === sourcePlatform}
+                >
+                  {platform.displayName}
+                  {platform.name === sourcePlatform ? ' (same as source)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {sourcePlatform === targetPlatform && (
+          <p className="text-amber-700 text-sm">
+            Source and target formats are identical. Select a different target to convert.
+          </p>
+        )}
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <span className="font-semibold">Conversion:</span> {sourceDisplay}{' -> '}{targetDisplay}
         </div>
 
         <div className="flex gap-3">
           <label className="px-4 py-2 rounded-lg text-sm cursor-pointer transition-colors ff-btn-secondary hover:border-slate-400">
-            Upload Jenkinsfile
-            <input type="file" className="hidden" onChange={handleFileUpload} accept=".groovy,.jenkinsfile,Jenkinsfile" />
+            Upload Config File
+            <input
+              type="file"
+              className="hidden"
+              onChange={handleFileUpload}
+              accept=".groovy,.jenkinsfile,.yml,.yaml,.txt"
+            />
           </label>
           <button
-            onClick={() => setJenkinsfile(exampleJenkinsfile)}
+            onClick={loadExample}
             className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary hover:border-slate-400"
           >
             Load Example
@@ -100,19 +293,19 @@ export default function JenkinsConverter({ onConverted, aiProvider, cicdPlatform
         </div>
 
         <textarea
-          value={jenkinsfile}
-          onChange={(e) => setJenkinsfile(e.target.value)}
-          placeholder="Paste your Jenkinsfile here..."
+          value={pipelineConfig}
+          onChange={(event) => setPipelineConfig(event.target.value)}
+          placeholder={`Paste your ${sourceDisplay} configuration here...`}
           rows={14}
           className="ff-input p-4 text-sm ff-code resize-none"
         />
 
         <button
           onClick={handleConvert}
-          disabled={loading || !jenkinsfile.trim()}
+          disabled={loading || !canConvert}
           className="w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 transition-opacity ff-btn-primary"
         >
-          {loading ? 'Converting...' : `Convert to ${platformNames[cicdPlatform] || 'CI/CD'}`}
+          {loading ? 'Converting...' : `Convert ${sourceDisplay} -> ${targetDisplay}`}
         </button>
 
         {error && <p className="text-rose-700 text-sm">{error}</p>}

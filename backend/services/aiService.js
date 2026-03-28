@@ -63,6 +63,15 @@ const ADVANCED_NODE_TYPES = [
   'blue_green_deploy',
 ];
 
+const SUPPORTED_CICD_PLATFORMS = ['gitlab', 'github', 'jenkins', 'circleci'];
+
+const PLATFORM_DISPLAY_NAMES = {
+  gitlab: 'GitLab CI',
+  github: 'GitHub Actions',
+  jenkins: 'Jenkins Pipeline',
+  circleci: 'CircleCI',
+};
+
 function getSupportedNodeTypes() {
   if (process.env.ENABLE_ADVANCED_NODES === 'false') {
     return STANDARD_NODE_TYPES.filter((type) => !ADVANCED_NODE_TYPES.includes(type));
@@ -77,6 +86,294 @@ function safeJsonParse(value) {
   } catch {
     return null;
   }
+}
+
+function parseJsonObjectFromText(text) {
+  const cleaned = stripCodeFences(text);
+  const candidates = [cleaned];
+
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(cleaned.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    const parsed = safeJsonParse(candidate);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+
+    if (typeof parsed === 'string') {
+      const nested = safeJsonParse(parsed);
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function toStringList(value, maxLen = 6) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+      .slice(0, maxLen);
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()];
+  }
+
+  return [];
+}
+
+function clampScore(value, fallback = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return Math.max(0, Math.min(100, Math.round(fallback)));
+  }
+
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function gradeForScore(score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+function buildHeuristicHealthReport(configText, platformDisplayName = 'CI/CD') {
+  const lower = String(configText || '').toLowerCase();
+
+  const breakdown = {
+    speed: {
+      score: 55,
+      issues: [],
+      tips: [],
+    },
+    security: {
+      score: 50,
+      issues: [],
+      tips: [],
+    },
+    reliability: {
+      score: 55,
+      issues: [],
+      tips: [],
+    },
+    best_practice: {
+      score: 60,
+      issues: [],
+      tips: [],
+    },
+  };
+
+  const hasParallelism = /(matrix|parallelism|parallel\s*:|strategy\s*:|needs\s*:|parallel:)/i.test(
+    lower
+  );
+  const hasCaching = /(cache\s*:|actions\/cache|restore_cache|save_cache|cache_restore|cache_save)/i.test(
+    lower
+  );
+  const hasSecurityScan =
+    /(security|sast|trivy|dependency.?scan|vulnerability|bandit|semgrep)/i.test(lower);
+  const hasSecretsHandling = /(secrets\.|vault|masked|secret|credentials)/i.test(lower);
+  const hasRetriesOrTimeout = /(retry\s*:|retries|timeout|timeout-minutes|options\s*\{\s*timeout)/i.test(
+    lower
+  );
+  const hasArtifacts = /(artifacts\s*:|upload-artifact|stash\s+name|archiveartifacts)/i.test(lower);
+  const hasTests = /(\btest\b|pytest|npm test|go test|unit test|integration test)/i.test(lower);
+  const hasPinnedImages = /:[0-9][\w.-]*/.test(lower) && !/:latest\b/.test(lower);
+  const usesLatestImage = /:latest\b/.test(lower);
+  const hasWorkflowStructure = /(stages\s*:|jobs\s*:|workflows\s*:|pipeline\s*\{)/i.test(lower);
+
+  if (hasParallelism) {
+    breakdown.speed.score += 12;
+  } else {
+    breakdown.speed.issues.push('No clear parallelism strategy detected.');
+    breakdown.speed.tips.push('Use matrix/parallel jobs to reduce total pipeline time.');
+  }
+
+  if (hasCaching) {
+    breakdown.speed.score += 12;
+  } else {
+    breakdown.speed.issues.push('Dependency or build caching is not obvious.');
+    breakdown.speed.tips.push('Add dependency caching to speed up repeated runs.');
+  }
+
+  if (/npm install/.test(lower) && !/npm ci/.test(lower)) {
+    breakdown.speed.issues.push('Using npm install instead of npm ci can slow reproducible builds.');
+    breakdown.speed.tips.push('Prefer npm ci in CI environments for deterministic installs.');
+    breakdown.speed.score -= 4;
+  }
+
+  if (hasSecurityScan) {
+    breakdown.security.score += 15;
+  } else {
+    breakdown.security.issues.push('No explicit security scanning job detected.');
+    breakdown.security.tips.push('Add SAST/dependency/container scanning in CI.');
+  }
+
+  if (hasSecretsHandling) {
+    breakdown.security.score += 8;
+  } else {
+    breakdown.security.issues.push('Secrets handling is not obvious from configuration.');
+    breakdown.security.tips.push('Use CI secrets/variables and avoid hardcoded credentials.');
+  }
+
+  if (usesLatestImage) {
+    breakdown.security.score -= 10;
+    breakdown.security.issues.push('Found :latest image tags, which reduce reproducibility and auditability.');
+    breakdown.security.tips.push('Pin container images to specific versions or digests.');
+  } else if (hasPinnedImages) {
+    breakdown.security.score += 5;
+  }
+
+  if (hasRetriesOrTimeout) {
+    breakdown.reliability.score += 10;
+  } else {
+    breakdown.reliability.issues.push('Retry/timeout controls are not clearly defined.');
+    breakdown.reliability.tips.push('Add retries and timeout limits to stabilize flaky steps.');
+  }
+
+  if (hasArtifacts) {
+    breakdown.reliability.score += 8;
+  } else {
+    breakdown.reliability.issues.push('Artifact handoff between jobs is not evident.');
+    breakdown.reliability.tips.push('Persist and share build artifacts explicitly between stages.');
+  }
+
+  if (hasTests) {
+    breakdown.reliability.score += 8;
+  } else {
+    breakdown.reliability.issues.push('No explicit test execution stage detected.');
+    breakdown.reliability.tips.push('Add automated tests as a required pipeline gate.');
+  }
+
+  if (hasWorkflowStructure) {
+    breakdown.best_practice.score += 10;
+  } else {
+    breakdown.best_practice.issues.push('Pipeline structure declarations are not clearly defined.');
+    breakdown.best_practice.tips.push('Use explicit jobs/stages/workflows for readability and maintenance.');
+  }
+
+  if (/\bbuild\b/.test(lower) && /\bdeploy\b/.test(lower)) {
+    breakdown.best_practice.score += 6;
+  } else {
+    breakdown.best_practice.issues.push('End-to-end flow (build, test, deploy) is incomplete.');
+    breakdown.best_practice.tips.push('Define a clear progression across build, validation, and deployment stages.');
+  }
+
+  for (const key of Object.keys(breakdown)) {
+    breakdown[key].score = clampScore(breakdown[key].score);
+
+    if (!breakdown[key].issues.length) {
+      breakdown[key].issues.push('No major issues detected by heuristic analysis.');
+    }
+
+    if (!breakdown[key].tips.length) {
+      breakdown[key].tips.push('Continue refining this area with platform-specific best practices.');
+    }
+  }
+
+  const overallScore = clampScore(
+    (breakdown.speed.score +
+      breakdown.security.score +
+      breakdown.reliability.score +
+      breakdown.best_practice.score) /
+      4
+  );
+
+  const recommendationPool = [
+    ...breakdown.speed.tips,
+    ...breakdown.security.tips,
+    ...breakdown.reliability.tips,
+    ...breakdown.best_practice.tips,
+  ];
+
+  return {
+    overallScore,
+    grade: gradeForScore(overallScore),
+    breakdown,
+    topRecommendations: recommendationPool.filter(Boolean).slice(0, 3),
+    analysisMode: 'heuristic',
+    summary: `Heuristic health analysis for ${platformDisplayName}.`,
+  };
+}
+
+function normalizeHealthReport(rawReport, fallbackConfigText, platformDisplayName) {
+  const heuristic = buildHeuristicHealthReport(fallbackConfigText, platformDisplayName);
+  if (!rawReport || typeof rawReport !== 'object' || Array.isArray(rawReport)) {
+    return heuristic;
+  }
+
+  const breakdownSource =
+    rawReport.breakdown && typeof rawReport.breakdown === 'object' ? rawReport.breakdown : {};
+
+  const bestPracticeSource =
+    breakdownSource.best_practice ||
+    breakdownSource.bestPractice ||
+    breakdownSource.best_practices ||
+    breakdownSource['best practice'];
+
+  const normalizeDimension = (source, fallback) => {
+    if (!source || typeof source !== 'object') {
+      return fallback;
+    }
+
+    const score = clampScore(source.score, fallback.score);
+    const issues = toStringList(source.issues);
+    const tips = toStringList(source.tips);
+
+    return {
+      score,
+      issues: issues.length ? issues : fallback.issues,
+      tips: tips.length ? tips : fallback.tips,
+    };
+  };
+
+  const breakdown = {
+    speed: normalizeDimension(breakdownSource.speed, heuristic.breakdown.speed),
+    security: normalizeDimension(breakdownSource.security, heuristic.breakdown.security),
+    reliability: normalizeDimension(breakdownSource.reliability, heuristic.breakdown.reliability),
+    best_practice: normalizeDimension(bestPracticeSource, heuristic.breakdown.best_practice),
+  };
+
+  const averagedScore = clampScore(
+    (breakdown.speed.score +
+      breakdown.security.score +
+      breakdown.reliability.score +
+      breakdown.best_practice.score) /
+      4
+  );
+
+  const overallScore = clampScore(rawReport.overallScore, averagedScore);
+
+  const rawGrade = typeof rawReport.grade === 'string' ? rawReport.grade.trim().toUpperCase() : '';
+  const grade = ['A', 'B', 'C', 'D', 'F'].includes(rawGrade) ? rawGrade : gradeForScore(overallScore);
+
+  const topRecommendations = toStringList(rawReport.topRecommendations, 8);
+  const fallbackRecommendations = [
+    ...breakdown.speed.tips,
+    ...breakdown.security.tips,
+    ...breakdown.reliability.tips,
+    ...breakdown.best_practice.tips,
+  ]
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return {
+    overallScore,
+    grade,
+    breakdown,
+    topRecommendations: topRecommendations.length ? topRecommendations : fallbackRecommendations,
+    analysisMode: 'ai',
+    summary: typeof rawReport.summary === 'string' ? rawReport.summary.trim() : undefined,
+  };
 }
 
 function stripCodeFences(text) {
@@ -170,6 +467,7 @@ function humanizeLabel(value) {
 
 function classifyNodeType(value, supportedNodeTypes) {
   const text = String(value || '').toLowerCase();
+  const normalizedText = text.replace(/[_-]+/g, ' ');
 
   const rules = [
     { type: 'matrix_build', includes: ['matrix'] },
@@ -193,7 +491,7 @@ function classifyNodeType(value, supportedNodeTypes) {
 
   for (const rule of rules) {
     if (!supportedNodeTypes.includes(rule.type)) continue;
-    if (rule.includes.some((keyword) => text.includes(keyword))) {
+    if (rule.includes.some((keyword) => normalizedText.includes(keyword))) {
       return rule.type;
     }
   }
@@ -324,7 +622,33 @@ function extractJobNamesFromConfig(configText, cicdPlatform) {
 function buildFallbackWorkflow(configText, cicdPlatform) {
   const supportedNodeTypes = getSupportedNodeTypes();
   const jobNames = extractJobNamesFromConfig(configText, cicdPlatform);
-  const inferredJobs = jobNames.length > 0 ? jobNames : ['build', 'test', 'deploy'];
+  const robustFallbackSequence = [
+    'cache_restore',
+    'build',
+    'matrix_build',
+    'lint',
+    'test',
+    'integration_test',
+    'smoke_test',
+    'security_scan',
+    'cache_save',
+    'package',
+    'release',
+    'conditional',
+    'approval_gate',
+    'deploy',
+    'canary_deploy',
+    'blue_green_deploy',
+    'rollback',
+    'notify',
+  ].filter((type) => supportedNodeTypes.includes(type));
+
+  const inferredJobs =
+    jobNames.length > 0
+      ? jobNames
+      : robustFallbackSequence.length > 0
+        ? robustFallbackSequence
+        : ['build', 'test', 'deploy'];
 
   const nodes = [
     {
@@ -340,7 +664,9 @@ function buildFallbackWorkflow(configText, cicdPlatform) {
 
   inferredJobs.forEach((jobName, index) => {
     const nodeId = `node_${index + 2}`;
-    const type = classifyNodeType(jobName, supportedNodeTypes);
+    const type = supportedNodeTypes.includes(jobName)
+      ? jobName
+      : classifyNodeType(jobName, supportedNodeTypes);
 
     nodes.push({
       id: nodeId,
@@ -409,6 +735,66 @@ function parsePipelineResult(text, cicdPlatform) {
   };
 }
 
+const NODE_GENERATION_GUIDANCE = {
+  trigger_push: 'Use for git push triggers. Optional config: { branch }.',
+  trigger_mr: 'Use for merge/pull request triggers. Optional config: { targetBranch }.',
+  build: 'Compile/build job. Suggested config: { image, script, stage }.',
+  matrix_build: 'Parallel matrix build/test strategy. Suggested config: { matrix, image, script, stage }.',
+  lint: 'Static analysis or lint checks. Suggested config: { image, script, stage }.',
+  test: 'Unit tests. Suggested config: { image, script, stage }.',
+  integration_test: 'Integration tests against dependencies/services.',
+  smoke_test: 'Post-build smoke validation before promotion.',
+  cache_restore: 'Restore dependency/build cache. Suggested config: { cacheKey, cachePaths }.',
+  cache_save: 'Save dependency/build cache. Suggested config: { cacheKey, cachePaths }.',
+  security_scan: 'Security checks (SAST/dependency/container scan).',
+  package: 'Build and publish artifacts/packages. Suggested config: { artifactPath }.',
+  release: 'Tag/release orchestration. Suggested config: { tag }.',
+  approval_gate: 'Manual approval before sensitive promotion. Suggested config: { approver, environment }.',
+  deploy: 'Primary deployment step. Suggested config: { environment, script }.',
+  canary_deploy: 'Progressive rollout with traffic split. Suggested config: { trafficPercent, environment }.',
+  blue_green_deploy: 'Blue/green cutover. Suggested config: { activeColor, environment }.',
+  rollback: 'Rollback strategy if rollout fails. Suggested config: { environment, script }.',
+  notify: 'Send Slack/Teams/email notifications. Suggested config: { channel, script }.',
+  conditional: 'Branch/env conditional gate. Suggested config: { condition }.',
+};
+
+function buildNodeGenerationGuide(supportedNodeTypes) {
+  return supportedNodeTypes
+    .map((type) => `- ${type}: ${NODE_GENERATION_GUIDANCE[type] || 'Use when relevant.'}`)
+    .join('\n');
+}
+
+function buildRobustDefaultBlueprint(supportedNodeTypes) {
+  const preferredSequence = [
+    'trigger_push',
+    'cache_restore',
+    'build',
+    'matrix_build',
+    'lint',
+    'test',
+    'integration_test',
+    'smoke_test',
+    'security_scan',
+    'cache_save',
+    'package',
+    'release',
+    'conditional',
+    'approval_gate',
+    'deploy',
+    'canary_deploy',
+    'blue_green_deploy',
+    'rollback',
+    'notify',
+  ];
+
+  const selected = preferredSequence.filter((type) => supportedNodeTypes.includes(type));
+  if (selected.length === 0) {
+    return 'trigger_push -> build -> test -> deploy';
+  }
+
+  return selected.join(' -> ');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. AI Pipeline Generator (Platform-Agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,15 +803,33 @@ async function generatePipelineFromPrompt(prompt, options = {}) {
   const cicdPlatform = options.cicdPlatform || 'gitlab';
   const generator = getCICDGenerator(cicdPlatform);
   const metadata = generator.getMetadata();
+  const supportedNodeTypes = getSupportedNodeTypes();
+  const nodeGuide = buildNodeGenerationGuide(supportedNodeTypes);
+  const robustBlueprint = buildRobustDefaultBlueprint(supportedNodeTypes);
 
   const system = `You are an expert DevOps engineer specializing in CI/CD automation.
-Given a description, produce:
+Given project requirements, produce:
 1. A valid ${metadata.displayName} configuration file (${metadata.fileName}).
-2. React Flow workflow nodes for the visual editor.
+2. React Flow workflow nodes for the visual editor that mirror the YAML flow.
 
 Node shape: { "id": "<unique>", "type": "<nodeType>", "data": { "label": "<name>", "config": {} }, "position": { "x": <n>, "y": <n> } }
-Valid nodeTypes: ${getSupportedNodeTypes().join(', ')}.
+Valid nodeTypes: ${supportedNodeTypes.join(', ')}.
 Edge shape: { "id": "e<src>-<tgt>", "source": "<id>", "target": "<id>", "animated": true }
+
+Node intent and config guidance:
+${nodeGuide}
+
+Pipeline quality requirements:
+- Build a coherent DAG with all nodes connected through edges.
+- Use meaningful stage/job names and realistic scripts.
+- Unless the user explicitly requests a minimal pipeline, include strong quality gates before deployment: lint, tests, security scanning, and deployment safety checks.
+- For production-grade prompts, prefer comprehensive coverage with matrix, cache, package/release, approval, progressive deploy, rollback, and notifications when those node types are available.
+- Use the conditional node for branch/environment gating around deployment decisions when applicable.
+- Provide useful config values for advanced nodes (matrix, cacheKey/cachePaths, approver, trafficPercent, activeColor, artifactPath, tag, condition, channel).
+- Ensure generated YAML is valid and runnable for ${metadata.displayName}.
+
+Default robust blueprint when prompt is broad or underspecified:
+${robustBlueprint}
 
 Target platform: ${metadata.displayName}
 ${getPlatformGuidelines(cicdPlatform)}
@@ -483,31 +887,74 @@ Analyse the provided pipeline failure logs and return ONLY raw JSON — no markd
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. Jenkinsfile → Target Platform Migration
+// 3. Source Platform → Target Platform Migration
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function convertJenkinsfile(jenkinsfile, options = {}) {
-  const cicdPlatform = options.cicdPlatform || 'gitlab';
-  const generator = getCICDGenerator(cicdPlatform);
-  const metadata = generator.getMetadata();
+async function convertPipelineConfig(pipelineConfig, options = {}) {
+  const sourcePlatform = options.sourcePlatform || 'jenkins';
+  const targetPlatform = options.targetPlatform || options.cicdPlatform || 'gitlab';
 
-  const system = `You are an expert in Jenkins and ${metadata.displayName}.
-Convert the Jenkinsfile to a valid ${metadata.fileName} and React Flow nodes.
+  if (!SUPPORTED_CICD_PLATFORMS.includes(sourcePlatform)) {
+    throw new Error(`Unsupported source platform: ${sourcePlatform}`);
+  }
+
+  if (!SUPPORTED_CICD_PLATFORMS.includes(targetPlatform)) {
+    throw new Error(`Unsupported target platform: ${targetPlatform}`);
+  }
+
+  if (sourcePlatform === targetPlatform) {
+    throw new Error('Source and target CI/CD platforms must be different');
+  }
+
+  const generator = getCICDGenerator(targetPlatform);
+  const targetMetadata = generator.getMetadata();
+  const sourceDisplayName =
+    PLATFORM_DISPLAY_NAMES[sourcePlatform] ||
+    sourcePlatform.charAt(0).toUpperCase() + sourcePlatform.slice(1);
+
+  const system = `You are a senior DevOps migration specialist.
+Convert a CI/CD configuration from ${sourceDisplayName} to ${targetMetadata.displayName}.
+
+Requirements:
+- Preserve pipeline intent and stage/job behavior.
+- Output valid ${targetMetadata.displayName} syntax (${targetMetadata.fileName}).
+- Keep the result practical and production-friendly.
+- Return React Flow nodes and edges for the visual editor.
+- Never output markdown fences.
+
 Valid nodeTypes: ${getSupportedNodeTypes().join(', ')}.
 
-Target platform: ${metadata.displayName}
-${getPlatformGuidelines(cicdPlatform)}
+Source platform: ${sourceDisplayName}
+${getPlatformGuidelines(sourcePlatform)}
 
-Return ONLY raw JSON — no markdown fences:
+Target platform: ${targetMetadata.displayName}
+${getPlatformGuidelines(targetPlatform)}
+
+Return ONLY raw JSON:
 { "yaml": "...", "nodes": [...], "edges": [...] }`;
 
-  const text = await ask(system, jenkinsfile, {
+  const userMessage = `Source platform: ${sourcePlatform}\nTarget platform: ${targetPlatform}\n\nConfiguration to migrate:\n${pipelineConfig}`;
+
+  const text = await ask(system, userMessage, {
     aiProvider: options.aiProvider,
     aiOptions: options.aiOptions,
     maxTokens: 4096,
   });
 
-  return parsePipelineResult(text, cicdPlatform);
+  const parsed = parsePipelineResult(text, targetPlatform);
+  return {
+    ...parsed,
+    sourcePlatform,
+    targetPlatform,
+  };
+}
+
+async function convertJenkinsfile(jenkinsfile, options = {}) {
+  return convertPipelineConfig(jenkinsfile, {
+    ...options,
+    sourcePlatform: 'jenkins',
+    targetPlatform: options.targetPlatform || options.cicdPlatform || 'gitlab',
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -539,22 +986,24 @@ Return ONLY raw JSON — no markdown fences:
   "topRecommendations": ["<highest impact fix 1>", "<2>", "<3>"]
 }`;
 
-  const text = await ask(system, yaml, {
-    aiProvider: options.aiProvider,
-    aiOptions: options.aiOptions,
-    maxTokens: 2048,
-  });
-
+  let text;
   try {
-    return JSON.parse(text);
-  } catch {
+    text = await ask(system, yaml, {
+      aiProvider: options.aiProvider,
+      aiOptions: options.aiOptions,
+      maxTokens: 2048,
+    });
+  } catch (err) {
+    const fallback = buildHeuristicHealthReport(yaml, metadata.displayName);
     return {
-      overallScore: 0,
-      grade: 'F',
-      breakdown: {},
-      topRecommendations: [text],
+      ...fallback,
+      summary: `AI analysis unavailable, showing heuristic report for ${metadata.displayName}.`,
+      warning: err.message,
     };
   }
+
+  const parsed = parseJsonObjectFromText(text);
+  return normalizeHealthReport(parsed, yaml, metadata.displayName);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -713,6 +1162,7 @@ Guidelines for CircleCI:
 module.exports = {
   generatePipelineFromPrompt,
   explainPipelineFailure,
+  convertPipelineConfig,
   convertJenkinsfile,
   scorePipelineHealth,
   autoRemediatePipeline,

@@ -124,6 +124,7 @@ body {
 .ff-nav-btn:hover {
   border-color: #a8b8c8;
   background: #f8fafc;
+  color: #0f172a;
 }
 
 .ff-nav-btn-active {

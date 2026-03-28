@@ -1,6 +1,73 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
+const FULL_NODE_COVERAGE = [
+  'trigger_push',
+  'trigger_mr',
+  'cache_restore',
+  'build',
+  'matrix_build',
+  'lint',
+  'test',
+  'integration_test',
+  'smoke_test',
+  'security_scan',
+  'cache_save',
+  'package',
+  'release',
+  'conditional',
+  'approval_gate',
+  'deploy',
+  'canary_deploy',
+  'blue_green_deploy',
+  'rollback',
+  'notify',
+];
+
+function buildProductionTemplate(platformLabel) {
+  return `Create a production-grade ${platformLabel} pipeline.
+
+Project details:
+- Stack: Node.js API + React frontend
+- Package manager: npm
+- Environments: staging and production
+- Deployment branch: main
+
+Pipeline requirements:
+- Triggers: push and merge request
+- Performance: restore/save dependency cache and use matrix build for Node 18 and 20
+- Quality gates: lint, unit tests, integration tests, smoke tests, security scan
+- Packaging and release: create artifact/package and release stage
+- Deployment safety: approval gate before production
+- Deploy strategy: canary deploy, then blue/green cutover
+- Reliability: rollback plan if health checks fail
+- Communication: notify team on success/failure
+- Branch policy: use conditional logic so production deploy only happens on main
+
+Node expectations:
+- Use these node types when relevant: ${FULL_NODE_COVERAGE.join(', ')}
+- Fill useful config values (matrix, cacheKey/cachePaths, artifactPath, tag, approver, trafficPercent, activeColor, channel, condition)
+
+Output quality:
+- YAML must be valid and runnable
+- Node graph should be fully connected and easy to read`;
+}
+
+function buildFullCoverageExample(platformLabel) {
+  return `Generate a comprehensive ${platformLabel} pipeline that demonstrates all available builder node types in a realistic flow.
+
+Use this end-to-end sequence:
+trigger_push + trigger_mr -> cache_restore -> build -> matrix_build -> lint -> test -> integration_test -> smoke_test -> security_scan -> cache_save -> package -> release -> conditional -> approval_gate -> deploy -> canary_deploy -> blue_green_deploy -> rollback -> notify
+
+Constraints:
+- Production deploy only on main branch
+- Canary rollout starts at 10% traffic
+- Blue/green switch uses activeColor=green
+- Include rollback behavior and team notification
+- Use meaningful scripts and config values for each advanced node
+- Return robust, clean YAML and matching React Flow nodes/edges`;
+}
+
 export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiOptions }) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,10 +80,13 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
     circleci: 'CircleCI',
   };
 
+  const targetPlatformLabel = platformNames[cicdPlatform] || 'CI/CD';
+
   const examplePrompts = [
-    'Create a pipeline for a Node.js project that installs dependencies, runs unit tests, performs a security scan, and deploys to Docker.',
-    'Build a Python Django pipeline with linting, testing, Docker build, and deploy to Kubernetes.',
-    'Create a pipeline for a React app with build, test, Lighthouse audit, and deploy to AWS S3.',
+    `Create a production-ready ${targetPlatformLabel} pipeline for a Node.js service that uses cache restore/save, matrix builds, lint, unit/integration/smoke tests, security scanning, packaging, release, approval gate, canary deployment, blue/green cutover, rollback, and notifications.`,
+    `Design a ${targetPlatformLabel} monorepo pipeline (frontend + backend) with branch-aware conditional deployment, artifact packaging, parallel test strategy, and environment-specific deployment controls with rollback.`,
+    `Generate a ${targetPlatformLabel} pipeline for a Python API with security-first defaults: pinned images, dependency scan, secret-safe practices, approval before production, staged canary rollout, and incident notifications.`,
+    `Create a highly reliable ${targetPlatformLabel} pipeline for a React app: restore cache, build, lint, test, integration checks, smoke tests, package artifacts, release tag, and deploy only from main via conditional gate.`,
   ];
 
   const handleGenerate = async () => {
@@ -56,11 +126,37 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
           </p>
         </div>
 
+        <section className="ff-surface-soft p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-700 uppercase tracking-[0.14em]">
+            Prompt Boosters
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setPrompt(buildProductionTemplate(targetPlatformLabel))}
+              className="px-3 py-2 rounded-lg text-xs ff-btn-secondary"
+            >
+              Load Production Template
+            </button>
+            <button
+              onClick={() => setPrompt(buildFullCoverageExample(targetPlatformLabel))}
+              className="px-3 py-2 rounded-lg text-xs ff-btn-secondary"
+            >
+              Load Full Node Coverage Example
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-600 leading-relaxed">
+            High-quality prompts should include triggers, quality gates, security checks, deploy strategy,
+            rollback behavior, notifications, and branch/environment conditions.
+          </p>
+        </section>
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Example: Build and test a Node.js app, run security scan, then deploy to production only from main branch."
-          rows={7}
+          placeholder="Describe stack, triggers, environments, quality gates, security requirements, deploy strategy, rollback, and notifications."
+          rows={10}
           className="ff-input p-4 text-sm resize-none leading-relaxed"
         />
 
