@@ -205,7 +205,7 @@ function pickInitialSelection(providerData, storedPreferences) {
   };
 }
 
-export default function App() {
+export default function App({ onBackToLanding }) {
   const { theme, toggleTheme } = useTheme();
   const [yamlOutput, setYamlOutput] = useState('');
   const [activePanel, setActivePanel] = useState('builder');
@@ -674,6 +674,16 @@ export default function App() {
           <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-4 md:px-6 py-3.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
+                {onBackToLanding && (
+                  <button
+                    onClick={onBackToLanding}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+                    aria-label="Back to home"
+                    title="Back to home"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l6-6 6 6"/><path d="M5 7.5V15h3v-4h2v4h3V7.5"/></svg>
+                  </button>
+                )}
                 {!sidebarOpen && (
                   <button
                     onClick={() => setSidebarOpen(true)}
