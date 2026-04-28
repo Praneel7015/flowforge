@@ -2,7 +2,7 @@ const axios = require('axios');
 
 const GITLAB_URL = process.env.GITLAB_URL || 'https://gitlab.com';
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN;
-const GITLAB_TIMEOUT_MS = Number(process.env.GITLAB_TIMEOUT_MS || 20000);
+const GITLAB_TIMEOUT_MS = Number(process.env.GITLAB_TIMEOUT_MS || 60000);
 
 const gitlab = axios.create({
   baseURL: `${GITLAB_URL}/api/v4`,

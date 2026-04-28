@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const BITBUCKET_API = 'https://api.bitbucket.org/2.0';
-const DEFAULT_TIMEOUT = Number(process.env.BITBUCKET_TIMEOUT_MS || 20000);
+const DEFAULT_TIMEOUT = Number(process.env.BITBUCKET_TIMEOUT_MS || 60000);
 const MAX_FILE_SIZE = 100 * 1024;
 
 function makeClient(username, appPassword) {

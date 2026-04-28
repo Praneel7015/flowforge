@@ -1,6 +1,9 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
+const GITHUB_VALIDATE_TIMEOUT_MS = Number(process.env.GITHUB_VALIDATE_TIMEOUT_MS || 30000);
+const GITLAB_VALIDATE_TIMEOUT_MS = Number(process.env.GITLAB_VALIDATE_TIMEOUT_MS || 30000);
+const BITBUCKET_VALIDATE_TIMEOUT_MS = Number(process.env.BITBUCKET_VALIDATE_TIMEOUT_MS || 30000);
 
 /**
  * POST /api/platforms/validate
@@ -74,7 +77,7 @@ async function validateGitLab(creds) {
   try {
     const { data } = await axios.get(`${baseUrl}/api/v4/user`, {
       headers: { 'PRIVATE-TOKEN': token },
-      timeout: 10000,
+      timeout: GITLAB_VALIDATE_TIMEOUT_MS,
     });
     return {
       valid: true,
@@ -102,7 +105,7 @@ async function validateGitHub(creds) {
   try {
     const { data } = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-      timeout: 10000,
+      timeout: GITHUB_VALIDATE_TIMEOUT_MS,
     });
     return {
       valid: true,
@@ -129,7 +132,7 @@ async function validateBitbucket(creds) {
   try {
     const { data } = await axios.get('https://api.bitbucket.org/2.0/user', {
       auth: { username, password: appPassword },
-      timeout: 10000,
+      timeout: BITBUCKET_VALIDATE_TIMEOUT_MS,
     });
     return {
       valid: true,

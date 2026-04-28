@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const GITHUB_API = 'https://api.github.com';
-const DEFAULT_TIMEOUT = Number(process.env.GITHUB_TIMEOUT_MS || 20000);
+const DEFAULT_TIMEOUT = Number(process.env.GITHUB_TIMEOUT_MS || 60000);
 const MAX_FILE_SIZE = 100 * 1024; // 100KB per file
 
 function makeClient(token) {
