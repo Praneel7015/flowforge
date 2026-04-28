@@ -796,6 +796,38 @@ function buildRobustDefaultBlueprint(supportedNodeTypes) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Repo context builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_TOTAL_CONTEXT_CHARS = 80000; // ~20K tokens — leaves room for system + output
+
+function buildRepoContextSection(repoContext) {
+  if (!Array.isArray(repoContext) || repoContext.length === 0) return '';
+
+  const lines = [
+    '\n\nRepository Context (files selected by the user from their repo):',
+    'Use these files to understand the project stack, dependencies, scripts, and structure.',
+    'Tailor the generated pipeline to match what is actually in this codebase.',
+  ];
+
+  let totalChars = 0;
+  for (const file of repoContext) {
+    if (!file.path || typeof file.content !== 'string') continue;
+    const header = `\n--- ${file.path} ---\n`;
+    const available = MAX_TOTAL_CONTEXT_CHARS - totalChars;
+    if (available <= 0) {
+      lines.push(`\n[${file.path} omitted — context limit reached]`);
+      continue;
+    }
+    const content = file.content.slice(0, available);
+    lines.push(header + content);
+    totalChars += header.length + content.length;
+  }
+
+  return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. AI Pipeline Generator (Platform-Agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -837,7 +869,10 @@ ${getPlatformGuidelines(cicdPlatform)}
 Return ONLY raw JSON, no markdown fences:
 { "yaml": "...", "nodes": [...], "edges": [...] }`;
 
-  const text = await ask(system, prompt, {
+  const repoContextSection = buildRepoContextSection(options.repoContext);
+  const userMessage = repoContextSection ? `${repoContextSection}\n\nUser request:\n${prompt}` : prompt;
+
+  const text = await ask(system, userMessage, {
     aiProvider: options.aiProvider,
     aiOptions: options.aiOptions,
     maxTokens: 4096,

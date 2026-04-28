@@ -14,6 +14,7 @@ const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
 const HealthAdvisor = lazy(() => import('./components/HealthAdvisor'));
 const PipelineChat = lazy(() => import('./components/PipelineChat'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SmartGeneratePage = lazy(() => import('./pages/SmartGeneratePage'));
 
 const clientFeatureFlags = getClientFeatureFlags();
 const SETTINGS_STORAGE_KEY = 'flowforge.preferences.v1';
@@ -27,6 +28,7 @@ const ONBOARDING_STATUS = {
 const NAV_ICONS = {
   builder: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v5M9 11.5h5"/></svg>,
   prompt: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M4.5 4l2 2M11.5 4l-2 2"/><rect x="3" y="8" width="10" height="6" rx="1.5"/></svg>,
+  repo: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>,
   jenkins: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h3M9 4h3M4 8h8M6 12h4"/><path d="M5.5 4v4M10.5 4v4M8 8v4"/></svg>,
   health: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8h2l1-2 2 4 1-2h2"/></svg>,
   chat: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 2v-2a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M5.5 7h5M5.5 5h3"/></svg>,
@@ -36,6 +38,7 @@ const NAV_ICONS = {
 const NAV_ITEMS = [
   { id: 'builder', label: 'Builder' },
   { id: 'prompt', label: 'Generate' },
+  { id: 'repo', label: 'Smart Generate' },
   { id: 'jenkins', label: 'Migrate' },
   { id: 'health', label: 'Health' },
   { id: 'chat', label: 'Chat' },
@@ -50,6 +53,10 @@ const PANEL_META = {
   prompt: {
     title: 'Generate From Prompt',
     subtitle: 'Describe the workflow and generate a production-ready pipeline structure.',
+  },
+  repo: {
+    title: 'Smart Generate',
+    subtitle: 'Connect a repo, select files as context, generate a tailored pipeline, and push it back.',
   },
   jenkins: {
     title: 'Migrate Existing Pipeline',
@@ -311,7 +318,7 @@ export default function App({ onBackToLanding }) {
 
     if (
       onboardingStatus === ONBOARDING_STATUS.limited &&
-      !['builder', 'settings'].includes(activePanel)
+      !['builder', 'settings', 'repo'].includes(activePanel)
     ) {
       setActivePanel('builder');
     }
@@ -477,6 +484,21 @@ export default function App({ onBackToLanding }) {
       );
     }
 
+    if (activePanel === 'repo') {
+      return (
+        <ErrorBoundary name="Smart Generate" key="repo">
+          <Suspense fallback={lazyFallback}>
+            <SmartGeneratePage
+              onGenerated={handleGenerated}
+              aiProvider={selectedProviders.ai}
+              cicdPlatform={selectedProviders.cicd}
+              aiOptions={aiOptions}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      );
+    }
+
     if (activePanel === 'jenkins') {
       return (
         <ErrorBoundary name="Migrate" key="jenkins">
@@ -550,7 +572,7 @@ export default function App({ onBackToLanding }) {
     const isActive = activePanel === item.id;
     const isLocked =
       (isOnboardingRequired && item.id !== 'settings') ||
-      (isLimitedMode && !['builder', 'settings'].includes(item.id));
+      (isLimitedMode && !['builder', 'settings', 'repo'].includes(item.id));
 
     const lockedMessage = isOnboardingRequired
       ? 'Complete onboarding in Settings to unlock this page'

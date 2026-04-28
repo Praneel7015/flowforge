@@ -1,5 +1,24 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import FileTreePicker from './FileTreePicker';
+import RepoBrowser from './RepoBrowser';
+
+const CREDS_KEY = 'flowforge.platformCredentials.v1';
+const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket'];
+const PLATFORM_LABELS = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
+
+function readStoredCredentials() {
+  try {
+    const raw = localStorage.getItem(CREDS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function hasCredentials(creds, platform) {
+  if (!creds[platform]) return false;
+  if (platform === 'bitbucket') return !!(creds[platform].username && creds[platform].appPassword);
+  return !!(creds[platform].token);
+}
 
 const FULL_NODE_COVERAGE = [
   'trigger_push',
@@ -74,9 +93,65 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
   const [error, setError] = useState('');
   const abortRef = useRef(null);
 
+  // Repo context state
+  const [repoContextOpen, setRepoContextOpen] = useState(false);
+  const allCreds = readStoredCredentials();
+  const connectedPlatforms = SUPPORTED_PLATFORMS.filter((p) => hasCredentials(allCreds, p));
+  const [repoPlatform, setRepoPlatform] = useState(connectedPlatforms[0] || 'github');
+  const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [tree, setTree] = useState([]);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [treeError, setTreeError] = useState('');
+  const [selectedPaths, setSelectedPaths] = useState([]);
+  const [repoContext, setRepoContext] = useState([]);
+
   useEffect(() => {
     return () => { abortRef.current?.abort(); };
   }, []);
+
+  const loadTree = useCallback(async () => {
+    if (!selectedRepo || !selectedBranch) return;
+    const creds = allCreds[repoPlatform] || {};
+    setLoadingTree(true);
+    setTreeError('');
+    try {
+      const { data } = await axios.post('/api/repo/tree', {
+        platform: repoPlatform,
+        credentials: creds,
+        owner: creds.username || '',
+        repo: selectedRepo,
+        branch: selectedBranch,
+      });
+      setTree((data.tree || []).filter((i) => i.type === 'file'));
+    } catch (err) {
+      setTreeError(err.response?.data?.error || 'Failed to load file tree');
+    } finally {
+      setLoadingTree(false);
+    }
+  }, [selectedRepo, selectedBranch, repoPlatform, allCreds]);
+
+  useEffect(() => {
+    if (repoContextOpen && selectedRepo && selectedBranch) loadTree();
+  }, [selectedRepo, selectedBranch, repoContextOpen, loadTree]);
+
+  const fetchAndAttachContext = useCallback(async () => {
+    if (selectedPaths.length === 0) { setRepoContext([]); return; }
+    const creds = allCreds[repoPlatform] || {};
+    try {
+      const { data } = await axios.post('/api/repo/file-contents', {
+        platform: repoPlatform,
+        credentials: creds,
+        owner: creds.username || '',
+        repo: selectedRepo,
+        paths: selectedPaths,
+        branch: selectedBranch,
+      });
+      setRepoContext(data.files || []);
+    } catch {
+      setRepoContext([]);
+    }
+  }, [selectedPaths, repoPlatform, allCreds, selectedRepo, selectedBranch]);
 
   const platformNames = {
     gitlab: 'GitLab CI',
@@ -103,11 +178,20 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // Fetch repo file contents if any files are selected
+      let attachedContext = repoContext;
+      if (repoContextOpen && selectedPaths.length > 0 && repoContext.length === 0) {
+        await fetchAndAttachContext();
+        attachedContext = repoContext;
+      }
+
       const { data } = await axios.post('/api/pipelines/generate', {
         prompt,
         aiProvider,
         cicdPlatform,
         aiOptions,
+        repoContext: attachedContext.length > 0 ? attachedContext : undefined,
       }, { signal: controller.signal });
       onGenerated(data);
     } catch (err) {
@@ -160,6 +244,90 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
             rollback behavior, notifications, and branch/environment conditions.
           </p>
         </section>
+
+        {/* Repo context section */}
+        <div className="rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] overflow-hidden">
+          <button
+            onClick={() => setRepoContextOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[var(--ff-text-secondary)] hover:bg-[var(--ff-card-bg-hover)] transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/>
+              </svg>
+              Attach Repo Context
+              {selectedPaths.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--ff-accent-soft)] text-[var(--ff-accent)] border border-[var(--ff-border)]">
+                  {selectedPaths.length} file{selectedPaths.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </span>
+            <span className="text-[var(--ff-muted)] text-xs">{repoContextOpen ? '▾' : '▸'}</span>
+          </button>
+
+          {repoContextOpen && (
+            <div className="px-4 pb-4 space-y-4 border-t border-[var(--ff-card-border)]">
+              {connectedPlatforms.length === 0 ? (
+                <p className="text-xs text-[var(--ff-muted)] pt-3">
+                  No platforms connected. Go to Settings → Platform Integrations to add credentials.
+                </p>
+              ) : (
+                <>
+                  {/* Platform picker */}
+                  <div className="flex gap-2 pt-3 flex-wrap">
+                    {connectedPlatforms.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => { setRepoPlatform(p); setSelectedRepo(''); setSelectedBranch(''); setTree([]); setSelectedPaths([]); }}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                          repoPlatform === p
+                            ? 'border-[var(--ff-border-strong)] bg-[var(--ff-accent-soft)] text-[var(--ff-text)]'
+                            : 'border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:border-[var(--ff-border-strong)]'
+                        }`}
+                      >
+                        {PLATFORM_LABELS[p]}
+                      </button>
+                    ))}
+                  </div>
+
+                  <RepoBrowser
+                    platform={repoPlatform}
+                    selectedRepo={selectedRepo}
+                    selectedBranch={selectedBranch}
+                    onRepoSelect={(r) => { setSelectedRepo(r); setTree([]); setSelectedPaths([]); setRepoContext([]); }}
+                    onBranchSelect={(b) => { setSelectedBranch(b); setTree([]); setSelectedPaths([]); setRepoContext([]); }}
+                  />
+
+                  {treeError && <p className="text-xs text-[var(--ff-danger)]">{treeError}</p>}
+
+                  {selectedRepo && selectedBranch && (
+                    <div className="space-y-3">
+                      <FileTreePicker
+                        tree={tree}
+                        selectedPaths={selectedPaths}
+                        onChange={(paths) => { setSelectedPaths(paths); setRepoContext([]); }}
+                        loading={loadingTree}
+                      />
+                      {selectedPaths.length > 0 && (
+                        <button
+                          onClick={fetchAndAttachContext}
+                          className="ff-btn-secondary rounded-lg px-3 py-1.5 text-xs font-medium"
+                        >
+                          Attach {selectedPaths.length} file{selectedPaths.length !== 1 ? 's' : ''} as context
+                        </button>
+                      )}
+                      {repoContext.length > 0 && (
+                        <p className="text-xs text-[var(--ff-success)]">
+                          ✓ {repoContext.length} file{repoContext.length !== 1 ? 's' : ''} attached — will be sent with generation request
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         <textarea
           value={prompt}

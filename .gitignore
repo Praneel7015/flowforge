@@ -9,3 +9,5 @@ vscode/
 CONTEXT.md
 .vercel
 .claude/
+.agents/
+skills-lock.json

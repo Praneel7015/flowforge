@@ -9,6 +9,7 @@ const advisorRoutes = require('./routes/advisorRoutes');
 const configRoutes = require('./routes/configRoutes');
 const n8nRoutes = require('./routes/n8nRoutes');
 const platformRoutes = require('./routes/platformRoutes');
+const repoRoutes = require('./routes/repoRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -44,6 +45,7 @@ app.use('/api/advisor', advisorRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/n8n', n8nRoutes);
 app.use('/api/platforms', platformRoutes);
+app.use('/api/repo', repoRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'flowforge-backend' });

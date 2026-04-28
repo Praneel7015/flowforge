@@ -5,13 +5,14 @@ const { buildAIOptions } = require('../utils/aiOptions');
 
 async function generatePipeline(req, res) {
   try {
-    const { prompt, aiProvider, cicdPlatform, aiOptions } = req.body;
+    const { prompt, aiProvider, cicdPlatform, aiOptions, repoContext } = req.body;
     if (!prompt) return res.status(400).json({ error: 'prompt is required' });
 
     const result = await aiService.generatePipelineFromPrompt(prompt, {
       aiProvider,
       cicdPlatform,
       aiOptions: buildAIOptions(aiOptions),
+      repoContext: Array.isArray(repoContext) ? repoContext : undefined,
     });
     res.json(result);
   } catch (err) {

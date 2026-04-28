@@ -17,8 +17,7 @@ async function handleWebhook(req, res) {
     if (gitlabEvent) {
       await handleGitLabWebhook(gitlabEvent, payload);
     } else if (githubEvent) {
-      // TODO: Implement GitHub webhook handling
-      console.log(`GitHub event: ${githubEvent}`);
+      await handleGitHubWebhook(githubEvent, payload);
     } else {
       console.log('Unknown webhook source');
     }
@@ -113,6 +112,38 @@ async function handlePipelineFailure(payload) {
   } else if (commitSha) {
     await gitlabService.commentOnCommit(projectId, commitSha, comment);
     console.log(`Posted analysis to commit ${commitSha}`);
+  }
+}
+
+/**
+ * Handle GitHub-specific webhook events (passive — log only).
+ * Full automation requires a server-side GitHub token; user-initiated
+ * analysis is handled via /api/repo/* endpoints with browser-supplied tokens.
+ */
+async function handleGitHubWebhook(event, payload) {
+  switch (event) {
+    case 'workflow_run': {
+      const run = payload.workflow_run || {};
+      console.log(`GitHub workflow_run: ${run.name} — ${run.status}/${run.conclusion} (id: ${run.id})`);
+      break;
+    }
+    case 'push': {
+      const ref = payload.ref || '';
+      const pusher = payload.pusher?.name || 'unknown';
+      console.log(`GitHub push to ${ref} by ${pusher}`);
+      break;
+    }
+    case 'pull_request': {
+      const pr = payload.pull_request || {};
+      console.log(`GitHub PR #${pr.number} — ${payload.action}: ${pr.title}`);
+      break;
+    }
+    case 'ping': {
+      console.log('GitHub webhook ping received — hook is active');
+      break;
+    }
+    default:
+      console.log(`GitHub event received: ${event}`);
   }
 }
 
