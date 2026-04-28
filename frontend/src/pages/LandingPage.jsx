@@ -817,7 +817,7 @@ export default function LandingPage({ onEnterApp }) {
             rel="noopener noreferrer"
             style={{ ...s.footerText, color: 'var(--ff-muted)', textDecoration: 'none' }}
           >
-            GitHub
+            GitHub Repo
           </a>
           <button
             onClick={onEnterApp}
