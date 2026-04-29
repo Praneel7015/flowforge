@@ -414,41 +414,50 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--ff-scrollbar-thumb); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ff-scrollbar-thumb-hover); }
 
-/* ── Theme toggle button ───────────────────────────────────── */
+/* ── Theme toggle (text-style sun / moon glyphs, not emoji) ─ */
 .ff-theme-toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  border-radius: 12px;
-  border: 1px solid var(--ff-border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  height: 2rem;
+  min-width: 2.375rem;
+  padding: 0 0.35rem;
+  border-radius: var(--ff-radius-sm);
+  border: 1px solid var(--ff-card-border);
   background: var(--ff-card-bg);
+  color: var(--ff-text-secondary);
   cursor: pointer;
-  padding: 0;
-  transition: background var(--ff-transition), border-color var(--ff-transition);
+  font-family: inherit;
+  transition: background var(--ff-transition), border-color var(--ff-transition), color var(--ff-transition);
 }
 
 .ff-theme-toggle:hover {
-  border-color: var(--ff-muted);
+  border-color: var(--ff-border-strong);
+  background: var(--ff-nav-hover);
+  color: var(--ff-text);
 }
 
-.ff-theme-toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ff-text-secondary);
-  transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1), background 250ms cubic-bezier(0.4, 0, 0.2, 1);
+.ff-theme-toggle:active {
+  transform: scale(0.98);
 }
 
-[data-theme="light"] .ff-theme-toggle::after {
-  transform: translateX(20px);
-  background: #18181B;
+.ff-theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
 }
 
-[data-theme="light"] .ff-theme-toggle {
-  background: #E4E4E7;
-  border-color: #D4D4D8;
+.ff-theme-toggle-mark {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  opacity: 0.3;
+  transition: opacity var(--ff-transition);
+  user-select: none;
+}
+
+.ff-theme-toggle-mark-active {
+  opacity: 1;
+  color: var(--ff-text);
 }

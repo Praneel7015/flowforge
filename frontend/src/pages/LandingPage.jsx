@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../utils/theme';
+import ThemeToggleButton from '../components/ThemeToggleButton';
 
 /* ── Pipeline mini-preview nodes ── */
 const PIPELINE_NODES = [
@@ -220,7 +221,7 @@ function Stat({ value, label }) {
 
 /* ── Main component ── */
 export default function LandingPage({ onEnterApp }) {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const heroRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
   const [entered, setEntered] = useState(false);
@@ -552,12 +553,7 @@ export default function LandingPage({ onEnterApp }) {
         <span style={s.logoText}>FlowForge</span>
 
         <div style={s.navLinks}>
-          <button
-            onClick={toggleTheme}
-            className="ff-theme-toggle"
-            aria-label="Toggle theme"
-            style={{ marginRight: 4 }}
-          />
+          <ThemeToggleButton />
           <button
             onClick={onEnterApp}
             onMouseEnter={() => setHoveredBtn('nav')}

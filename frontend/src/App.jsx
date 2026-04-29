@@ -5,9 +5,8 @@ import YamlPreview from './components/YamlPreview';
 import ErrorBoundary from './components/ErrorBoundary';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import OfflineBanner from './components/OfflineBanner';
+import ThemeToggleButton from './components/ThemeToggleButton';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
-import { useTheme } from './utils/theme';
-
 const WorkflowEditor = lazy(() => import('./workflow/WorkflowEditor'));
 const PromptPanel = lazy(() => import('./components/PromptPanel'));
 const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
@@ -213,7 +212,6 @@ function pickInitialSelection(providerData, storedPreferences) {
 }
 
 export default function App({ onBackToLanding }) {
-  const { theme, toggleTheme } = useTheme();
   const [yamlOutput, setYamlOutput] = useState('');
   const [activePanel, setActivePanel] = useState('builder');
   const [importedWorkflow, setImportedWorkflow] = useState(null);
@@ -741,12 +739,7 @@ export default function App({ onBackToLanding }) {
                 <span className="px-2.5 py-1 rounded-lg text-xs font-medium border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)]">
                   {currentCICDPlatform.displayName}
                 </span>
-                <button
-                  onClick={toggleTheme}
-                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                  title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                  className="ff-theme-toggle"
-                />
+                <ThemeToggleButton />
                 <button
                   onClick={() => setActivePanel('settings')}
                   className="ff-btn-secondary rounded-lg px-3 py-1.5 text-xs font-medium"
