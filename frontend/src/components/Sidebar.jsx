@@ -44,7 +44,7 @@ const TONE_BG = {
   slate: 'bg-slate-500/15 text-slate-500',
 };
 
-export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate }) {
+export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImport }) {
   const onDragStart = (event, nodeType, label) => {
     event.dataTransfer.setData('application/reactflow-type', nodeType);
     event.dataTransfer.setData('application/reactflow-label', label);
@@ -69,6 +69,18 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate }) {
   return (
     <aside className="h-full overflow-y-auto ff-enter bg-[var(--ff-surface)] border-r border-[var(--ff-card-border)]">
       <div className="p-4">
+        {onImport && (
+          <button
+            onClick={onImport}
+            className="w-full mb-4 flex items-center justify-center gap-2 ff-btn-secondary rounded-lg px-3 py-2 text-[13px] font-medium"
+            title="Import an existing pipeline file and visualize it"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 9V2M7 9L4.5 6.5M7 9l2.5-2.5" /><path d="M2.5 11h9" />
+            </svg>
+            Import Pipeline
+          </button>
+        )}
         <h2 className="text-[10px] font-semibold text-[var(--ff-muted)] uppercase tracking-[0.16em] mb-3">
           Node Library
         </h2>

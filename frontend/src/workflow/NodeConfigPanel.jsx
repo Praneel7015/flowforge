@@ -43,14 +43,21 @@ const FIELD_PLACEHOLDERS = {
 
 export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
   const [config, setConfig] = useState(node.data.config || {});
+  const [label, setLabel] = useState(node.data.label || '');
   const fields = STAGE_CONFIGS[node.type] || ['script'];
 
   useEffect(() => {
     setConfig(node.data.config || {});
+    setLabel(node.data.label || '');
   }, [node]);
 
   const handleChange = (key, value) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = () => {
+    const trimmed = label.trim();
+    onSave(node.id, config, trimmed || node.data.label || node.type);
   };
 
   return (
@@ -66,6 +73,19 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
       </div>
 
       <div className="p-4 space-y-3">
+        <div>
+          <label className="block text-xs text-[var(--ff-muted)] mb-1">Name</label>
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="ff-input px-3 py-2 text-sm"
+            placeholder="Block name (e.g. Build & Test)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSave();
+            }}
+          />
+        </div>
         {fields.map((field) => (
           <div key={field}>
             <label className="block text-xs text-[var(--ff-muted)] mb-1 capitalize">{field}</label>
@@ -98,7 +118,7 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
           Delete
         </button>
         <button
-          onClick={() => onSave(node.id, config)}
+          onClick={handleSave}
           className="flex-1 py-2 rounded-lg text-sm font-medium transition-opacity ff-btn-primary"
         >
           Save

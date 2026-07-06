@@ -1,6 +1,7 @@
 const aiService = require('../services/aiService');
 const workflowService = require('../services/workflowService');
 const gitlabService = require('../services/gitlabService');
+const importService = require('../services/importService');
 const { buildAIOptions } = require('../utils/aiOptions');
 
 async function generatePipeline(req, res) {
@@ -34,6 +35,22 @@ async function exportYaml(req, res) {
   } catch (err) {
     console.error('exportYaml error:', err.message);
     res.status(500).json({ error: 'Failed to export: ' + err.message });
+  }
+}
+
+async function importPipeline(req, res) {
+  try {
+    const { yaml, cicdPlatform } = req.body;
+    if (typeof yaml !== 'string' || !yaml.trim()) {
+      return res.status(400).json({ error: 'yaml must be a non-empty string' });
+    }
+
+    const result = importService.importPipeline(yaml, cicdPlatform || 'auto');
+    res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('importPipeline error:', err.message);
+    res.status(status).json({ error: err.message || 'Failed to import pipeline' });
   }
 }
 
@@ -83,6 +100,7 @@ async function triggerPipeline(req, res) {
 module.exports = {
   generatePipeline,
   exportYaml,
+  importPipeline,
   getPipelineStatus,
   explainFailure,
   triggerPipeline,

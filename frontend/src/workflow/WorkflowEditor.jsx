@@ -155,7 +155,7 @@ const buildLocalYaml = (nodeList) => {
   return yamlLines.join('\n');
 };
 
-function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode, cicdPlatform }) {
+function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode, cicdPlatform, onOpenImport }) {
   const reactFlowWrapper = useRef(null);
   const [editorState, setEditorState] = useState(createInitialEditorState);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -725,11 +725,20 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     setSelectedEdgeIds(new Set());
   }, [applyUntrackedWorkflowChange]);
 
-  const handleNodeConfigSave = (nodeId, config) => {
+  const handleNodeConfigSave = (nodeId, config, label) => {
     applyTrackedWorkflowChange((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
-        node.id === nodeId ? { ...node, data: { ...node.data, config } } : node
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                config,
+                ...(typeof label === 'string' && label ? { label } : {}),
+              },
+            }
+          : node
       ),
     }));
     setConfigNodeId(null);
@@ -1026,6 +1035,14 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
             <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
               Drag nodes from the sidebar or press Enter on a node to add it. Use Generate or Migrate to auto-build a pipeline.
             </p>
+            {onOpenImport && (
+              <button
+                onClick={onOpenImport}
+                className="mt-4 ff-btn-secondary rounded-lg px-4 py-2 text-xs font-medium"
+              >
+                Import existing pipeline
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1136,6 +1153,7 @@ export default function WorkflowEditor(props) {
         onImportedWorkflowApplied={props.onImportedWorkflowApplied}
         cicdPlatform={props.cicdPlatform}
         onRegisterAddNode={props.onRegisterAddNode}
+        onOpenImport={props.onOpenImport}
       />
     </ReactFlowProvider>
   );

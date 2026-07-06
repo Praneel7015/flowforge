@@ -21,6 +21,13 @@ function validateExport(req, res, next) {
 	next();
 }
 
+function validateImport(req, res, next) {
+	if (typeof req.body?.yaml !== 'string' || !req.body.yaml.trim()) {
+		return badRequest(res, 'yaml must be a non-empty string');
+	}
+	next();
+}
+
 function validateIds(req, res, next) {
 	const { projectId, pipelineId } = req.params;
 	if (!projectId || !pipelineId) {
@@ -47,6 +54,9 @@ router.post('/generate', validateGenerate, controller.generatePipeline);
 
 // Export workflow nodes/edges to .gitlab-ci.yml
 router.post('/export', validateExport, controller.exportYaml);
+
+// Import an existing pipeline (YAML/Jenkinsfile) into visual nodes/edges
+router.post('/import', validateImport, controller.importPipeline);
 
 // Get pipeline status from GitLab
 router.get('/:projectId/:pipelineId/status', validateIds, controller.getPipelineStatus);

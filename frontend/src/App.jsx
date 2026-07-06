@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import OfflineBanner from './components/OfflineBanner';
 import ThemeToggleButton from './components/ThemeToggleButton';
+import ImportPipelineModal from './components/ImportPipelineModal';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
 const WorkflowEditor = lazy(() => import('./workflow/WorkflowEditor'));
 const PromptPanel = lazy(() => import('./components/PromptPanel'));
@@ -247,6 +248,7 @@ export default function App({ onBackToLanding }) {
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showImport, setShowImport] = useState(false);
 
   // Resizable / collapsible YAML preview panel.
   const [yamlWidth, setYamlWidth] = useState(() => {
@@ -387,6 +389,18 @@ export default function App({ onBackToLanding }) {
   const handleImportedWorkflowApplied = useCallback(() => {
     setImportedWorkflow(null);
   }, []);
+
+  const handlePipelineImported = (result) => {
+    // Align the target platform with what was detected so labels/filenames match.
+    if (
+      typeof result?.detectedPlatform === 'string' &&
+      providers.cicd.some((platform) => platform.name === result.detectedPlatform)
+    ) {
+      setSelectedProviders((prev) => ({ ...prev, cicd: result.detectedPlatform }));
+    }
+    handleGenerated(result);
+    setShowImport(false);
+  };
 
   const persistOnboardingStatus = useCallback((status) => {
     try {
@@ -538,6 +552,7 @@ export default function App({ onBackToLanding }) {
               onImportedWorkflowApplied={handleImportedWorkflowApplied}
               cicdPlatform={selectedProviders.cicd}
               onRegisterAddNode={(fn) => setAddNodeToCanvas(() => fn)}
+              onOpenImport={() => setShowImport(true)}
             />
           </Suspense>
         </ErrorBoundary>
@@ -848,6 +863,7 @@ export default function App({ onBackToLanding }) {
                   <Sidebar
                     featureFlags={featureFlags}
                     onAddNode={addNodeToCanvas}
+                    onImport={() => setShowImport(true)}
                     onLoadTemplate={(template) => {
                       setImportedWorkflow({ nodes: template.nodes, edges: template.edges });
                       setYamlOutput('');
@@ -876,6 +892,13 @@ export default function App({ onBackToLanding }) {
         </div>
       </div>
       <KeyboardShortcuts open={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <ImportPipelineModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={handlePipelineImported}
+        cicdPlatform={selectedProviders.cicd}
+        availablePlatforms={providers.cicd}
+      />
     </div>
   );
 }
