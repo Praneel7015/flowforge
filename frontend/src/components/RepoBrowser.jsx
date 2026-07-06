@@ -89,7 +89,10 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
 
   const handleRepoChange = (e) => {
     const value = e.target.value;
-    onRepoSelect(value);
+    const meta = repos.find((r) => r.name === value || r.fullName === value) || null;
+    // Pass the full repo record so callers get the owner (needed for GitHub's
+    // /repos/{owner}/{repo} API) and the numeric id (needed for GitLab).
+    onRepoSelect(value, meta);
     onBranchSelect('');
   };
 

@@ -18,6 +18,21 @@ const SmartGeneratePage = lazy(() => import('./pages/SmartGeneratePage'));
 const clientFeatureFlags = getClientFeatureFlags();
 const SETTINGS_STORAGE_KEY = 'flowforge.preferences.v1';
 const ONBOARDING_STORAGE_KEY = 'flowforge.onboarding.v1';
+const YAML_WIDTH_KEY = 'flowforge.yaml.width.v1';
+const YAML_COLLAPSED_KEY = 'flowforge.yaml.collapsed.v1';
+const YAML_MIN_WIDTH = 300;
+const YAML_MAX_WIDTH = 760;
+const YAML_DEFAULT_WIDTH = 360;
+const clampYamlWidth = (value) => Math.max(YAML_MIN_WIDTH, Math.min(YAML_MAX_WIDTH, value));
+
+function readLocalStorage(key) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 const ONBOARDING_STATUS = {
   required: 'required',
   limited: 'limited',
@@ -233,6 +248,33 @@ export default function App({ onBackToLanding }) {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  // Resizable / collapsible YAML preview panel.
+  const [yamlWidth, setYamlWidth] = useState(() => {
+    const stored = Number(readLocalStorage(YAML_WIDTH_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampYamlWidth(stored) : YAML_DEFAULT_WIDTH;
+  });
+  const [yamlCollapsed, setYamlCollapsed] = useState(() => readLocalStorage(YAML_COLLAPSED_KEY) === 'true');
+
+  const handleYamlResize = useCallback((deltaX) => {
+    setYamlWidth((current) => clampYamlWidth(current - deltaX));
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(YAML_WIDTH_KEY, String(yamlWidth));
+    } catch {
+      /* ignore */
+    }
+  }, [yamlWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(YAML_COLLAPSED_KEY, String(yamlCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [yamlCollapsed]);
+
   // Global ? key listener for shortcuts overlay
   useEffect(() => {
     const handleKey = (e) => {
@@ -443,6 +485,41 @@ export default function App({ onBackToLanding }) {
     activePanel !== 'chat' &&
     activePanel !== 'health' &&
     activePanel !== 'settings';
+
+  // Width of the YAML grid column: a slim strip when collapsed, otherwise the
+  // (persisted, resizable) width. Consumed via the `--yaml-col` CSS variable.
+  const yamlColValue = yamlCollapsed ? '2.75rem' : `${yamlWidth}px`;
+
+  const renderYamlRegion = () => {
+    if (!showYamlPanel) return null;
+
+    if (yamlCollapsed) {
+      return (
+        <button
+          onClick={() => setYamlCollapsed(false)}
+          title="Show YAML"
+          aria-label="Expand YAML panel"
+          className="ff-surface h-full w-full flex xl:flex-col items-center justify-center gap-2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors ff-enter"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3L7 8l5 5M7 3L2 8l5 5" />
+          </svg>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] xl:[writing-mode:vertical-rl] xl:rotate-180">
+            YAML
+          </span>
+        </button>
+      );
+    }
+
+    return (
+      <YamlPreview
+        yaml={yamlOutput}
+        onClose={() => setYamlCollapsed(true)}
+        onResizeDelta={handleYamlResize}
+        platform={currentCICDPlatform}
+      />
+    );
+  };
 
   const lazyFallback = (
     <div className="h-full flex items-center justify-center">
@@ -762,9 +839,10 @@ export default function App({ onBackToLanding }) {
               <div
                 className={`h-full grid gap-2.5 ${
                   showYamlPanel
-                    ? 'xl:grid-cols-[240px_minmax(0,1fr)_minmax(320px,380px)]'
+                    ? 'xl:grid-cols-[240px_minmax(0,1fr)_var(--yaml-col)]'
                     : 'xl:grid-cols-[240px_minmax(0,1fr)]'
                 } grid-cols-1`}
+                style={showYamlPanel ? { '--yaml-col': yamlColValue } : undefined}
               >
                 {showSidebar && (
                   <Sidebar
@@ -777,9 +855,7 @@ export default function App({ onBackToLanding }) {
                   />
                 )}
                 <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
-                {showYamlPanel && (
-                  <YamlPreview yaml={yamlOutput} onClose={() => setYamlOutput('')} platform={currentCICDPlatform} />
-                )}
+                {renderYamlRegion()}
               </div>
             )}
 
@@ -787,14 +863,13 @@ export default function App({ onBackToLanding }) {
               <div
                 className={`h-full grid gap-2.5 ${
                   showYamlPanel
-                    ? 'xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]'
+                    ? 'xl:grid-cols-[minmax(0,1fr)_var(--yaml-col)]'
                     : 'grid-cols-1'
                 }`}
+                style={showYamlPanel ? { '--yaml-col': yamlColValue } : undefined}
               >
                 <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
-                {showYamlPanel && (
-                  <YamlPreview yaml={yamlOutput} onClose={() => setYamlOutput('')} platform={currentCICDPlatform} />
-                )}
+                {renderYamlRegion()}
               </div>
             )}
           </main>

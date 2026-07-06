@@ -128,7 +128,34 @@ const createInitialEditorState = () => {
   }
 };
 
-function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode }) {
+const AUTO_SYNC_STORAGE_KEY = 'flowforge.workflow.autosync.v1';
+
+const readAutoSyncPreference = () => {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(AUTO_SYNC_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+};
+
+// Local, offline-safe fallback used when the backend export endpoint is
+// unreachable so the live YAML panel still reflects the current graph.
+const buildLocalYaml = (nodeList) => {
+  const yamlLines = ['stages:', '  - build', '  - test', '  - deploy', ''];
+  nodeList.forEach((node) => {
+    if (node.type?.startsWith('trigger_') || node.type === 'conditional') return;
+    const name = node.data?.label?.toLowerCase().replace(/\s+/g, '_') || node.id;
+    yamlLines.push(`${name}:`);
+    yamlLines.push(`  stage: ${node.data?.config?.stage || node.type}`);
+    yamlLines.push(`  script:`);
+    yamlLines.push(`    - echo "Running ${node.data?.label || node.id}"`);
+    yamlLines.push('');
+  });
+  return yamlLines.join('\n');
+};
+
+function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode, cicdPlatform }) {
   const reactFlowWrapper = useRef(null);
   const [editorState, setEditorState] = useState(createInitialEditorState);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -139,9 +166,29 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
+  const [autoSync, setAutoSync] = useState(readAutoSyncPreference);
+  const [syncState, setSyncState] = useState('idle'); // idle | syncing | synced | error
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
   const canRedo = editorState.future.length > 0;
+
+  // Keep latest graph in refs so the debounced sync effect can read current
+  // values without depending on identity that changes on every drag frame.
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  // Signature of only YAML-relevant structure (node identity/type/config + wiring),
+  // so position/selection changes during a drag don't trigger re-exports.
+  const graphSignature = useMemo(
+    () =>
+      JSON.stringify({
+        n: nodes.map((node) => [node.id, node.type, node.data?.label, node.data?.config]),
+        e: edges.map((edge) => [edge.source, edge.target]),
+      }),
+    [nodes, edges]
+  );
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === configNodeId) || null,
     [nodes, configNodeId]
@@ -688,25 +735,82 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     setConfigNodeId(null);
   };
 
-  const handleExport = async () => {
+  const exportWorkflow = useCallback(
+    async ({ signal } = {}) => {
+      const { data } = await axios.post(
+        '/api/pipelines/export',
+        { nodes, edges, cicdPlatform },
+        signal ? { signal } : undefined
+      );
+      return data.yaml;
+    },
+    [nodes, edges, cicdPlatform]
+  );
+
+  const handleExport = useCallback(async () => {
+    setSyncState('syncing');
     try {
-      const { data } = await axios.post('/api/pipelines/export', { nodes, edges });
-      onYamlExport(data.yaml);
+      const yaml = await exportWorkflow();
+      onYamlExport(yaml);
+      setSyncState('synced');
     } catch {
-      // Fallback: basic local export
-      const yamlLines = ['stages:', '  - build', '  - test', '  - deploy', ''];
-      nodes.forEach((node) => {
-        if (node.type.startsWith('trigger_') || node.type === 'conditional') return;
-        const name = node.data.label?.toLowerCase().replace(/\s+/g, '_') || node.id;
-        yamlLines.push(`${name}:`);
-        yamlLines.push(`  stage: ${node.data.config?.stage || node.type}`);
-        yamlLines.push(`  script:`);
-        yamlLines.push(`    - echo "Running ${node.data.label}"`);
-        yamlLines.push('');
-      });
-      onYamlExport(yamlLines.join('\n'));
+      onYamlExport(buildLocalYaml(nodes));
+      setSyncState('error');
     }
-  };
+  }, [exportWorkflow, nodes, onYamlExport]);
+
+  // Persist the auto-sync preference.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTO_SYNC_STORAGE_KEY, String(autoSync));
+    } catch {
+      // Ignore storage write issues.
+    }
+  }, [autoSync]);
+
+  // Live YAML sync: debounce meaningful graph changes and re-export so the
+  // preview panel mirrors the canvas without a manual Export click. Keyed on
+  // graphSignature (not node positions) and uses the selected CI/CD platform,
+  // falling back to a local render when the backend is unreachable.
+  useEffect(() => {
+    if (!autoSync) return undefined;
+
+    if (nodesRef.current.length === 0) {
+      setSyncState('idle');
+      onYamlExport('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setSyncState('syncing');
+
+    const handle = setTimeout(async () => {
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+      try {
+        const { data } = await axios.post(
+          '/api/pipelines/export',
+          { nodes: currentNodes, edges: currentEdges, cicdPlatform },
+          { signal: controller.signal }
+        );
+        if (!cancelled) {
+          onYamlExport(data.yaml);
+          setSyncState('synced');
+        }
+      } catch (err) {
+        if (cancelled || axios.isCancel(err)) return;
+        onYamlExport(buildLocalYaml(currentNodes));
+        setSyncState('error');
+      }
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(handle);
+    };
+  }, [graphSignature, cicdPlatform, autoSync, onYamlExport]);
 
   const handleClearCanvas = useCallback(() => {
     if (nodes.length === 0 && edges.length === 0) {
@@ -761,7 +865,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         className="bg-transparent"
       >
         <Background variant="dots" gap={20} size={1} color="var(--ff-dots-color)" />
-        <Controls />
+        <Controls position="top-left" />
         <MiniMap
           nodeColor={(node) => {
             const colors = {
@@ -792,58 +896,111 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         />
       </ReactFlow>
 
+      {/* Node count + live sync indicator (top-right, unobtrusive) */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap">
+          {nodes.length} nodes | {edges.length} connections
+        </div>
+        {autoSync && nodes.length > 0 && (
+          <div
+            className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs flex items-center gap-1.5 whitespace-nowrap"
+            title="Live YAML sync status"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                syncState === 'syncing'
+                  ? 'bg-amber-400 animate-pulse'
+                  : syncState === 'error'
+                    ? 'bg-red-400'
+                    : 'bg-emerald-400'
+              }`}
+            />
+            <span className="text-[var(--ff-muted)]">
+              {syncState === 'syncing' ? 'Syncing' : syncState === 'error' ? 'Offline (local)' : 'Synced'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Action toolbar — compact, contained pill anchored bottom-left so it
+          reads as chrome and stays clear of the minimap and canvas nodes. */}
+      <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-node-counter-bg)] backdrop-blur-sm p-1 max-w-[calc(100%-14rem)]">
         <button
           onClick={handleUndo}
           disabled={!canUndo}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Undo (Ctrl+Z)"
+          aria-label="Undo"
         >
-          Undo
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4.5 2.5 8 6 11.5" /><path d="M2.5 8H9.5a4 4 0 0 1 0 8H7" />
+          </svg>
         </button>
         <button
           onClick={handleRedo}
           disabled={!canRedo}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Redo (Ctrl+Y)"
+          aria-label="Redo"
         >
-          Redo
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 4.5 13.5 8 10 11.5" /><path d="M13.5 8H6.5a4 4 0 0 0 0 8H9" />
+          </svg>
         </button>
         <button
           onClick={handleDeleteSelectedNode}
           disabled={!(selectedNodeId || configNodeId || nodes.some((node) => node.selected))}
-          className="px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/20 text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Delete selected node"
+          aria-label="Delete selected node"
         >
-          Delete
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 4.5h10M6.5 4.5V3.2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.3M4.8 4.5l.6 9a1 1 0 0 0 1 .9h3.2a1 1 0 0 0 1-.9l.6-9" />
+          </svg>
         </button>
         <button
           onClick={handleClearCanvas}
           disabled={nodes.length === 0 && edges.length === 0}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Clear all nodes and connections"
+          aria-label="Clear canvas"
         >
-          Clear
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="5.5" /><path d="M4.5 4.5l7 7" />
+          </svg>
         </button>
         <button
           onClick={() => { if (nodes.length > 0) setShowSaveTemplate(true); }}
           disabled={nodes.length === 0}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Save current workflow as a reusable template"
+          aria-label="Save as template"
         >
-          Save Template
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 2.5h8v11l-4-2.8-4 2.8z" />
+          </svg>
+        </button>
+
+        <span className="w-px h-5 bg-[var(--ff-card-border-strong)] mx-0.5" />
+
+        <button
+          onClick={() => setAutoSync((prev) => !prev)}
+          className={`px-2.5 h-8 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+            autoSync
+              ? 'bg-[var(--ff-accent-soft)] border-[var(--ff-border-strong)] text-[var(--ff-accent)]'
+              : 'ff-btn-secondary'
+          }`}
+          title="Automatically re-generate YAML as you edit the canvas"
+        >
+          Auto-sync {autoSync ? 'On' : 'Off'}
         </button>
         <button
           onClick={handleExport}
-          className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity ff-btn-primary"
+          className="px-3 h-8 rounded-lg text-xs font-semibold transition-opacity ff-btn-primary whitespace-nowrap"
+          title={autoSync ? 'YAML syncs automatically — click to regenerate now' : 'Generate YAML from the canvas'}
         >
-          Export YAML
+          {autoSync ? 'Sync Now' : 'Export YAML'}
         </button>
-      </div>
-
-      {/* Node count indicator */}
-      <div className="absolute top-4 left-20 px-3 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] z-10 ff-code">
-        {nodes.length} nodes | {edges.length} connections
       </div>
 
       {selectionOverlay && (
