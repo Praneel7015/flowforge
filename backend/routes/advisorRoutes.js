@@ -52,4 +52,7 @@ router.post('/remediate', validateRemediate, controller.remediate);
 // Conversational chat: POST { messages, currentYaml }
 router.post('/chat', validateChat, controller.chat);
 
+// Scan pipeline content for hardcoded secrets: POST { content | yaml }
+router.post('/scan-secrets', controller.scanSecrets);
+
 module.exports = router;

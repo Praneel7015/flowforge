@@ -1,5 +1,6 @@
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
+const { scanForSecrets } = require('../utils/secretScanner');
 
 function sanitizeText(value, maxLen = 200) {
   if (typeof value !== 'string') return undefined;
@@ -120,4 +121,18 @@ async function chat(req, res) {
   }
 }
 
-module.exports = { healthScore, remediate, chat };
+/**
+ * Scan pipeline content for hardcoded secrets without touching any AI provider.
+ * Body: { content | yaml }
+ */
+function scanSecrets(req, res) {
+  const content = req.body?.content ?? req.body?.yaml;
+  if (typeof content !== 'string' || !content.trim()) {
+    return res.status(400).json({ error: 'content (or yaml) must be a non-empty string' });
+  }
+
+  const result = scanForSecrets(content);
+  res.json(result);
+}
+
+module.exports = { healthScore, remediate, chat, scanSecrets };
