@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import NodeTemplates from './NodeTemplates';
 
 const NODE_TYPES = [
@@ -24,6 +24,17 @@ const NODE_TYPES = [
   { type: 'conditional', label: 'Conditional Logic', tone: 'slate', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 2l4 5-4 5-4-5z"/></svg> },
 ];
 
+// Node types grouped by pipeline phase so the library reads top-to-bottom like a
+// real CI/CD flow. Order within each category also follows typical execution.
+const CATEGORIES = [
+  { id: 'triggers', label: 'Triggers', types: ['trigger_push', 'trigger_mr'] },
+  { id: 'build', label: 'Build & Cache', types: ['build', 'matrix_build', 'cache_restore', 'cache_save'] },
+  { id: 'quality', label: 'Test & Quality', types: ['lint', 'test', 'integration_test', 'smoke_test', 'security_scan'] },
+  { id: 'package', label: 'Package & Release', types: ['package', 'release'] },
+  { id: 'deploy', label: 'Deploy', types: ['approval_gate', 'deploy', 'canary_deploy', 'blue_green_deploy', 'rollback'] },
+  { id: 'flow', label: 'Flow & Notify', types: ['conditional', 'notify'] },
+];
+
 const TONE_BG = {
   emerald: 'bg-emerald-500/15 text-emerald-500',
   green: 'bg-green-500/15 text-green-500',
@@ -44,7 +55,35 @@ const TONE_BG = {
   slate: 'bg-slate-500/15 text-slate-500',
 };
 
+const EXPANDED_KEY = 'flowforge.nodeLibrary.expanded.v1';
+const NODE_BY_TYPE = Object.fromEntries(NODE_TYPES.map((node) => [node.type, node]));
+
+function readStoredExpanded() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImport }) {
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(() => {
+    const base = Object.fromEntries(CATEGORIES.map((c) => [c.id, true]));
+    const stored = readStoredExpanded();
+    return stored ? { ...base, ...stored } : base;
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EXPANDED_KEY, JSON.stringify(expanded));
+    } catch {
+      // Ignore storage write issues.
+    }
+  }, [expanded]);
+
   const onDragStart = (event, nodeType, label) => {
     event.dataTransfer.setData('application/reactflow-type', nodeType);
     event.dataTransfer.setData('application/reactflow-label', label);
@@ -61,10 +100,51 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
     [onAddNode]
   );
 
+  const toggleCategory = useCallback((id) => {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
   const showAdvancedNodes = featureFlags?.advancedNodes !== false;
-  const visibleNodeTypes = showAdvancedNodes
-    ? NODE_TYPES
-    : NODE_TYPES.filter((node) => !node.advanced);
+  const normalizedQuery = query.trim().toLowerCase();
+  const isSearching = normalizedQuery.length > 0;
+
+  // Resolve each category to its currently-visible nodes (respecting the advanced
+  // feature flag and the search filter). Empty categories are dropped.
+  const visibleCategories = useMemo(() => {
+    return CATEGORIES.map((category) => {
+      let nodes = category.types.map((type) => NODE_BY_TYPE[type]).filter(Boolean);
+      if (!showAdvancedNodes) nodes = nodes.filter((node) => !node.advanced);
+      if (isSearching) {
+        nodes = nodes.filter(
+          (node) =>
+            node.label.toLowerCase().includes(normalizedQuery) ||
+            node.type.replace(/_/g, ' ').includes(normalizedQuery)
+        );
+      }
+      return { ...category, nodes };
+    }).filter((category) => category.nodes.length > 0);
+  }, [showAdvancedNodes, isSearching, normalizedQuery]);
+
+  const renderNode = (node) => (
+    <div
+      key={node.type}
+      role="button"
+      tabIndex={0}
+      aria-label={`Add ${node.label} node to canvas`}
+      draggable
+      onDragStart={(e) => onDragStart(e, node.type, node.label)}
+      onKeyDown={(e) => handleKeyDown(e, node.type, node.label)}
+      className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-grab active:cursor-grabbing
+        bg-[var(--ff-card-bg)] hover:bg-[var(--ff-card-bg-hover)] border border-[var(--ff-card-border)] hover:border-[var(--ff-card-border-hover)]
+        focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] focus-visible:ring-offset-1
+        transition-all text-sm"
+    >
+      <span className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${TONE_BG[node.tone] || TONE_BG.slate}`}>
+        {node.icon}
+      </span>
+      <span className="text-[var(--ff-text-secondary)] font-medium text-[13px]">{node.label}</span>
+    </div>
+  );
 
   return (
     <aside className="h-full overflow-y-auto ff-enter bg-[var(--ff-surface)] border-r border-[var(--ff-card-border)]">
@@ -81,30 +161,76 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
             Import Pipeline
           </button>
         )}
-        <h2 className="text-[10px] font-semibold text-[var(--ff-muted)] uppercase tracking-[0.16em] mb-3">
+
+        <h2 className="text-[10px] font-semibold text-[var(--ff-muted)] uppercase tracking-[0.16em] mb-2.5">
           Node Library
         </h2>
-        <div className="space-y-1.5">
-          {visibleNodeTypes.map((node) => (
-            <div
-              key={node.type}
-              role="button"
-              tabIndex={0}
-              aria-label={`Add ${node.label} node to canvas`}
-              draggable
-              onDragStart={(e) => onDragStart(e, node.type, node.label)}
-              onKeyDown={(e) => handleKeyDown(e, node.type, node.label)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-grab active:cursor-grabbing
-                bg-[var(--ff-card-bg)] hover:bg-[var(--ff-card-bg-hover)] border border-[var(--ff-card-border)] hover:border-[var(--ff-card-border-hover)]
-                focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] focus-visible:ring-offset-1
-                transition-all text-sm"
+
+        {/* Search / filter */}
+        <div className="relative mb-3">
+          <svg
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ff-muted)] pointer-events-none"
+            width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+          >
+            <circle cx="6" cy="6" r="4" /><path d="M9 9l3 3" />
+          </svg>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search nodes..."
+            aria-label="Search node library"
+            className="ff-input pl-8 pr-7 py-1.5 text-xs"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors"
             >
-              <span className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${TONE_BG[node.tone] || TONE_BG.slate}`}>
-                {node.icon}
-              </span>
-              <span className="text-[var(--ff-text-secondary)] font-medium text-[13px]">{node.label}</span>
-            </div>
-          ))}
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>
+            </button>
+          )}
+        </div>
+
+        {/* Categorized node list */}
+        <div className="space-y-1.5">
+          {visibleCategories.map((category) => {
+            const open = isSearching || expanded[category.id];
+            return (
+              <div key={category.id}>
+                <button
+                  onClick={() => toggleCategory(category.id)}
+                  disabled={isSearching}
+                  aria-expanded={open}
+                  className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-md text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors disabled:hover:bg-transparent disabled:cursor-default"
+                >
+                  <svg
+                    width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform ${open ? 'rotate-90' : ''}`}
+                  >
+                    <path d="M4 2.5L8 6l-4 3.5" />
+                  </svg>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">{category.label}</span>
+                  <span className="ml-auto text-[10px] font-medium text-[var(--ff-muted)] tabular-nums">
+                    {category.nodes.length}
+                  </span>
+                </button>
+
+                {open && (
+                  <div className="space-y-1.5 mt-1 mb-1 pl-1">
+                    {category.nodes.map(renderNode)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {visibleCategories.length === 0 && (
+            <p className="px-1.5 py-3 text-xs text-[var(--ff-muted)]">
+              No nodes match “{query.trim()}”.
+            </p>
+          )}
         </div>
 
         {!showAdvancedNodes && (
