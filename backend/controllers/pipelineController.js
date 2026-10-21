@@ -37,6 +37,34 @@ async function exportYaml(req, res) {
   }
 }
 
+async function importPipeline(req, res) {
+  try {
+    const { configText, yaml, cicdPlatform } = req.body || {};
+    const rawConfig =
+      typeof configText === 'string' && configText.trim()
+        ? configText
+        : typeof yaml === 'string' && yaml.trim()
+          ? yaml
+          : '';
+
+    if (!rawConfig) {
+      return res.status(400).json({ error: 'configText is required' });
+    }
+
+    const dag = aiService.parseConfigToDAG(rawConfig, cicdPlatform);
+    res.json({
+      nodes: dag.nodes,
+      edges: dag.edges,
+      yaml: rawConfig,
+      detectedPlatform: dag.detectedPlatform || cicdPlatform || 'gitlab',
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('importPipeline error:', err.message);
+    res.status(status).json({ error: err.message || 'Failed to import pipeline' });
+  }
+}
+
 async function getPipelineStatus(req, res) {
   try {
     const { projectId, pipelineId } = req.params;
@@ -83,6 +111,7 @@ async function triggerPipeline(req, res) {
 module.exports = {
   generatePipeline,
   exportYaml,
+  importPipeline,
   getPipelineStatus,
   explainFailure,
   triggerPipeline,

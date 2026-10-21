@@ -15,7 +15,8 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
-import { saveCurrentAsTemplate } from '../components/NodeTemplates';
+import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/NodeTemplates';
+import { buildBlueprintShareUrl, readBlueprintFromLocationHash } from '../utils/blueprintShare';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -101,6 +102,17 @@ const createInitialEditorState = () => {
   }
 
   try {
+    const sharedBlueprint = readBlueprintFromLocationHash();
+    if (sharedBlueprint && Array.isArray(sharedBlueprint.nodes) && sharedBlueprint.nodes.length > 0) {
+      const normalized = normalizeWorkflow(sharedBlueprint);
+      nodeId = Math.max(nodeId, getMaxNodeId(normalized.nodes));
+      return {
+        past: [],
+        present: normalized,
+        future: [],
+      };
+    }
+
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
@@ -128,7 +140,240 @@ const createInitialEditorState = () => {
   }
 };
 
-function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode }) {
+const AUTO_SYNC_STORAGE_KEY = 'flowforge.workflow.autosync.v1';
+
+const readAutoSyncPreference = () => {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(AUTO_SYNC_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+};
+
+const DEFAULT_NODE_CONFIGS = {
+  trigger_push: { branch: 'main' },
+  trigger_mr: { targetBranch: 'main' },
+  build: { image: 'node:20-alpine', stage: 'build', script: 'npm ci\nnpm run build' },
+  matrix_build: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    matrix: '{"NODE_VERSION":["18","20"]}',
+    script: 'npm ci\nnpm test',
+  },
+  lint: { image: 'node:20-alpine', stage: 'test', script: 'npm run lint' },
+  test: { image: 'node:20-alpine', stage: 'test', script: 'npm test -- --ci' },
+  integration_test: { image: 'node:20-alpine', stage: 'test', script: 'npm run test:integration' },
+  smoke_test: { image: 'node:20-alpine', stage: 'test', script: 'curl -f http://localhost:3000/health || exit 1' },
+  cache_restore: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+    cachePaths: 'node_modules/',
+    script: 'echo "Restoring dependency cache..."',
+  },
+  cache_save: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+    cachePaths: 'node_modules/',
+    script: 'echo "Saving dependency cache..."',
+  },
+  security_scan: {
+    image: 'node:20-alpine',
+    stage: 'test',
+    script: 'npm audit --audit-level=high',
+  },
+  package: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    artifactPath: 'dist/',
+    script: 'npm run build && tar -czf release.tar.gz dist/',
+  },
+  release: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    tag: 'v1.0.0',
+    script: 'echo "Publishing release $TAG..."',
+  },
+  approval_gate: {
+    stage: 'deploy',
+    environment: 'production',
+    approver: 'release-managers',
+    script: 'echo "Waiting for manual approval..."',
+  },
+  deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    script: 'echo "Deploying application to production..."',
+  },
+  canary_deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    trafficPercent: '10',
+    script: 'echo "Rolling out 10% canary traffic..."',
+  },
+  blue_green_deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    activeColor: 'green',
+    script: 'echo "Switching active production stack to green..."',
+  },
+  rollback: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    script: 'echo "Rolling back to previous stable release..."',
+  },
+  notify: {
+    stage: '.post',
+    channel: '#deployments',
+    script: 'echo "Notifying #deployments channel of pipeline status"',
+  },
+  conditional: {
+    condition: '$CI_COMMIT_BRANCH == "main"',
+  },
+};
+
+function getDefaultNodeConfig(type) {
+  return { ...(DEFAULT_NODE_CONFIGS[type] || { stage: 'build', script: `echo "Running ${type}"` }) };
+}
+
+// Local, offline-safe fallback used when the backend export endpoint is
+// unreachable so the live YAML panel still reflects the current graph.
+const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
+  const stageSet = new Set();
+  const stageNodes = nodeList.filter(
+    (n) => !n.type?.startsWith('trigger_') && n.type !== 'conditional'
+  );
+  stageNodes.forEach((n) => stageSet.add(n.data?.config?.stage || 'build'));
+  const stages = stageSet.size > 0 ? [...stageSet] : ['build', 'test', 'deploy'];
+
+  const idToJobName = {};
+  const usedNames = new Set();
+  stageNodes.forEach((n) => {
+    const base =
+      (n.data?.label || n.type || n.id)
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '') || n.id;
+    let candidate = base;
+    let idx = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_${idx++}`;
+    }
+    usedNames.add(candidate);
+    idToJobName[n.id] = candidate;
+  });
+
+  if (platform === 'github') {
+    const lines = ['name: CI/CD Pipeline', 'on:', '  push:', '    branches: ["main"]', 'jobs:'];
+    stageNodes.forEach((node) => {
+      const jobName = idToJobName[node.id];
+      const cfg = node.data?.config || {};
+      const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const parentJobs = edgeList
+        .filter((e) => e.target === node.id && idToJobName[e.source])
+        .map((e) => idToJobName[e.source]);
+
+      lines.push(`  ${jobName}:`);
+      lines.push(`    runs-on: ${cfg.runsOn || 'ubuntu-latest'}`);
+      if (cfg.image) lines.push(`    container: ${cfg.image}`);
+      if (parentJobs.length > 0) {
+        lines.push(`    needs: [${parentJobs.map((p) => `"${p}"`).join(', ')}]`);
+      }
+      if (cfg.environment) lines.push(`    environment: ${cfg.environment}`);
+      lines.push('    steps:');
+      lines.push('      - uses: actions/checkout@v4');
+      scriptLines.forEach((cmd) => {
+        lines.push(`      - name: ${node.data?.label || jobName}`);
+        lines.push(`        run: ${cmd}`);
+      });
+    });
+    return lines.join('\n');
+  }
+
+  const yamlLines = ['stages:', ...stages.map((s) => `  - ${s}`), ''];
+  stageNodes.forEach((node) => {
+    const jobName = idToJobName[node.id];
+    const cfg = node.data?.config || {};
+    const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const parentJobs = edgeList
+      .filter((e) => e.target === node.id && idToJobName[e.source])
+      .map((e) => idToJobName[e.source]);
+
+    yamlLines.push(`${jobName}:`);
+    yamlLines.push(`  stage: ${cfg.stage || 'build'}`);
+    if (cfg.image) yamlLines.push(`  image: ${cfg.image}`);
+    if (parentJobs.length > 0) {
+      yamlLines.push(`  needs: [${parentJobs.join(', ')}]`);
+    }
+    if (cfg.environment) {
+      yamlLines.push(`  environment: ${cfg.environment}`);
+    }
+    yamlLines.push('  script:');
+    scriptLines.forEach((cmd) => {
+      yamlLines.push(`    - ${cmd}`);
+    });
+    yamlLines.push('');
+  });
+  return yamlLines.join('\n');
+};
+
+function resolveNodeRunOverlay(node, nodeRunStatuses) {
+  if (!nodeRunStatuses || typeof nodeRunStatuses !== 'object') {
+    return null;
+  }
+
+  // Direct match by node.id
+  if (nodeRunStatuses[node.id]) {
+    const entry = nodeRunStatuses[node.id];
+    return typeof entry === 'string' ? { runStatus: entry } : entry;
+  }
+
+  const normalizeKey = (val) =>
+    String(val || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+  const candidates = [
+    normalizeKey(node.id),
+    normalizeKey(node.data?.label),
+    normalizeKey(node.type),
+    normalizeKey(node.data?.config?.stage),
+  ].filter(Boolean);
+
+  for (const [key, val] of Object.entries(nodeRunStatuses)) {
+    const normKey = normalizeKey(key);
+    if (normKey && candidates.some((c) => c === normKey || c.includes(normKey) || normKey.includes(c))) {
+      return typeof val === 'string' ? { runStatus: val } : val;
+    }
+  }
+
+  return null;
+}
+
+function WorkflowEditorInner({
+  onYamlExport,
+  importedWorkflow,
+  onImportedWorkflowApplied,
+  onRegisterAddNode,
+  cicdPlatform,
+  onOpenImport,
+  onPlatformDetected,
+  nodeRunStatuses,
+  onGraphChange,
+}) {
   const reactFlowWrapper = useRef(null);
   const [editorState, setEditorState] = useState(createInitialEditorState);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -139,9 +384,32 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
+  const [autoSync, setAutoSync] = useState(readAutoSyncPreference);
+  const [syncState, setSyncState] = useState('idle'); // idle | syncing | synced | error
+  const [shareCopied, setShareCopied] = useState(false);
+  const [blueprintToast, setBlueprintToast] = useState('');
+  const importFileInputRef = useRef(null);
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
   const canRedo = editorState.future.length > 0;
+
+  // Keep latest graph in refs so the debounced sync effect can read current
+  // values without depending on identity that changes on every drag frame.
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  // Signature of only YAML-relevant structure (node identity/type/config + wiring),
+  // so position/selection changes during a drag don't trigger re-exports.
+  const graphSignature = useMemo(
+    () =>
+      JSON.stringify({
+        n: nodes.map((node) => [node.id, node.type, node.data?.label, node.data?.config]),
+        e: edges.map((edge) => [edge.source, edge.target]),
+      }),
+    [nodes, edges]
+  );
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === configNodeId) || null,
     [nodes, configNodeId]
@@ -332,7 +600,50 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   useEffect(() => {
     nodeId = Math.max(nodeId, getMaxNodeId(nodes));
-  }, [nodes]);
+    onGraphChange?.({ nodes, edges });
+  }, [nodes, edges, onGraphChange]);
+
+  // Check #blueprint=<base64url> on initial mount and on hashchange
+  useEffect(() => {
+    const applyHashBlueprint = () => {
+      const shared = readBlueprintFromLocationHash();
+      if (!shared || !Array.isArray(shared.nodes) || shared.nodes.length === 0) return;
+
+      const normalized = normalizeWorkflow(shared);
+      nodeId = Math.max(nodeId, getMaxNodeId(normalized.nodes));
+      setEditorState({
+        past: [],
+        present: cloneWorkflow(normalized),
+        future: [],
+      });
+      if (shared.cicdPlatform) {
+        onPlatformDetected?.(shared.cicdPlatform);
+      }
+      setBlueprintToast(`Shared blueprint loaded (${normalized.nodes.length} nodes)`);
+      const timer = setTimeout(() => setBlueprintToast(''), 4000);
+      return () => clearTimeout(timer);
+    };
+
+    const cleanup = applyHashBlueprint();
+    window.addEventListener('hashchange', applyHashBlueprint);
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+      window.removeEventListener('hashchange', applyHashBlueprint);
+    };
+  }, [onPlatformDetected]);
+
+  const handleShareBlueprint = useCallback(() => {
+    if (nodes.length === 0) return;
+    const shareUrl = buildBlueprintShareUrl({ nodes, edges, cicdPlatform });
+    try {
+      window.history.replaceState(null, '', `#blueprint=${shareUrl.split('#blueprint=')[1] || ''}`);
+    } catch {
+      // Ignore history replace errors
+    }
+    navigator.clipboard?.writeText(shareUrl).catch(() => {});
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2200);
+  }, [nodes, edges, cicdPlatform]);
 
   useEffect(() => {
     try {
@@ -510,7 +821,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         id: getNextId(),
         type,
         position,
-        data: { label, config: {} },
+        data: { label, config: getDefaultNodeConfig(type) },
       };
 
       applyTrackedWorkflowChange((current) => ({
@@ -518,18 +829,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         nodes: current.nodes.concat(newNode),
       }));
       setSelectedNodeId(newNode.id);
+      setConfigNodeId(newNode.id);
     },
     [applyTrackedWorkflowChange, reactFlowInstance]
   );
 
   const addNodeFromKeyboard = useCallback(
     (type, label) => {
-      const offset = nodes.length * 30;
+      const offset = (nodes.length % 8) * 32;
       const newNode = {
         id: getNextId(),
         type,
-        position: { x: 250 + offset, y: 100 + offset },
-        data: { label, config: {} },
+        position: { x: 240 + offset, y: 100 + offset },
+        data: { label, config: getDefaultNodeConfig(type) },
       };
 
       applyTrackedWorkflowChange((current) => ({
@@ -537,6 +849,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         nodes: current.nodes.concat(newNode),
       }));
       setSelectedNodeId(newNode.id);
+      setConfigNodeId(newNode.id);
     },
     [applyTrackedWorkflowChange, nodes.length]
   );
@@ -547,6 +860,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
+    setConfigNodeId(node.id);
     setSelectedEdgeIds(new Set());
   }, []);
 
@@ -678,35 +992,217 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     setSelectedEdgeIds(new Set());
   }, [applyUntrackedWorkflowChange]);
 
-  const handleNodeConfigSave = (nodeId, config) => {
+  const handleNodeInlineUpdate = useCallback(
+    (targetNodeId, patch) => {
+      applyTrackedWorkflowChange((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === targetNodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...(typeof patch.label === 'string' && patch.label ? { label: patch.label } : {}),
+                  ...(patch.config ? { config: patch.config } : {}),
+                },
+              }
+            : node
+        ),
+      }));
+    },
+    [applyTrackedWorkflowChange]
+  );
+
+  const handleNodeLiveConfigUpdate = useCallback(
+    (targetNodeId, config, label) => {
+      applyUntrackedWorkflowChange((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === targetNodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  config,
+                  ...(typeof label === 'string' && label ? { label } : {}),
+                },
+              }
+            : node
+        ),
+      }));
+    },
+    [applyUntrackedWorkflowChange]
+  );
+
+  const handleNodeConfigSave = (targetNodeId, config, label) => {
     applyTrackedWorkflowChange((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
-        node.id === nodeId ? { ...node, data: { ...node.data, config } } : node
+        node.id === targetNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                config,
+                ...(typeof label === 'string' && label ? { label } : {}),
+              },
+            }
+          : node
       ),
     }));
     setConfigNodeId(null);
   };
 
-  const handleExport = async () => {
+  const renderedNodes = useMemo(
+    () =>
+      nodes.map((node) => {
+        const overlay = resolveNodeRunOverlay(node, nodeRunStatuses);
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            ...(overlay?.runStatus ? { runStatus: overlay.runStatus } : {}),
+            ...(overlay?.runDuration ? { runDuration: overlay.runDuration } : {}),
+            onInlineUpdate: handleNodeInlineUpdate,
+          },
+        };
+      }),
+    [nodes, handleNodeInlineUpdate, nodeRunStatuses]
+  );
+
+  const exportWorkflow = useCallback(
+    async ({ signal } = {}) => {
+      const { data } = await axios.post(
+        '/api/pipelines/export',
+        { nodes, edges, cicdPlatform },
+        signal ? { signal } : undefined
+      );
+      return data.yaml;
+    },
+    [nodes, edges, cicdPlatform]
+  );
+
+  const handleExport = useCallback(async () => {
+    setSyncState('syncing');
     try {
-      const { data } = await axios.post('/api/pipelines/export', { nodes, edges });
+      const { data } = await axios.post('/api/pipelines/export', { nodes, edges, cicdPlatform });
       onYamlExport(data.yaml);
+      setSyncState('synced');
+
+      try {
+        const rawN8n = window.localStorage.getItem('flowforge.n8n.v1');
+        if (rawN8n) {
+          const { enabled, webhookUrl } = JSON.parse(rawN8n);
+          if (enabled && webhookUrl) {
+            axios
+              .post('/api/n8n/forward', {
+                webhookUrl,
+                payload: {
+                  event: 'pipeline_exported',
+                  cicdPlatform,
+                  yaml: data.yaml,
+                  nodes,
+                  edges,
+                  timestamp: new Date().toISOString(),
+                },
+              })
+              .catch(() => {});
+          }
+        }
+      } catch {
+        // Ignore localStorage or n8n forward errors
+      }
     } catch {
-      // Fallback: basic local export
-      const yamlLines = ['stages:', '  - build', '  - test', '  - deploy', ''];
-      nodes.forEach((node) => {
-        if (node.type.startsWith('trigger_') || node.type === 'conditional') return;
-        const name = node.data.label?.toLowerCase().replace(/\s+/g, '_') || node.id;
-        yamlLines.push(`${name}:`);
-        yamlLines.push(`  stage: ${node.data.config?.stage || node.type}`);
-        yamlLines.push(`  script:`);
-        yamlLines.push(`    - echo "Running ${node.data.label}"`);
-        yamlLines.push('');
-      });
-      onYamlExport(yamlLines.join('\n'));
+      onYamlExport(buildLocalYaml(nodes, edges, cicdPlatform));
+      setSyncState('error');
     }
-  };
+  }, [cicdPlatform, edges, nodes, onYamlExport]);
+
+  const handleImportYamlFile = useCallback(
+    (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = '';
+
+      const reader = new FileReader();
+      reader.onload = async (loadEvent) => {
+        const configText = typeof loadEvent.target?.result === 'string' ? loadEvent.target.result : '';
+        if (!configText.trim()) return;
+
+        try {
+          const { data } = await axios.post('/api/pipelines/import', {
+            configText,
+            cicdPlatform,
+          });
+          const importedNodes = Array.isArray(data?.nodes) ? data.nodes : [];
+          const importedEdges = Array.isArray(data?.edges) ? data.edges : [];
+          nodeId = Math.max(nodeId, getMaxNodeId(importedNodes));
+          applyTrackedWorkflowChange({ nodes: importedNodes, edges: importedEdges });
+          setSelectedNodeId(null);
+          setConfigNodeId(null);
+          onYamlExport?.(typeof data?.yaml === 'string' ? data.yaml : configText);
+        } catch {
+          // Fallback to modal if direct file import fails
+          onOpenImport?.();
+        }
+      };
+      reader.readAsText(file);
+    },
+    [applyTrackedWorkflowChange, cicdPlatform, onOpenImport, onYamlExport]
+  );
+
+  // Persist the auto-sync preference.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTO_SYNC_STORAGE_KEY, String(autoSync));
+    } catch {
+      // Ignore storage write issues.
+    }
+  }, [autoSync]);
+
+  // Live YAML sync: debounce meaningful graph changes and re-export so the
+  // preview panel mirrors the canvas without a manual Export click. Keyed on
+  // graphSignature (not node positions) and uses the selected CI/CD platform,
+  // falling back to a local render when the backend is unreachable.
+  useEffect(() => {
+    if (!autoSync) return undefined;
+
+    if (nodesRef.current.length === 0) {
+      setSyncState('idle');
+      onYamlExport('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setSyncState('syncing');
+
+    const handle = setTimeout(async () => {
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+      try {
+        const { data } = await axios.post(
+          '/api/pipelines/export',
+          { nodes: currentNodes, edges: currentEdges, cicdPlatform },
+          { signal: controller.signal }
+        );
+        if (!cancelled) {
+          onYamlExport(data.yaml);
+          setSyncState('synced');
+        }
+      } catch (err) {
+        if (cancelled || axios.isCancel(err)) return;
+        onYamlExport(buildLocalYaml(currentNodes, currentEdges, cicdPlatform));
+        setSyncState('error');
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(handle);
+    };
+  }, [graphSignature, cicdPlatform, autoSync, onYamlExport]);
 
   const handleClearCanvas = useCallback(() => {
     if (nodes.length === 0 && edges.length === 0) {
@@ -731,7 +1227,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       onContextMenu={onWrapperContextMenu}
     >
       <ReactFlow
-        nodes={nodes}
+        nodes={renderedNodes}
         edges={edges.map((edge) => ({
           ...edge,
           style: selectedEdgeIds.has(edge.id)
@@ -761,7 +1257,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         className="bg-transparent"
       >
         <Background variant="dots" gap={20} size={1} color="var(--ff-dots-color)" />
-        <Controls />
+        <Controls position="top-left" />
         <MiniMap
           nodeColor={(node) => {
             const colors = {
@@ -792,58 +1288,123 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         />
       </ReactFlow>
 
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+      {/* Top-right overlay: compact node/edge count pill + Share button when nodes > 0 */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+        {blueprintToast && (
+          <div className="px-2.5 py-1 bg-emerald-500/15 backdrop-blur-sm border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-medium flex items-center gap-1.5 whitespace-nowrap ff-enter">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>{blueprintToast}</span>
+          </div>
+        )}
+        <input
+          ref={importFileInputRef}
+          type="file"
+          accept=".yml,.yaml,.jenkinsfile,.groovy"
+          onChange={handleImportYamlFile}
+          className="hidden"
+        />
+        {nodes.length > 0 && (
+          <button
+            onClick={handleShareBlueprint}
+            className={`px-2.5 py-1 backdrop-blur-sm border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              shareCopied
+                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400 font-medium'
+                : 'bg-[var(--ff-node-counter-bg)] border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)]'
+            }`}
+            title="Copy zero-database shareable blueprint URL (#blueprint=...)"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6.5 9.5l3-3" />
+              <path d="M9 5l1.5-1.5a2.1 2.1 0 0 1 3 3L12 8" />
+              <path d="M7 11l-1.5 1.5a2.1 2.1 0 0 1-3-3L4 8" />
+            </svg>
+            <span>{shareCopied ? 'Copied!' : 'Share'}</span>
+          </button>
+        )}
+        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap flex items-center gap-1.5">
+          {autoSync && nodes.length > 0 && (
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                syncState === 'syncing'
+                  ? 'bg-amber-400 animate-pulse'
+                  : syncState === 'error'
+                    ? 'bg-red-400'
+                    : 'bg-emerald-400'
+              }`}
+              title={syncState === 'syncing' ? 'Syncing YAML' : syncState === 'error' ? 'Offline (local YAML)' : 'YAML synced'}
+            />
+          )}
+          <span>{nodes.length} nodes · {edges.length} edges</span>
+        </div>
+      </div>
+
+      {/* Bottom-left toolbar: Undo, Redo, Delete, Clear | Auto-sync, Export YAML */}
+      <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-node-counter-bg)] backdrop-blur-sm p-1 max-w-[calc(100%-14rem)]">
         <button
           onClick={handleUndo}
           disabled={!canUndo}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Undo (Ctrl+Z)"
+          aria-label="Undo"
         >
-          Undo
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4.5 2.5 8 6 11.5" /><path d="M2.5 8H9.5a4 4 0 0 1 0 8H7" />
+          </svg>
         </button>
         <button
           onClick={handleRedo}
           disabled={!canRedo}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Redo (Ctrl+Y)"
+          aria-label="Redo"
         >
-          Redo
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 4.5 13.5 8 10 11.5" /><path d="M13.5 8H6.5a4 4 0 0 0 0 8H9" />
+          </svg>
         </button>
         <button
           onClick={handleDeleteSelectedNode}
           disabled={!(selectedNodeId || configNodeId || nodes.some((node) => node.selected))}
-          className="px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/20 text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--ff-danger)] hover:bg-[var(--ff-danger-soft)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Delete selected node"
+          aria-label="Delete selected node"
         >
-          Delete
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 4.5h10M6.5 4.5V3.2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.3M4.8 4.5l.6 9a1 1 0 0 0 1 .9h3.2a1 1 0 0 0 1-.9l.6-9" />
+          </svg>
         </button>
         <button
           onClick={handleClearCanvas}
           disabled={nodes.length === 0 && edges.length === 0}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           title="Clear all nodes and connections"
+          aria-label="Clear canvas"
         >
-          Clear
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="5.5" /><path d="M4.5 4.5l7 7" />
+          </svg>
         </button>
+
+        <span className="w-px h-5 bg-[var(--ff-card-border-strong)] mx-0.5" />
+
         <button
-          onClick={() => { if (nodes.length > 0) setShowSaveTemplate(true); }}
-          disabled={nodes.length === 0}
-          className="px-3 py-2 rounded-lg text-xs ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Save current workflow as a reusable template"
+          onClick={() => setAutoSync((prev) => !prev)}
+          className={`px-2.5 h-8 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
+            autoSync
+              ? 'bg-[var(--ff-accent-soft)] border-[var(--ff-border-strong)] text-[var(--ff-accent)]'
+              : 'ff-btn-secondary'
+          }`}
+          title="Automatically re-generate YAML as you edit the canvas"
         >
-          Save Template
+          Auto-sync
         </button>
         <button
           onClick={handleExport}
-          className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity ff-btn-primary"
+          className="px-3 h-8 rounded-lg text-xs font-semibold transition-opacity ff-btn-primary whitespace-nowrap"
+          title="Export YAML from the canvas"
         >
           Export YAML
         </button>
-      </div>
-
-      {/* Node count indicator */}
-      <div className="absolute top-4 left-20 px-3 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] z-10 ff-code">
-        {nodes.length} nodes | {edges.length} connections
       </div>
 
       {selectionOverlay && (
@@ -858,17 +1419,30 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         />
       )}
 
-      {/* Empty state */}
+      {/* Subtle, lightweight empty-state prompt */}
       {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
-          <div className="text-center max-w-xs pointer-events-auto">
-            <div className="w-10 h-10 rounded-lg bg-[var(--ff-accent-soft)] flex items-center justify-center mx-auto mb-3">
-              <span className="text-[var(--ff-accent)] text-sm font-bold">FF</span>
-            </div>
-            <p className="text-sm font-semibold text-[var(--ff-text-secondary)]">No nodes yet</p>
-            <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
-              Drag nodes from the sidebar or press Enter on a node to add it. Use Generate or Migrate to auto-build a pipeline.
+        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none p-4">
+          <div className="text-center max-w-sm pointer-events-auto">
+            <p className="text-xs font-medium text-[var(--ff-text-secondary)]">
+              Drag stages from the left or start with a template
             </p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {BUILT_IN_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  onClick={() => {
+                    nodeId = Math.max(nodeId, getMaxNodeId(tpl.nodes));
+                    applyTrackedWorkflowChange({
+                      nodes: cloneWorkflow(tpl.nodes),
+                      edges: cloneWorkflow(tpl.edges),
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--ff-surface)]/85 backdrop-blur-sm border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
+                >
+                  + {tpl.name}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -877,6 +1451,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       {selectedNode && (
         <NodeConfigPanel
           node={selectedNode}
+          onUpdate={handleNodeLiveConfigUpdate}
           onSave={handleNodeConfigSave}
           onDelete={handleDeleteNodeById}
           onClose={() => setConfigNodeId(null)}
@@ -979,6 +1554,10 @@ export default function WorkflowEditor(props) {
         onImportedWorkflowApplied={props.onImportedWorkflowApplied}
         cicdPlatform={props.cicdPlatform}
         onRegisterAddNode={props.onRegisterAddNode}
+        onOpenImport={props.onOpenImport}
+        onPlatformDetected={props.onPlatformDetected}
+        nodeRunStatuses={props.nodeRunStatuses}
+        onGraphChange={props.onGraphChange}
       />
     </ReactFlowProvider>
   );

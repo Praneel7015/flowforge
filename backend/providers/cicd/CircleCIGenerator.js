@@ -45,6 +45,7 @@ class CircleCIGenerator extends CICDGenerator {
 
   generate(nodes, edges) {
     const dependsOn = this._buildDependencies(edges);
+    const jobNameMap = this._buildUniqueJobNameMap(nodes);
 
     // Build jobs
     const jobs = {};
@@ -55,16 +56,8 @@ class CircleCIGenerator extends CICDGenerator {
         continue;
       }
 
-      const jobName = this._getJobName(node);
-      const deps = (dependsOn[node.id] || [])
-        .map((srcId) => {
-          const srcNode = nodes.find((n) => n.id === srcId);
-          if (!srcNode || srcNode.type.startsWith('trigger_') || srcNode.type === 'conditional') {
-            return null;
-          }
-          return this._getJobName(srcNode);
-        })
-        .filter(Boolean);
+      const jobName = jobNameMap[node.id] || this._getJobName(node);
+      const deps = this._resolveJobDependencies(node.id, nodes, dependsOn, jobNameMap);
 
       if (node.type === 'approval_gate') {
         const workflowJob = {

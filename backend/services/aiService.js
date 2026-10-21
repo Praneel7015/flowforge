@@ -4,6 +4,7 @@
  */
 const { getAIProvider } = require('../providers/ai');
 const { getCICDGenerator } = require('../providers/cicd');
+const { scanForSecrets } = require('../utils/secretScanner');
 const axios = require('axios');
 const yaml = require('js-yaml');
 
@@ -63,13 +64,14 @@ const ADVANCED_NODE_TYPES = [
   'blue_green_deploy',
 ];
 
-const SUPPORTED_CICD_PLATFORMS = ['gitlab', 'github', 'jenkins', 'circleci'];
+const SUPPORTED_CICD_PLATFORMS = ['gitlab', 'github', 'jenkins', 'circleci', 'bitbucket'];
 
 const PLATFORM_DISPLAY_NAMES = {
   gitlab: 'GitLab CI',
   github: 'GitHub Actions',
   jenkins: 'Jenkins Pipeline',
   circleci: 'CircleCI',
+  bitbucket: 'Bitbucket Pipelines',
 };
 
 function getSupportedNodeTypes() {
@@ -211,6 +213,35 @@ function buildHeuristicHealthReport(configText, platformDisplayName = 'CI/CD') {
     breakdown.speed.score -= 4;
   }
 
+  // Graph Bottleneck Analysis: check for sequential critical-path bottleneck
+  try {
+    const dag = parseConfigToDAG(configText, 'gitlab');
+    const stageNodes = (dag.nodes || []).filter(
+      (n) => n && !String(n.type || '').startsWith('trigger_') && n.type !== 'conditional'
+    );
+    const stageIds = new Set(stageNodes.map((n) => n.id));
+    if (stageNodes.length >= 3) {
+      const fanOutCounts = new Map();
+      for (const edge of dag.edges || []) {
+        if (stageIds.has(edge.source) && stageIds.has(edge.target)) {
+          fanOutCounts.set(edge.source, (fanOutCounts.get(edge.source) || 0) + 1);
+        }
+      }
+      const maxFanOut = fanOutCounts.size > 0 ? Math.max(...fanOutCounts.values()) : 0;
+      if (maxFanOut <= 1) {
+        breakdown.speed.score -= 8;
+        breakdown.speed.issues.push(
+          'Sequential critical-path bottleneck: all stages run in a single straight line with zero parallelism (max fan-out <= 1).'
+        );
+        breakdown.speed.tips.push(
+          'Fan out independent stages (lint, test, security_scan) in parallel using needs/requires after build.'
+        );
+      }
+    }
+  } catch {
+    // Ignore DAG parse errors during heuristic check
+  }
+
   if (hasSecurityScan) {
     breakdown.security.score += 15;
   } else {
@@ -223,6 +254,19 @@ function buildHeuristicHealthReport(configText, platformDisplayName = 'CI/CD') {
   } else {
     breakdown.security.issues.push('Secrets handling is not obvious from configuration.');
     breakdown.security.tips.push('Use CI secrets/variables and avoid hardcoded credentials.');
+  }
+
+  // Hardcoded Secret Scanner (uses unified 10-rule secretScanner)
+  const secretScan = scanForSecrets(String(configText || ''));
+  if (!secretScan.ok && secretScan.findings.length > 0) {
+    const labels = [...new Set(secretScan.findings.map((f) => f.label))].join(', ');
+    breakdown.security.score -= 25;
+    breakdown.security.issues.push(
+      `CRITICAL: Potential hardcoded secret or credential literal (${labels}) detected in pipeline configuration.`
+    );
+    breakdown.security.tips.push(
+      'Immediately revoke leaked credentials and move all secrets to encrypted CI/CD environment variables or a secret manager.'
+    );
   }
 
   if (usesLatestImage) {
@@ -559,139 +603,492 @@ function sanitizeEdges(rawEdges, nodes) {
     .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target) && edge.source !== edge.target);
 }
 
-function extractJobNamesFromConfig(configText, cicdPlatform) {
-  if (!configText || typeof configText !== 'string') {
-    return [];
-  }
-
-  if (cicdPlatform === 'jenkins') {
-    const jobs = [];
-    const stageRegex = /stage\(\s*['"]([^'"]+)['"]\s*\)/g;
-    let match = stageRegex.exec(configText);
-    while (match) {
-      jobs.push(match[1]);
-      match = stageRegex.exec(configText);
-    }
-    return jobs;
-  }
-
-  let document = null;
-  try {
-    document = yaml.load(configText);
-  } catch {
-    return [];
-  }
-
-  if (!document || typeof document !== 'object' || Array.isArray(document)) {
-    return [];
-  }
-
-  if ((cicdPlatform === 'github' || cicdPlatform === 'circleci') && document.jobs) {
-    const jobs = Object.keys(document.jobs || {});
-    return jobs.filter((jobName) => jobName && !jobName.startsWith('.'));
-  }
-
-  const reservedTopLevel = new Set([
-    'stages',
-    'variables',
-    'workflow',
-    'default',
-    'include',
-    'image',
-    'services',
-    'before_script',
-    'after_script',
-    'cache',
-    'name',
-    'on',
-    'env',
-    'version',
-    'executors',
-    'workflows',
-  ]);
-
-  return Object.keys(document).filter((key) => {
-    if (!key || key.startsWith('.')) return false;
-    if (reservedTopLevel.has(key)) return false;
-
-    const value = document[key];
-    return value && typeof value === 'object' && !Array.isArray(value);
-  });
+function normalizeDepList(value) {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((entry) => {
+      if (typeof entry === 'string') return entry.trim();
+      if (entry && typeof entry === 'object') return String(entry.job || entry.name || '').trim();
+      return '';
+    })
+    .filter(Boolean);
 }
 
-function buildFallbackWorkflow(configText, cicdPlatform) {
+function joinCommands(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof value === 'string') return value.trim();
+  return '';
+}
+
+function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
   const supportedNodeTypes = getSupportedNodeTypes();
-  const jobNames = extractJobNamesFromConfig(configText, cicdPlatform);
-  const robustFallbackSequence = [
-    'cache_restore',
-    'build',
-    'matrix_build',
-    'lint',
-    'test',
-    'integration_test',
-    'smoke_test',
-    'security_scan',
-    'cache_save',
-    'package',
-    'release',
-    'conditional',
-    'approval_gate',
-    'deploy',
-    'canary_deploy',
-    'blue_green_deploy',
-    'rollback',
-    'notify',
-  ].filter((type) => supportedNodeTypes.includes(type));
+  const rawText = typeof configText === 'string' ? stripCodeFences(configText) : '';
 
-  const inferredJobs =
-    jobNames.length > 0
-      ? jobNames
-      : robustFallbackSequence.length > 0
-        ? robustFallbackSequence
-        : ['build', 'test', 'deploy'];
+  const isJenkins =
+    cicdPlatform === 'jenkins' ||
+    (/stage\s*\(\s*['"]/.test(rawText) && /pipeline\s*\{|steps\s*\{|sh\s+['"]/.test(rawText));
 
-  const nodes = [
-    {
-      id: 'node_1',
+  const rawJobs = []; // [{ key, label, type, config, deps: [] }]
+  let hasPushTrigger = true;
+  let hasMrTrigger = false;
+  let detectedPlatform = isJenkins ? 'jenkins' : cicdPlatform || 'gitlab';
+
+  if (isJenkins && rawText) {
+    hasPushTrigger = /pollSCM|triggers\s*\{/i.test(rawText) || true;
+    const stageRegex = /stage\(\s*['"]([^'"]+)['"]\s*\)\s*\{([\s\S]*?)(?=stage\(\s*['"]|\}\s*\}\s*$|$)/g;
+    let match = stageRegex.exec(rawText);
+    let prevKey = null;
+
+    while (match) {
+      const stageName = match[1].trim();
+      const body = match[2] || '';
+      const key = `stage_${rawJobs.length + 1}`;
+      const scripts = [];
+      const shRegex = /\bsh\s+(?:script:\s*)?['"]([^'"]+)['"]/g;
+      let shMatch = shRegex.exec(body);
+      while (shMatch) {
+        scripts.push(shMatch[1].trim());
+        shMatch = shRegex.exec(body);
+      }
+
+      const config = { stage: stageName };
+      if (scripts.length > 0) config.script = scripts.join('\n');
+
+      rawJobs.push({
+        key,
+        label: stageName,
+        type: classifyNodeType(stageName, supportedNodeTypes),
+        config,
+        deps: prevKey ? [prevKey] : [],
+      });
+
+      prevKey = key;
+      match = stageRegex.exec(rawText);
+    }
+  } else if (rawText) {
+    let doc = null;
+    try {
+      doc = yaml.load(rawText);
+    } catch {
+      doc = null;
+    }
+
+    if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+      if (doc.pipelines && typeof doc.pipelines === 'object') {
+        detectedPlatform = 'bitbucket';
+      } else if (doc.workflows && doc.jobs) {
+        detectedPlatform = 'circleci';
+      } else if (doc.jobs && (doc.on || doc.true)) {
+        detectedPlatform = 'github';
+      } else if (doc.stages) {
+        detectedPlatform = 'gitlab';
+      }
+
+      if (detectedPlatform === 'github' || (doc.jobs && !doc.workflows && !doc.pipelines)) {
+        const triggers = doc.on || doc.true;
+        if (triggers && typeof triggers === 'object' && !Array.isArray(triggers)) {
+          hasPushTrigger = Boolean(triggers.push) || Object.keys(triggers).length === 0;
+          hasMrTrigger = Boolean(triggers.pull_request || triggers.pull_request_target);
+        } else if (Array.isArray(triggers)) {
+          hasPushTrigger = triggers.includes('push');
+          hasMrTrigger = triggers.includes('pull_request');
+        }
+
+        const jobsObj = doc.jobs && typeof doc.jobs === 'object' ? doc.jobs : {};
+        for (const [jobKey, job] of Object.entries(jobsObj)) {
+          if (!job || typeof job !== 'object') continue;
+          const steps = Array.isArray(job.steps) ? job.steps : [];
+          const runCommands = steps
+            .map((step) => (step && typeof step.run === 'string' ? step.run.trim() : ''))
+            .filter(Boolean)
+            .join('\n');
+
+          const config = {};
+          if (job['runs-on']) {
+            config.runsOn = Array.isArray(job['runs-on']) ? job['runs-on'][0] : String(job['runs-on']);
+          }
+          if (job.container) {
+            config.image = typeof job.container === 'string' ? job.container : job.container.image;
+          }
+          if (runCommands) config.script = runCommands;
+          if (job.environment) {
+            config.environment =
+              typeof job.environment === 'string' ? job.environment : job.environment.name;
+          }
+
+          const label = typeof job.name === 'string' && job.name.trim() ? job.name.trim() : humanizeLabel(jobKey);
+          rawJobs.push({
+            key: jobKey,
+            label,
+            type: classifyNodeType(`${jobKey} ${label}`, supportedNodeTypes),
+            config,
+            deps: normalizeDepList(job.needs),
+          });
+        }
+      } else if (detectedPlatform === 'circleci') {
+        const jobsObj = doc.jobs && typeof doc.jobs === 'object' ? doc.jobs : {};
+        const workflowDeps = {};
+        const workflowOrder = [];
+
+        if (doc.workflows && typeof doc.workflows === 'object') {
+          for (const wf of Object.values(doc.workflows)) {
+            if (!wf || typeof wf !== 'object' || !Array.isArray(wf.jobs)) continue;
+            for (const entry of wf.jobs) {
+              if (typeof entry === 'string') {
+                workflowOrder.push(entry);
+                workflowDeps[entry] = workflowDeps[entry] || [];
+              } else if (entry && typeof entry === 'object') {
+                const [jobName, cfg] = Object.entries(entry)[0] || [];
+                if (jobName) {
+                  workflowOrder.push(jobName);
+                  workflowDeps[jobName] = normalizeDepList(cfg?.requires);
+                  if (cfg?.type === 'approval' && !jobsObj[jobName]) {
+                    jobsObj[jobName] = { __approval: true };
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        const keys = workflowOrder.length > 0
+          ? [...new Set([...workflowOrder, ...Object.keys(jobsObj)])]
+          : Object.keys(jobsObj);
+
+        for (const jobKey of keys) {
+          const job = jobsObj[jobKey];
+          if (!job || typeof job !== 'object') continue;
+
+          const steps = Array.isArray(job.steps) ? job.steps : [];
+          const runCommands = steps
+            .map((step) => {
+              if (!step || typeof step !== 'object') return '';
+              if (typeof step.run === 'string') return step.run.trim();
+              if (step.run && typeof step.run.command === 'string') return step.run.command.trim();
+              return '';
+            })
+            .filter(Boolean)
+            .join('\n');
+
+          const config = {};
+          if (job.docker?.[0]?.image) config.image = job.docker[0].image;
+          if (runCommands) config.script = runCommands;
+
+          const type = job.__approval
+            ? 'approval_gate'
+            : classifyNodeType(jobKey, supportedNodeTypes);
+
+          rawJobs.push({
+            key: jobKey,
+            label: humanizeLabel(jobKey),
+            type,
+            config,
+            deps: workflowDeps[jobKey] || [],
+          });
+        }
+      } else if (detectedPlatform === 'bitbucket') {
+        const defaultImage = typeof doc.image === 'string' ? doc.image : undefined;
+        const p = doc.pipelines || {};
+        hasMrTrigger = Boolean(p['pull-requests']);
+        const collectSteps = (arr) => {
+          const out = [];
+          for (const item of Array.isArray(arr) ? arr : []) {
+            if (item?.step) out.push({ step: item.step, parallel: false });
+            else if (Array.isArray(item?.parallel)) {
+              const group = [];
+              for (const sub of item.parallel) {
+                if (sub?.step) group.push(sub.step);
+              }
+              if (group.length) out.push({ steps: group, parallel: true });
+            }
+          }
+          return out;
+        };
+
+        const branchMain = p.branches?.main || p.branches?.master;
+        const prSteps = p['pull-requests']?.['**'];
+        const stepEntries = collectSteps(branchMain || p.default || prSteps || []);
+
+        let prevKeys = [];
+        let idx = 0;
+        for (const entry of stepEntries) {
+          if (entry.parallel && Array.isArray(entry.steps)) {
+            const currentLayerKeys = [];
+            for (const stepObj of entry.steps) {
+              idx += 1;
+              const name = stepObj.name || `step_${idx}`;
+              const key = `${name}_${idx}`;
+              const config = {};
+              if (stepObj.image || defaultImage) config.image = stepObj.image || defaultImage;
+              const script = joinCommands(stepObj.script);
+              if (script) config.script = script;
+              if (stepObj.deployment) config.environment = String(stepObj.deployment);
+
+              rawJobs.push({
+                key,
+                label: humanizeLabel(name),
+                type:
+                  stepObj.trigger === 'manual'
+                    ? 'approval_gate'
+                    : classifyNodeType(name, supportedNodeTypes),
+                config,
+                deps: [...prevKeys],
+              });
+              currentLayerKeys.push(key);
+            }
+            prevKeys = currentLayerKeys;
+          } else if (entry.step) {
+            idx += 1;
+            const stepObj = entry.step;
+            const name = stepObj.name || `step_${idx}`;
+            const key = `${name}_${idx}`;
+            const config = {};
+            if (stepObj.image || defaultImage) config.image = stepObj.image || defaultImage;
+            const script = joinCommands(stepObj.script);
+            if (script) config.script = script;
+            if (stepObj.deployment) config.environment = String(stepObj.deployment);
+
+            rawJobs.push({
+              key,
+              label: humanizeLabel(name),
+              type:
+                stepObj.trigger === 'manual'
+                  ? 'approval_gate'
+                  : classifyNodeType(name, supportedNodeTypes),
+              config,
+              deps: [...prevKeys],
+            });
+            prevKeys = [key];
+          }
+        }
+      } else {
+        // GitLab CI or generic YAML
+        const reserved = new Set([
+          'stages',
+          'variables',
+          'workflow',
+          'default',
+          'include',
+          'image',
+          'services',
+          'before_script',
+          'after_script',
+          'cache',
+          'pages',
+          'name',
+          'on',
+          'env',
+          'version',
+          'executors',
+          'workflows',
+          'pipelines',
+        ]);
+
+        const stageOrder = Array.isArray(doc.stages) ? doc.stages.map(String) : [];
+        const stageGroups = new Map();
+        const defaultImage = typeof doc.image === 'string' ? doc.image : doc.image?.name;
+
+        for (const [key, job] of Object.entries(doc)) {
+          if (!key || key.startsWith('.') || reserved.has(key)) continue;
+          if (!job || typeof job !== 'object' || Array.isArray(job)) continue;
+
+          const stage = typeof job.stage === 'string' ? job.stage : stageOrder[0] || 'build';
+          if (!stageGroups.has(stage)) stageGroups.set(stage, []);
+          stageGroups.get(stage).push(key);
+
+          const config = { stage };
+          const img = typeof job.image === 'string' ? job.image : job.image?.name || defaultImage;
+          if (img) config.image = img;
+          const script = joinCommands(job.script);
+          if (script) config.script = script;
+          if (job.environment) {
+            config.environment =
+              typeof job.environment === 'string' ? job.environment : job.environment.name;
+          }
+
+          if (Array.isArray(job.rules)) {
+            for (const rule of job.rules) {
+              if (typeof rule?.if === 'string' && rule.if.includes('merge_request_event')) {
+                hasMrTrigger = true;
+              }
+            }
+          }
+
+          const explicitDeps = [
+            ...normalizeDepList(job.needs),
+            ...normalizeDepList(job.dependencies),
+          ];
+
+          rawJobs.push({
+            key,
+            label: humanizeLabel(key),
+            type:
+              job.when === 'manual'
+                ? 'approval_gate'
+                : classifyNodeType(`${key} ${stage}`, supportedNodeTypes),
+            config,
+            deps: [...new Set(explicitDeps)],
+            stage,
+          });
+        }
+
+        // For jobs without explicit `needs`/`dependencies`, infer dependencies from sequential `stages` order
+        const orderedStages =
+          stageOrder.length > 0 ? stageOrder : [...stageGroups.keys()];
+        for (const job of rawJobs) {
+          if (job.deps.length === 0 && job.stage) {
+            const stageIdx = orderedStages.indexOf(job.stage);
+            if (stageIdx > 0) {
+              for (let prevIdx = stageIdx - 1; prevIdx >= 0; prevIdx -= 1) {
+                const prevStageJobs = stageGroups.get(orderedStages[prevIdx]) || [];
+                if (prevStageJobs.length > 0) {
+                  job.deps = [...prevStageJobs];
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Minimal fallback if config could not be parsed into jobs
+  if (rawJobs.length === 0) {
+    const fallbackTypes = ['build', 'test', 'deploy'].filter((t) =>
+      supportedNodeTypes.includes(t)
+    );
+    let prev = null;
+    fallbackTypes.forEach((t, idx) => {
+      const key = `${t}_${idx + 1}`;
+      rawJobs.push({
+        key,
+        label: humanizeLabel(t),
+        type: t,
+        config: { stage: t },
+        deps: prev ? [prev] : [],
+      });
+      prev = key;
+    });
+  }
+
+  // Build trigger nodes
+  const nodes = [];
+  const edges = [];
+  const triggerIds = [];
+
+  if (hasPushTrigger && supportedNodeTypes.includes('trigger_push')) {
+    const id = 'node_1';
+    triggerIds.push(id);
+    nodes.push({
+      id,
+      type: 'trigger_push',
+      position: { x: 220, y: 80 },
+      data: { label: 'Git Push Trigger', config: {} },
+    });
+  }
+
+  if (hasMrTrigger && supportedNodeTypes.includes('trigger_mr')) {
+    const id = `node_${nodes.length + 1}`;
+    triggerIds.push(id);
+    nodes.push({
+      id,
+      type: 'trigger_mr',
+      position: { x: 520, y: 80 },
+      data: { label: 'Merge Request Trigger', config: {} },
+    });
+  }
+
+  if (triggerIds.length === 0) {
+    const id = 'node_1';
+    triggerIds.push(id);
+    nodes.push({
+      id,
       type: supportedNodeTypes.includes('trigger_push') ? 'trigger_push' : supportedNodeTypes[0],
       position: { x: 220, y: 80 },
       data: { label: 'Git Push Trigger', config: {} },
-    },
-  ];
-
-  let previousId = 'node_1';
-  const edges = [];
-
-  inferredJobs.forEach((jobName, index) => {
-    const nodeId = `node_${index + 2}`;
-    const type = supportedNodeTypes.includes(jobName)
-      ? jobName
-      : classifyNodeType(jobName, supportedNodeTypes);
-
-    nodes.push({
-      id: nodeId,
-      type,
-      position: {
-        x: 220 + (index % 2) * 280,
-        y: 220 + index * 130,
-      },
-      data: {
-        label: humanizeLabel(jobName),
-        config: {},
-      },
     });
+  }
 
-    edges.push({
-      id: `e_${previousId}_${nodeId}`,
-      source: previousId,
-      target: nodeId,
-      animated: true,
-    });
-
-    previousId = nodeId;
+  const jobByKey = new Map(rawJobs.map((j) => [j.key, j]));
+  const nodeIdByKey = new Map();
+  rawJobs.forEach((job, idx) => {
+    nodeIdByKey.set(job.key, `node_${nodes.length + idx + 1}`);
   });
 
-  return { nodes, edges };
+  // Compute topological depth for each job: depth = max(parentDepths) + 1 (roots at depth 1)
+  const depthMemo = new Map();
+  const computeDepth = (key, visiting = new Set()) => {
+    if (depthMemo.has(key)) return depthMemo.get(key);
+    if (visiting.has(key)) return 1;
+    visiting.add(key);
+
+    const job = jobByKey.get(key);
+    const validParents = (job?.deps || []).filter((dep) => jobByKey.has(dep) && dep !== key);
+    let depth = 1;
+    if (validParents.length > 0) {
+      depth = Math.max(...validParents.map((p) => computeDepth(p, new Set(visiting)))) + 1;
+    }
+
+    depthMemo.set(key, depth);
+    return depth;
+  };
+
+  for (const job of rawJobs) {
+    computeDepth(job.key);
+  }
+
+  // Group jobs by topological depth layer for horizontal side-by-side layout
+  const layerCounts = new Map();
+  for (const job of rawJobs) {
+    const depth = depthMemo.get(job.key) || 1;
+    const colIndex = layerCounts.get(depth) || 0;
+    layerCounts.set(depth, colIndex + 1);
+
+    const nodeId = nodeIdByKey.get(job.key);
+    nodes.push({
+      id: nodeId,
+      type: supportedNodeTypes.includes(job.type) ? job.type : 'build',
+      position: {
+        x: 220 + colIndex * 280,
+        y: 80 + depth * 140,
+      },
+      data: {
+        label: job.label,
+        config: job.config || {},
+      },
+    });
+
+    const validParents = (job.deps || []).filter((dep) => nodeIdByKey.has(dep) && dep !== job.key);
+    if (validParents.length > 0) {
+      for (const parentKey of validParents) {
+        const sourceId = nodeIdByKey.get(parentKey);
+        edges.push({
+          id: `e_${sourceId}_${nodeId}`,
+          source: sourceId,
+          target: nodeId,
+          animated: true,
+        });
+      }
+    } else {
+      for (const trigId of triggerIds) {
+        edges.push({
+          id: `e_${trigId}_${nodeId}`,
+          source: trigId,
+          target: nodeId,
+          animated: true,
+        });
+      }
+    }
+  }
+
+  return { nodes, edges, detectedPlatform };
 }
 
 function parsePipelineResult(text, cicdPlatform) {
@@ -713,7 +1110,7 @@ function parsePipelineResult(text, cicdPlatform) {
     }
 
     if (nodes.length === 0 && yamlText) {
-      const fallback = buildFallbackWorkflow(yamlText, cicdPlatform);
+      const fallback = parseConfigToDAG(yamlText, cicdPlatform);
       nodes = fallback.nodes;
       edges = fallback.edges;
     }
@@ -726,7 +1123,7 @@ function parsePipelineResult(text, cicdPlatform) {
   }
 
   const yamlText = extractYamlFromText(text);
-  const fallback = buildFallbackWorkflow(yamlText, cicdPlatform);
+  const fallback = parseConfigToDAG(yamlText, cicdPlatform);
 
   return {
     yaml: yamlText,
@@ -831,6 +1228,164 @@ function buildRepoContextSection(repoContext) {
 // 1. AI Pipeline Generator (Platform-Agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
 
+function buildDeterministicPipelineFromPrompt(prompt, cicdPlatform = 'gitlab', repoContext = []) {
+  const generator = getCICDGenerator(cicdPlatform);
+  const supportedNodeTypes = getSupportedNodeTypes();
+  const text = `${prompt || ''}\n${(repoContext || []).map((f) => `${f.path}\n${f.content || ''}`).join('\n')}`.toLowerCase();
+
+  const isPython = /\b(python|pytest|pip|poetry|django|flask|fastapi|requirements\.txt)\b/.test(text);
+  const isGo = /\b(golang|go\s+build|go\s+test|go\.mod)\b/.test(text);
+  const isDocker = /\b(docker|dockerfile|container|image)\b/.test(text);
+
+  const image = isPython
+    ? 'python:3.12-slim'
+    : isGo
+      ? 'golang:1.22-alpine'
+      : 'node:20-alpine';
+
+  const installAndBuildScript = isPython
+    ? 'pip install --no-cache-dir -r requirements.txt\npython -m compileall .'
+    : isGo
+      ? 'go mod download\ngo build -v ./...'
+      : 'npm ci\nnpm run build';
+
+  const lintScript = isPython
+    ? 'ruff check . || flake8 .'
+    : isGo
+      ? 'go vet ./...'
+      : 'npm run lint';
+
+  const testScript = isPython
+    ? 'pytest --maxfail=1 --disable-warnings -q'
+    : isGo
+      ? 'go test -race -v ./...'
+      : 'npm test -- --ci';
+
+  const nodes = [
+    {
+      id: 'node_1',
+      type: 'trigger_push',
+      position: { x: 260, y: 60 },
+      data: { label: 'Git Push Trigger', config: { branch: 'main' } },
+    },
+    {
+      id: 'node_2',
+      type: 'cache_restore',
+      position: { x: 260, y: 180 },
+      data: {
+        label: 'Restore Dependencies Cache',
+        config: {
+          stage: 'build',
+          image,
+          cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+          cachePaths: isPython ? '.cache/pip' : 'node_modules/',
+          script: 'echo "Restoring dependency cache..."',
+        },
+      },
+    },
+    {
+      id: 'node_3',
+      type: 'build',
+      position: { x: 260, y: 300 },
+      data: {
+        label: isDocker ? 'Build Container & App' : 'Build Application',
+        config: {
+          stage: 'build',
+          image,
+          script: installAndBuildScript,
+        },
+      },
+    },
+    {
+      id: 'node_4',
+      type: 'lint',
+      position: { x: 40, y: 440 },
+      data: {
+        label: 'Static Analysis & Lint',
+        config: {
+          stage: 'test',
+          image,
+          script: lintScript,
+        },
+      },
+    },
+    {
+      id: 'node_5',
+      type: 'test',
+      position: { x: 260, y: 440 },
+      data: {
+        label: 'Unit & Integration Tests',
+        config: {
+          stage: 'test',
+          image,
+          script: testScript,
+        },
+      },
+    },
+    {
+      id: 'node_6',
+      type: 'security_scan',
+      position: { x: 480, y: 440 },
+      data: {
+        label: 'Security & Vulnerability Scan',
+        config: {
+          stage: 'test',
+          image,
+          script: isPython ? 'pip-audit || true' : 'npm audit --audit-level=high || true',
+        },
+      },
+    },
+    {
+      id: 'node_7',
+      type: 'package',
+      position: { x: 260, y: 580 },
+      data: {
+        label: 'Package Artifacts',
+        config: {
+          stage: 'build',
+          image,
+          artifactPath: 'dist/',
+          script: 'mkdir -p dist && echo "Packaging release bundle..."',
+        },
+      },
+    },
+    {
+      id: 'node_8',
+      type: 'deploy',
+      position: { x: 260, y: 720 },
+      data: {
+        label: 'Deploy to Production',
+        config: {
+          stage: 'deploy',
+          image,
+          environment: 'production',
+          script: 'echo "Deploying verified release to production..."',
+        },
+      },
+    },
+  ].filter((n) => supportedNodeTypes.includes(n.type));
+
+  const edges = [
+    { id: 'e_node_1_node_2', source: 'node_1', target: 'node_2', animated: true },
+    { id: 'e_node_2_node_3', source: 'node_2', target: 'node_3', animated: true },
+    { id: 'e_node_3_node_4', source: 'node_3', target: 'node_4', animated: true },
+    { id: 'e_node_3_node_5', source: 'node_3', target: 'node_5', animated: true },
+    { id: 'e_node_3_node_6', source: 'node_3', target: 'node_6', animated: true },
+    { id: 'e_node_4_node_7', source: 'node_4', target: 'node_7', animated: true },
+    { id: 'e_node_5_node_7', source: 'node_5', target: 'node_7', animated: true },
+    { id: 'e_node_6_node_7', source: 'node_6', target: 'node_7', animated: true },
+    { id: 'e_node_7_node_8', source: 'node_7', target: 'node_8', animated: true },
+  ];
+
+  const yamlText = generator.generate(nodes, edges);
+  return {
+    yaml: yamlText,
+    nodes,
+    edges,
+    generationMode: 'template-fallback',
+  };
+}
+
 async function generatePipelineFromPrompt(prompt, options = {}) {
   const cicdPlatform = options.cicdPlatform || 'gitlab';
   const generator = getCICDGenerator(cicdPlatform);
@@ -872,13 +1427,22 @@ Return ONLY raw JSON, no markdown fences:
   const repoContextSection = buildRepoContextSection(options.repoContext);
   const userMessage = repoContextSection ? `${repoContextSection}\n\nUser request:\n${prompt}` : prompt;
 
-  const text = await ask(system, userMessage, {
-    aiProvider: options.aiProvider,
-    aiOptions: options.aiOptions,
-    maxTokens: 4096,
-  });
+  try {
+    const text = await ask(system, userMessage, {
+      aiProvider: options.aiProvider,
+      aiOptions: options.aiOptions,
+      maxTokens: 4096,
+    });
 
-  return parsePipelineResult(text, cicdPlatform);
+    return parsePipelineResult(text, cicdPlatform);
+  } catch (err) {
+    // Graceful smart-template synthesis if the AI key is depleted or not configured
+    const fallback = buildDeterministicPipelineFromPrompt(prompt, cicdPlatform, options.repoContext);
+    return {
+      ...fallback,
+      warning: `Generated using smart architecture engine (${err.message}). Add a free Groq API key in Settings for custom LLM synthesis.`,
+    };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -970,11 +1534,26 @@ Return ONLY raw JSON:
 
   const userMessage = `Source platform: ${sourcePlatform}\nTarget platform: ${targetPlatform}\n\nConfiguration to migrate:\n${pipelineConfig}`;
 
-  const text = await ask(system, userMessage, {
-    aiProvider: options.aiProvider,
-    aiOptions: options.aiOptions,
-    maxTokens: 4096,
-  });
+  let text;
+  try {
+    text = await ask(system, userMessage, {
+      aiProvider: options.aiProvider,
+      aiOptions: options.aiOptions,
+      maxTokens: 4096,
+    });
+  } catch (err) {
+    // Deterministic DAG-to-target conversion fallback when AI provider is unavailable
+    const dag = parseConfigToDAG(pipelineConfig, sourcePlatform);
+    const yamlText = generator.generate(dag.nodes, dag.edges);
+    return {
+      yaml: yamlText,
+      nodes: dag.nodes,
+      edges: dag.edges,
+      sourcePlatform,
+      targetPlatform,
+      warning: `Migrated using deterministic AST compiler (${err.message}).`,
+    };
+  }
 
   const parsed = parsePipelineResult(text, targetPlatform);
   return {
@@ -1266,7 +1845,14 @@ ${currentYaml || '# No pipeline loaded yet — drag nodes onto the canvas or use
 \`\`\``;
 
   const provider = getProvider(options.aiProvider, options.aiOptions || {});
-  return provider.chat(system, messages, { maxTokens: 2048 });
+  try {
+    return await provider.chat(system, messages, { maxTokens: 2048 });
+  } catch (err) {
+    const latestMsg = extractLatestMessageText(messages, 'user').toLowerCase();
+    const health = buildHeuristicHealthReport(currentYaml || '', metadata.displayName);
+    const tips = health.topRecommendations.map((t) => `- ${t}`).join('\n');
+    return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Connect a free **Groq API Key** in **Settings → Step 2** for full conversational AI.*`;
+  }
 }
 
 function extractN8NReply(data) {
@@ -1319,6 +1905,13 @@ Guidelines for CircleCI:
 - Use 'steps:' with 'checkout', 'run:', etc.
 - Define 'workflows:' to orchestrate jobs
 - Use 'requires:' for job dependencies`,
+
+    bitbucket: `
+Guidelines for Bitbucket Pipelines:
+- Use 'image:' at the top level or per step
+- Define 'pipelines:' with 'default:', 'branches:', or 'pull-requests:'
+- Use '- step:' blocks containing 'name:', 'script:', 'caches:', and 'artifacts:'
+- Use 'deployment:' for environment tracking and 'trigger: manual' for approval gates`,
   };
 
   return guidelines[platform] || '';
@@ -1332,4 +1925,5 @@ module.exports = {
   scorePipelineHealth,
   autoRemediatePipeline,
   pipelineChat,
+  parseConfigToDAG,
 };

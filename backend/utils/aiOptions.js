@@ -2,6 +2,8 @@
  * Build per-request AI options for BYOM (Bring Your Own Model).
  * Secrets are accepted per request and not persisted.
  */
+const { inspectUrl } = require('./ssrf');
+
 function sanitizeText(value, maxLen = 500) {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
@@ -12,7 +14,14 @@ function sanitizeText(value, maxLen = 500) {
 function sanitizeBaseUrl(value) {
   const url = sanitizeText(value, 500);
   if (!url) return undefined;
-  if (!/^https?:\/\//i.test(url)) return undefined;
+  // SSRF guard: reject internal/loopback/metadata targets so a caller cannot
+  // use the backend to reach hosts it should not.
+  const inspection = inspectUrl(url);
+  if (!inspection.safe) {
+    const error = new Error(`Rejected baseUrl: ${inspection.reason}`);
+    error.status = 400;
+    throw error;
+  }
   return url;
 }
 

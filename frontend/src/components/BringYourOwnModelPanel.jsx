@@ -4,9 +4,9 @@ import axios from 'axios';
 const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
 const providerHints = {
-  featherless: {
-    model: 'Qwen/Qwen2.5-Coder-1.5B-Instruct',
-    baseUrl: 'https://api.featherless.ai/v1',
+  groq: {
+    model: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
   },
   openai: {
     model: 'gpt-4o-mini',
@@ -53,7 +53,7 @@ export default function BringYourOwnModelPanel({
   onChange,
   providerSelfTestEnabled = true,
 }) {
-  const hints = providerHints[selectedProvider] || providerHints.featherless;
+  const hints = providerHints[selectedProvider] || providerHints.groq;
   const [testState, setTestState] = useState({ status: 'idle', message: '' });
   const [rememberKey, setRememberKey] = useState(() => Boolean(readSavedApiKey()));
   const abortRef = useRef(null);

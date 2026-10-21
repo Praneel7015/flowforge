@@ -89,7 +89,8 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
 
   const handleRepoChange = (e) => {
     const value = e.target.value;
-    onRepoSelect(value);
+    const selectedRepoObj = repos.find((r) => r.name === value || r.fullName === value) || null;
+    onRepoSelect(value, selectedRepoObj?.owner, selectedRepoObj);
     onBranchSelect('');
   };
 

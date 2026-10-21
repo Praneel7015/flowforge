@@ -318,6 +318,137 @@ async function createUserMergeRequest(token, instanceUrl, projectId, { title, de
   }
 }
 
+function resolveGitLabClient(token, instanceUrl) {
+  const effectiveToken = token || process.env.GITLAB_TOKEN || GITLAB_TOKEN;
+  const effectiveUrl = instanceUrl || process.env.GITLAB_URL || GITLAB_URL;
+  if (!effectiveToken) {
+    throw new Error('GitLab token is required');
+  }
+  return makeUserClient(effectiveToken, effectiveUrl);
+}
+
+async function listPipelines(projectId, { branch, perPage = 10, token, instanceUrl } = {}) {
+  const client = resolveGitLabClient(token, instanceUrl);
+  try {
+    const encoded = encodeURIComponent(projectId);
+    const params = { per_page: perPage };
+    if (branch) params.ref = branch;
+    const { data } = await client.get(`/projects/${encoded}/pipelines`, { params });
+    return (Array.isArray(data) ? data : []).map((p) => ({
+      id: p.id,
+      runNumber: p.iid || p.id,
+      name: `Pipeline #${p.iid || p.id}`,
+      status: p.status,
+      conclusion: p.status,
+      branch: p.ref,
+      commitSha: p.sha,
+      url: p.web_url,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+    }));
+  } catch (err) {
+    throw toApiError('list pipelines', err);
+  }
+}
+
+async function getPipelineStatusWithJobs(projectId, pipelineId, { token, instanceUrl } = {}) {
+  const client = resolveGitLabClient(token, instanceUrl);
+  try {
+    const encoded = encodeURIComponent(projectId);
+    const [pipelineRes, jobsRes] = await Promise.all([
+      client.get(`/projects/${encoded}/pipelines/${pipelineId}`),
+      client
+        .get(`/projects/${encoded}/pipelines/${pipelineId}/jobs`, { params: { per_page: 100 } })
+        .catch(() => ({ data: [] })),
+    ]);
+
+    const p = pipelineRes.data || {};
+    const rawJobs = Array.isArray(jobsRes?.data) ? jobsRes.data : [];
+
+    return {
+      id: p.id,
+      runNumber: p.iid || p.id,
+      name: `Pipeline #${p.iid || p.id}`,
+      status: p.status,
+      conclusion: p.status,
+      branch: p.ref,
+      commitSha: p.sha,
+      url: p.web_url,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      jobs: rawJobs.map((j) => ({
+        id: j.id,
+        name: j.name,
+        stage: j.stage,
+        status: j.status,
+        conclusion: j.status,
+        durationSeconds: typeof j.duration === 'number' ? Math.round(j.duration) : null,
+        url: j.web_url || null,
+      })),
+    };
+  } catch (err) {
+    throw toApiError('get pipeline status with jobs', err);
+  }
+}
+
+async function getPipelineLogsWithCreds(projectId, pipelineId, { token, instanceUrl } = {}) {
+  const client = resolveGitLabClient(token, instanceUrl);
+  try {
+    const encoded = encodeURIComponent(projectId);
+    const { data: jobs } = await client.get(`/projects/${encoded}/pipelines/${pipelineId}/jobs`);
+    const jobList = Array.isArray(jobs) ? jobs : [];
+    const failedJobs = jobList.filter((j) => j.status === 'failed');
+
+    const logs = await Promise.all(
+      failedJobs.map(async (job) => {
+        let traceText = '';
+        try {
+          const { data: trace } = await client.get(`/projects/${encoded}/jobs/${job.id}/trace`, {
+            transformResponse: [(d) => d],
+          });
+          traceText = typeof trace === 'string' ? trace : JSON.stringify(trace);
+          if (traceText.length > 4000) {
+            traceText = traceText.slice(-4000);
+          }
+        } catch {
+          traceText = `Job "${job.name}" failed in stage "${job.stage}"`;
+        }
+        return {
+          jobId: job.id,
+          jobName: job.name,
+          stage: job.stage || job.name,
+          log: traceText,
+        };
+      })
+    );
+
+    return { jobs: jobList, failedLogs: logs };
+  } catch (err) {
+    throw toApiError('get pipeline logs', err);
+  }
+}
+
+async function triggerPipelineWithCreds(projectId, ref = 'main', { token, instanceUrl, variables } = {}) {
+  const client = resolveGitLabClient(token, instanceUrl);
+  try {
+    const encoded = encodeURIComponent(projectId);
+    const body = { ref };
+    if (Array.isArray(variables) && variables.length > 0) {
+      body.variables = variables;
+    }
+    const { data } = await client.post(`/projects/${encoded}/pipeline`, body);
+    return {
+      triggered: true,
+      id: data.id,
+      status: data.status,
+      branch: data.ref || ref,
+      url: data.web_url,
+    };
+  } catch (err) {
+    throw toApiError('trigger pipeline', err);
+  }
+}
+
 module.exports = {
   getPipelineStatus,
   getPipelineLogs,
@@ -333,4 +464,8 @@ module.exports = {
   pushUserFile,
   createUserBranch,
   createUserMergeRequest,
+  listPipelines,
+  getPipelineStatusWithJobs,
+  getPipelineLogsWithCreds,
+  triggerPipelineWithCreds,
 };

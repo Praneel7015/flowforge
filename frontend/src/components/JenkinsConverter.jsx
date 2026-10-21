@@ -7,6 +7,7 @@ const DEFAULT_PLATFORMS = [
   { name: 'github', displayName: 'GitHub Actions' },
   { name: 'jenkins', displayName: 'Jenkins' },
   { name: 'circleci', displayName: 'CircleCI' },
+  { name: 'bitbucket', displayName: 'Bitbucket Pipelines' },
 ];
 
 const SAMPLE_CONFIGS = {
@@ -94,6 +95,23 @@ workflows:
   build_and_test:
     jobs:
       - build`,
+  bitbucket: `image: node:20
+
+pipelines:
+  default:
+    - step:
+        name: Build and Test
+        caches:
+          - node
+        script:
+          - npm ci
+          - npm test
+          - npm run build
+    - step:
+        name: Deploy to Production
+        deployment: production
+        script:
+          - echo "Deploying to production"`,
 };
 
 function normalizePlatforms(availablePlatforms = []) {

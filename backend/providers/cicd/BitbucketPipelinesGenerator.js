@@ -37,14 +37,11 @@ class BitbucketPipelinesGenerator extends CICDGenerator {
 
   generate(nodes, edges) {
     const triggers = this._extractTriggers(nodes);
-    const dependsOn = this._buildDependencies(edges);
-
-    const stageNodes = nodes.filter(
-      (n) => !n.type.startsWith('trigger_') && n.type !== 'conditional'
-    );
+    const jobNameMap = this._buildUniqueJobNameMap(nodes);
+    const stageNodes = this._topologicalSort(nodes, edges);
 
     const steps = stageNodes.map((node) => {
-      const name = this._getJobName(node);
+      const name = jobNameMap[node.id] || this._getJobName(node);
       const scripts = this._normalizeScripts(
         node.data?.config?.script,
         `echo "Running ${node.data?.label || name}"`

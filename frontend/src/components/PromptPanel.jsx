@@ -100,6 +100,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
   const [repoPlatform, setRepoPlatform] = useState(connectedPlatforms[0] || 'github');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('');
+  const [repoOwner, setRepoOwner] = useState('');
   const [tree, setTree] = useState([]);
   const [loadingTree, setLoadingTree] = useState(false);
   const [treeError, setTreeError] = useState('');
@@ -119,7 +120,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
       const { data } = await axios.post('/api/repo/tree', {
         platform: repoPlatform,
         credentials: creds,
-        owner: creds.username || '',
+        owner: repoOwner || creds.username || '',
         repo: selectedRepo,
         branch: selectedBranch,
       });
@@ -129,35 +130,42 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
     } finally {
       setLoadingTree(false);
     }
-  }, [selectedRepo, selectedBranch, repoPlatform, allCreds]);
+  }, [selectedRepo, selectedBranch, repoPlatform, repoOwner, allCreds]);
 
   useEffect(() => {
     if (repoContextOpen && selectedRepo && selectedBranch) loadTree();
   }, [selectedRepo, selectedBranch, repoContextOpen, loadTree]);
 
   const fetchAndAttachContext = useCallback(async () => {
-    if (selectedPaths.length === 0) { setRepoContext([]); return; }
+    if (selectedPaths.length === 0) {
+      setRepoContext([]);
+      return [];
+    }
     const creds = allCreds[repoPlatform] || {};
     try {
       const { data } = await axios.post('/api/repo/file-contents', {
         platform: repoPlatform,
         credentials: creds,
-        owner: creds.username || '',
+        owner: repoOwner || creds.username || '',
         repo: selectedRepo,
         paths: selectedPaths,
         branch: selectedBranch,
       });
-      setRepoContext(data.files || []);
+      const files = data.files || [];
+      setRepoContext(files);
+      return files;
     } catch {
       setRepoContext([]);
+      return [];
     }
-  }, [selectedPaths, repoPlatform, allCreds, selectedRepo, selectedBranch]);
+  }, [selectedPaths, repoPlatform, repoOwner, allCreds, selectedRepo, selectedBranch]);
 
   const platformNames = {
     gitlab: 'GitLab CI',
     github: 'GitHub Actions',
     jenkins: 'Jenkins',
     circleci: 'CircleCI',
+    bitbucket: 'Bitbucket Pipelines',
   };
 
   const targetPlatformLabel = platformNames[cicdPlatform] || 'CI/CD';
@@ -182,8 +190,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
       // Fetch repo file contents if any files are selected
       let attachedContext = repoContext;
       if (repoContextOpen && selectedPaths.length > 0 && repoContext.length === 0) {
-        await fetchAndAttachContext();
-        attachedContext = repoContext;
+        attachedContext = await fetchAndAttachContext();
       }
 
       const { data } = await axios.post('/api/pipelines/generate', {
@@ -252,8 +259,8 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
             className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[var(--ff-text-secondary)] hover:bg-[var(--ff-card-bg-hover)] transition-colors"
           >
             <span className="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/>
               </svg>
               Attach Repo Context
               {selectedPaths.length > 0 && (
@@ -294,7 +301,13 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
                     platform={repoPlatform}
                     selectedRepo={selectedRepo}
                     selectedBranch={selectedBranch}
-                    onRepoSelect={(r) => { setSelectedRepo(r); setTree([]); setSelectedPaths([]); setRepoContext([]); }}
+                    onRepoSelect={(r, ownerFromRepo) => {
+                      setSelectedRepo(r);
+                      setRepoOwner(ownerFromRepo || allCreds[repoPlatform]?.username || '');
+                      setTree([]);
+                      setSelectedPaths([]);
+                      setRepoContext([]);
+                    }}
                     onBranchSelect={(b) => { setSelectedBranch(b); setTree([]); setSelectedPaths([]); setRepoContext([]); }}
                   />
 

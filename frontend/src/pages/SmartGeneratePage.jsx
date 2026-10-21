@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
 import RepoBrowser from '../components/RepoBrowser';
 import FileTreePicker from '../components/FileTreePicker';
@@ -7,23 +7,98 @@ import PushToRepoModal from '../components/PushToRepoModal';
 const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket'];
 const PLATFORM_LABELS = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
+const PLATFORM_NAMES = {
+  gitlab: 'GitLab CI',
+  github: 'GitHub Actions',
+  jenkins: 'Jenkins',
+  circleci: 'CircleCI',
+  bitbucket: 'Bitbucket Pipelines',
+};
+
 const PLATFORM_ICONS = {
   github: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/>
     </svg>
   ),
   gitlab: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 13.5L2 9l1.8-6L6 7.5h4L12.2 3 14 9 8 13.5z"/>
     </svg>
   ),
   bitbucket: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 3h11l-1.6 10H4.1L2.5 3z"/><path d="M6.2 6.5h3.6l-.5 3.2H6.7l-.5-3.2z"/>
     </svg>
   ),
 };
+
+const FULL_NODE_COVERAGE = [
+  'trigger_push',
+  'trigger_mr',
+  'cache_restore',
+  'build',
+  'matrix_build',
+  'lint',
+  'test',
+  'integration_test',
+  'smoke_test',
+  'security_scan',
+  'cache_save',
+  'package',
+  'release',
+  'conditional',
+  'approval_gate',
+  'deploy',
+  'canary_deploy',
+  'blue_green_deploy',
+  'rollback',
+  'notify',
+];
+
+function buildProductionTemplate(platformLabel) {
+  return `Create a production-grade ${platformLabel} pipeline.
+
+Project details:
+- Stack: Node.js API + React frontend
+- Package manager: npm
+- Environments: staging and production
+- Deployment branch: main
+
+Pipeline requirements:
+- Triggers: push and merge request
+- Performance: restore/save dependency cache and use matrix build for Node 18 and 20
+- Quality gates: lint, unit tests, integration tests, smoke tests, security scan
+- Packaging and release: create artifact/package and release stage
+- Deployment safety: approval gate before production
+- Deploy strategy: canary deploy, then blue/green cutover
+- Reliability: rollback plan if health checks fail
+- Communication: notify team on success/failure
+- Branch policy: use conditional logic so production deploy only happens on main
+
+Node expectations:
+- Use these node types when relevant: ${FULL_NODE_COVERAGE.join(', ')}
+- Fill useful config values (matrix, cacheKey/cachePaths, artifactPath, tag, approver, trafficPercent, activeColor, channel, condition)
+
+Output quality:
+- YAML must be valid and runnable
+- Node graph should be fully connected and easy to read`;
+}
+
+function buildFullCoverageExample(platformLabel) {
+  return `Generate a comprehensive ${platformLabel} pipeline that demonstrates all available builder node types in a realistic flow.
+
+Use this end-to-end sequence:
+trigger_push + trigger_mr -> cache_restore -> build -> matrix_build -> lint -> test -> integration_test -> smoke_test -> security_scan -> cache_save -> package -> release -> conditional -> approval_gate -> deploy -> canary_deploy -> blue_green_deploy -> rollback -> notify
+
+Constraints:
+- Production deploy only on main branch
+- Canary rollout starts at 10% traffic
+- Blue/green switch uses activeColor=green
+- Include rollback behavior and team notification
+- Use meaningful scripts and config values for each advanced node
+- Return robust, clean YAML and matching React Flow nodes/edges`;
+}
 
 function readStoredCredentials() {
   try {
@@ -40,45 +115,12 @@ function hasCredentials(creds, platform) {
   return !!(creds[platform].token);
 }
 
-const STEPS = ['Connect', 'Select Files', 'Generate', 'Push'];
-
-function StepIndicator({ current }) {
-  return (
-    <div className="flex items-center gap-0 mb-6">
-      {STEPS.map((step, i) => (
-        <React.Fragment key={step}>
-          <div className="flex items-center gap-2">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border transition-colors ${
-              i < current
-                ? 'bg-[var(--ff-accent)] border-[var(--ff-accent)] text-white'
-                : i === current
-                  ? 'border-[var(--ff-border-strong)] bg-[var(--ff-accent-soft)] text-[var(--ff-text)]'
-                  : 'border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-muted)]'
-            }`}>
-              {i < current ? (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1.5 5l2.5 2.5 4.5-4"/>
-                </svg>
-              ) : i + 1}
-            </div>
-            <span className={`text-xs font-medium hidden sm:block ${i === current ? 'text-[var(--ff-text)]' : 'text-[var(--ff-muted)]'}`}>
-              {step}
-            </span>
-          </div>
-          {i < STEPS.length - 1 && (
-            <div className={`flex-1 h-px mx-2 min-w-4 transition-colors ${i < current ? 'bg-[var(--ff-accent)]' : 'bg-[var(--ff-card-border-strong)]'}`} />
-          )}
-        </React.Fragment>
-      ))}
-    </div>
-  );
-}
-
 export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatform, aiOptions }) {
   const allCreds = readStoredCredentials();
   const connectedPlatforms = SUPPORTED_PLATFORMS.filter((p) => hasCredentials(allCreds, p));
+  const targetPlatformLabel = PLATFORM_NAMES[cicdPlatform] || 'CI/CD';
 
-  const [step, setStep] = useState(0);
+  const [repoContextOpen, setRepoContextOpen] = useState(connectedPlatforms.length > 0);
   const [platform, setPlatform] = useState(connectedPlatforms[0] || 'github');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -99,24 +141,33 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
   const [pushResult, setPushResult] = useState(null);
 
   const abortRef = useRef(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const creds = allCreds[platform] || {};
 
-  // ── Step 0: Platform + Repo selection ────────────────────────────────────────
+  const examplePrompts = [
+    `Create a production-ready ${targetPlatformLabel} pipeline for a Node.js service that uses cache restore/save, matrix builds, lint, unit/integration/smoke tests, security scanning, packaging, release, approval gate, canary deployment, blue/green cutover, rollback, and notifications.`,
+    `Design a ${targetPlatformLabel} monorepo pipeline (frontend + backend) with branch-aware conditional deployment, artifact packaging, parallel test strategy, and environment-specific deployment controls with rollback.`,
+    `Generate a ${targetPlatformLabel} pipeline for a Python API with security-first defaults: pinned images, dependency scan, secret-safe practices, approval before production, staged canary rollout, and incident notifications.`,
+    `Create a highly reliable ${targetPlatformLabel} pipeline for a React app: restore cache, build, lint, test, integration checks, smoke tests, package artifacts, release tag, and deploy only from main via conditional gate.`,
+  ];
 
-  const handleRepoSelect = useCallback((repoName) => {
-    setSelectedRepo(repoName);
-    setSelectedBranch('');
-    setTree([]);
-    setSelectedPaths([]);
-    setGeneratedYaml('');
-    setPushResult(null);
+  const handleRepoSelect = useCallback(
+    (repoName, ownerFromRepo) => {
+      setSelectedRepo(repoName);
+      setSelectedBranch('');
+      setTree([]);
+      setSelectedPaths([]);
+      setGeneratedYaml('');
+      setPushResult(null);
 
-    // Derive owner from stored credentials or repo full name
-    const platformCreds = allCreds[platform] || {};
-    const repos = []; // RepoBrowser manages this internally; owner comes from creds
-    setRepoOwner(platformCreds.username || '');
-  }, [platform, allCreds]);
+      const resolvedOwner =
+        typeof ownerFromRepo === 'string' ? ownerFromRepo : ownerFromRepo?.owner;
+      const platformCreds = allCreds[platform] || {};
+      setRepoOwner(resolvedOwner || platformCreds.username || platformCreds.workspace || '');
+    },
+    [platform, allCreds]
+  );
 
   const handleBranchSelect = useCallback((branch) => {
     setSelectedBranch(branch);
@@ -124,9 +175,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
     setSelectedPaths([]);
   }, []);
 
-  const canProceedToFiles = selectedRepo && selectedBranch;
-
-  // ── Step 1: Load tree ─────────────────────────────────────────────────────────
+  const canProceedToFiles = Boolean(selectedRepo && selectedBranch);
 
   const loadTree = useCallback(async () => {
     if (!canProceedToFiles) return;
@@ -144,7 +193,6 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
       const files = (data.tree || []).filter((i) => i.type === 'file');
       setTree(files);
 
-      // Auto-select high-value config files
       const autoSelect = files
         .filter((f) => {
           const name = f.path.split('/').pop().toLowerCase();
@@ -164,7 +212,6 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
         .slice(0, 10);
 
       setSelectedPaths(autoSelect);
-      setStep(1);
     } catch (err) {
       setTreeError(err.response?.data?.error || 'Failed to load file tree');
     } finally {
@@ -172,207 +219,286 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
     }
   }, [canProceedToFiles, platform, creds, repoOwner, selectedRepo, selectedBranch]);
 
-  // ── Step 2: Generate ──────────────────────────────────────────────────────────
-
-  const handleGenerate = useCallback(async () => {
-    if (selectedPaths.length === 0) return;
-    setGenerating(true);
-    setGenError('');
-    setGeneratedYaml('');
-
-    try {
-      // Fetch selected file contents
-      const { data: filesData } = await axios.post('/api/repo/file-contents', {
-        platform,
-        credentials: creds,
-        owner: repoOwner,
-        repo: selectedRepo,
-        paths: selectedPaths,
-        branch: selectedBranch,
-      });
-
-      const repoContext = filesData.files || [];
-
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      const basePrompt = prompt.trim() || `Analyze the repository files provided and generate a production-grade ${cicdPlatform} CI/CD pipeline tailored to this project's actual stack, dependencies, and structure.`;
-
-      const { data } = await axios.post('/api/pipelines/generate', {
-        prompt: basePrompt,
-        aiProvider,
-        cicdPlatform,
-        aiOptions,
-        repoContext,
-      }, { signal: controller.signal });
-
-      setGeneratedYaml(data.yaml || '');
-      setGeneratedResult(data);
-      setStep(2);
-    } catch (err) {
-      if (axios.isCancel(err)) return;
-      setGenError(err.response?.data?.error || 'Generation failed. Check backend connection.');
-    } finally {
-      setGenerating(false);
+  useEffect(() => {
+    if (repoContextOpen && canProceedToFiles) {
+      loadTree();
     }
-  }, [selectedPaths, platform, creds, repoOwner, selectedRepo, selectedBranch, prompt, aiProvider, cicdPlatform, aiOptions]);
+  }, [repoContextOpen, canProceedToFiles, loadTree]);
 
-  const handleLoadIntoBuilder = () => {
-    if (generatedResult) {
-      onGenerated(generatedResult);
-    }
-  };
+  const handleGenerate = useCallback(
+    async ({ openDirectlyInBuilder = true } = {}) => {
+      if (!prompt.trim() && selectedPaths.length === 0) {
+        setGenError('Enter a prompt description or select repository context files.');
+        return;
+      }
+
+      setGenerating(true);
+      setGenError('');
+      setGeneratedYaml('');
+
+      try {
+        let repoContext = [];
+        if (repoContextOpen && selectedRepo && selectedBranch && selectedPaths.length > 0) {
+          try {
+            const { data: filesData } = await axios.post('/api/repo/file-contents', {
+              platform,
+              credentials: creds,
+              owner: repoOwner,
+              repo: selectedRepo,
+              paths: selectedPaths,
+              branch: selectedBranch,
+            });
+            repoContext = filesData.files || [];
+          } catch {
+            repoContext = [];
+          }
+        }
+
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        const basePrompt =
+          prompt.trim() ||
+          `Analyze the repository files provided and generate a production-grade ${targetPlatformLabel} CI/CD pipeline tailored to this project's actual stack, dependencies, and structure.`;
+
+        const { data } = await axios.post(
+          '/api/pipelines/generate',
+          {
+            prompt: basePrompt,
+            aiProvider,
+            cicdPlatform,
+            aiOptions,
+            ...(repoContext.length > 0 ? { repoContext } : {}),
+          },
+          { signal: controller.signal }
+        );
+
+        setGeneratedYaml(data.yaml || '');
+        setGeneratedResult(data);
+        if (openDirectlyInBuilder) {
+          onGenerated(data);
+        }
+      } catch (err) {
+        if (axios.isCancel(err)) return;
+        setGenError(err.response?.data?.error || 'Generation failed. Check backend connection.');
+      } finally {
+        setGenerating(false);
+      }
+    },
+    [
+      prompt,
+      selectedPaths,
+      repoContextOpen,
+      selectedRepo,
+      selectedBranch,
+      platform,
+      creds,
+      repoOwner,
+      targetPlatformLabel,
+      aiProvider,
+      cicdPlatform,
+      aiOptions,
+      onGenerated,
+    ]
+  );
 
   const handlePushSuccess = (result) => {
     setPushResult(result);
     setShowPushModal(false);
-    setStep(3);
   };
-
-  // ── No connected platforms ────────────────────────────────────────────────────
-
-  if (connectedPlatforms.length === 0) {
-    return (
-      <div className="h-full overflow-y-auto p-4 md:p-6">
-        <div className="max-w-2xl mx-auto pt-8 text-center space-y-4 ff-enter">
-          <div className="w-12 h-12 rounded-2xl bg-[var(--ff-accent-soft)] border border-[var(--ff-border)] flex items-center justify-center mx-auto">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ff-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/>
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-[var(--ff-text)]">No platforms connected</h2>
-          <p className="text-sm text-[var(--ff-text-secondary)] leading-relaxed">
-            Connect GitHub, GitLab, or Bitbucket in Settings → Platform Integrations to browse your repos and generate a tailored pipeline.
-          </p>
-          <p className="text-xs text-[var(--ff-muted)]">
-            Credentials are stored in your browser only and sent directly to the platform API — never stored on our servers.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="max-w-3xl mx-auto space-y-5 ff-enter">
         {/* Header */}
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.18em] text-[var(--ff-muted)]">Smart Generate</p>
+        <div className="space-y-1.5">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--ff-muted)]">AI Generator</p>
           <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-[var(--ff-text)]">
-            Generate from your repo
+            Generate a {targetPlatformLabel} pipeline
           </h2>
           <p className="text-sm text-[var(--ff-text-secondary)] leading-relaxed">
-            Connect a repo, select files as context, and FlowForge generates a pipeline that fits your actual stack.
+            Describe your workflow in plain language, launch a starter prompt template, or attach files directly from a connected GitHub, GitLab, or Bitbucket repository.
           </p>
         </div>
 
-        <StepIndicator current={step} />
-
-        {/* Step 0: Connect repo */}
-        <section className="ff-surface-soft p-5 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] mb-3">Platform</p>
+        {/* Prompt Boosters */}
+        <section className="ff-surface-soft p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-xs font-semibold text-[var(--ff-text-secondary)] uppercase tracking-[0.14em]">
+              Quick Prompt Boosters
+            </p>
             <div className="flex flex-wrap gap-2">
-              {SUPPORTED_PLATFORMS.map((p) => {
-                const connected = hasCredentials(allCreds, p);
-                return (
-                  <button
-                    key={p}
-                    onClick={() => { setPlatform(p); setSelectedRepo(''); setSelectedBranch(''); setTree([]); }}
-                    disabled={!connected}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                      platform === p && connected
-                        ? 'border-[var(--ff-border-strong)] bg-[var(--ff-accent-soft)] text-[var(--ff-text)]'
-                        : connected
-                          ? 'border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:border-[var(--ff-border-strong)]'
-                          : 'border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-muted)] opacity-50 cursor-not-allowed'
-                    }`}
-                    title={connected ? undefined : `Connect ${PLATFORM_LABELS[p]} in Settings first`}
-                  >
-                    {PLATFORM_ICONS[p]}
-                    {PLATFORM_LABELS[p]}
-                    {!connected && <span className="text-[10px] font-semibold text-[var(--ff-muted)]">Not connected</span>}
-                  </button>
-                );
-              })}
+              <button
+                onClick={() => setPrompt(buildProductionTemplate(targetPlatformLabel))}
+                className="px-3 py-1.5 rounded-lg text-xs ff-btn-secondary"
+              >
+                Load Production Template
+              </button>
+              <button
+                onClick={() => setPrompt(buildFullCoverageExample(targetPlatformLabel))}
+                className="px-3 py-1.5 rounded-lg text-xs ff-btn-secondary"
+              >
+                Load Full Node Coverage Example
+              </button>
             </div>
           </div>
-
-          <RepoBrowser
-            platform={platform}
-            selectedRepo={selectedRepo}
-            selectedBranch={selectedBranch}
-            onRepoSelect={handleRepoSelect}
-            onBranchSelect={handleBranchSelect}
-          />
-
-          {canProceedToFiles && step === 0 && (
-            <button
-              onClick={loadTree}
-              disabled={loadingTree}
-              className="ff-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
-            >
-              {loadingTree ? 'Loading files...' : 'Browse Repository Files →'}
-            </button>
-          )}
-          {treeError && <p className="text-xs text-[var(--ff-danger)]">{treeError}</p>}
+          <p className="text-xs text-[var(--ff-text-secondary)] leading-relaxed">
+            Include triggers, quality gates, security checks, deploy strategy, rollback behavior, and branch conditions.
+          </p>
         </section>
 
-        {/* Step 1: Select files */}
-        {step >= 1 && (
-          <section className="ff-surface-soft p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[var(--ff-text)]">Select Context Files</h3>
-              <span className="text-xs text-[var(--ff-muted)]">{selectedRepo} · {selectedBranch}</span>
+        {/* Optional Repository File-Tree Context Attachment */}
+        <section className="rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setRepoContextOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[var(--ff-text)] hover:bg-[var(--ff-card-bg-hover)] transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/>
+              </svg>
+              <span>Attach Repository File-Tree Context</span>
+              <span className="text-xs text-[var(--ff-muted)] font-normal">(optional)</span>
+              {selectedPaths.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[var(--ff-accent-soft)] text-[var(--ff-accent)] border border-[var(--ff-border)]">
+                  {selectedPaths.length} file{selectedPaths.length !== 1 ? 's' : ''} selected
+                </span>
+              )}
+            </span>
+            <span className="text-[var(--ff-muted)] text-xs">{repoContextOpen ? '▾' : '▸'}</span>
+          </button>
+
+          {repoContextOpen && (
+            <div className="p-4 space-y-4 border-t border-[var(--ff-card-border)]">
+              {connectedPlatforms.length === 0 ? (
+                <p className="text-xs text-[var(--ff-muted)]">
+                  No repository platforms connected yet. You can still generate from a prompt below, or add a GitHub, GitLab, or Bitbucket token in Settings → Platform Integrations to attach live repo files.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {SUPPORTED_PLATFORMS.map((p) => {
+                      const connected = hasCredentials(allCreds, p);
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => {
+                            setPlatform(p);
+                            setSelectedRepo('');
+                            setSelectedBranch('');
+                            setTree([]);
+                            setSelectedPaths([]);
+                          }}
+                          disabled={!connected}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+                            platform === p && connected
+                              ? 'border-[var(--ff-border-strong)] bg-[var(--ff-accent-soft)] text-[var(--ff-text)]'
+                              : connected
+                                ? 'border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:border-[var(--ff-border-strong)]'
+                                : 'border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-muted)] opacity-50 cursor-not-allowed'
+                          }`}
+                        >
+                          {PLATFORM_ICONS[p]}
+                          {PLATFORM_LABELS[p]}
+                          {!connected && <span className="text-[10px] text-[var(--ff-muted)]">Not connected</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <RepoBrowser
+                    platform={platform}
+                    selectedRepo={selectedRepo}
+                    selectedBranch={selectedBranch}
+                    onRepoSelect={handleRepoSelect}
+                    onBranchSelect={handleBranchSelect}
+                  />
+
+                  {treeError && <p className="text-xs text-[var(--ff-danger)]">{treeError}</p>}
+
+                  {canProceedToFiles && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-[var(--ff-text)]">
+                          Context Files ({selectedRepo} · {selectedBranch})
+                        </p>
+                        <button
+                          type="button"
+                          onClick={loadTree}
+                          disabled={loadingTree}
+                          className="text-xs text-[var(--ff-accent)] hover:underline"
+                        >
+                          {loadingTree ? 'Loading...' : 'Refresh tree'}
+                        </button>
+                      </div>
+                      <FileTreePicker
+                        tree={tree}
+                        selectedPaths={selectedPaths}
+                        onChange={setSelectedPaths}
+                        loading={loadingTree}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            <p className="text-xs text-[var(--ff-text-secondary)]">
-              Pick files that describe your project — <span className="font-medium">package.json</span>, <span className="font-medium">Dockerfile</span>, existing CI configs, etc. The AI will use them to tailor the pipeline.
-            </p>
+          )}
+        </section>
 
-            <FileTreePicker
-              tree={tree}
-              selectedPaths={selectedPaths}
-              onChange={setSelectedPaths}
-              loading={loadingTree}
-            />
+        {/* Prompt Textarea */}
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="Describe your stack, triggers, environments, quality gates, security requirements, deploy strategy, rollback, and notifications (or leave blank if generating purely from selected repo files)..."
+          rows={9}
+          className="ff-input p-4 text-sm resize-none leading-relaxed"
+        />
 
-            {/* Optional prompt */}
-            <div>
-              <p className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] mb-1.5">
-                Additional Instructions <span className="normal-case font-normal">(optional)</span>
-              </p>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. Include a canary deploy to Kubernetes, use Node 20, add Slack notifications on failure..."
-                rows={3}
-                className="ff-input p-3 text-sm resize-none"
-              />
-            </div>
-
+        {/* Primary Generate CTAs */}
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            onClick={() => handleGenerate({ openDirectlyInBuilder: true })}
+            disabled={generating || (!prompt.trim() && selectedPaths.length === 0)}
+            className="flex-1 py-3 px-4 rounded-xl font-semibold text-sm disabled:opacity-50 transition-opacity ff-btn-primary"
+          >
+            {generating
+              ? 'Generating Pipeline & DAG...'
+              : `Generate ${targetPlatformLabel} Pipeline → Visual Builder`}
+          </button>
+          {selectedRepo && (
             <button
-              onClick={handleGenerate}
-              disabled={generating || selectedPaths.length === 0}
-              className="ff-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
+              onClick={() => handleGenerate({ openDirectlyInBuilder: false })}
+              disabled={generating || (!prompt.trim() && selectedPaths.length === 0)}
+              className="py-3 px-4 rounded-xl font-semibold text-sm disabled:opacity-50 transition-colors ff-btn-secondary"
             >
-              {generating ? 'Generating pipeline...' : `Generate ${cicdPlatform} Pipeline →`}
+              Generate & Preview for Repo Push
             </button>
-            {genError && <p className="text-xs text-[var(--ff-danger)]">{genError}</p>}
-          </section>
+          )}
+        </div>
+
+        {genError && (
+          <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+            <p className="flex-1">{genError}</p>
+            <button onClick={() => setGenError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">
+              Dismiss
+            </button>
+          </div>
         )}
 
-        {/* Step 2: Preview + actions */}
-        {step >= 2 && generatedYaml && (
+        {/* Inline Preview + Push to Repo when previewing */}
+        {generatedYaml && (
           <section className="ff-surface-soft p-5 space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <h3 className="text-base font-semibold text-[var(--ff-text)]">Generated Pipeline</h3>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={handleLoadIntoBuilder}
+                  onClick={() => generatedResult && onGenerated(generatedResult)}
                   className="ff-btn-secondary rounded-lg px-3 py-1.5 text-xs font-medium"
                 >
-                  Load into Builder
+                  Open in Visual Builder
                 </button>
                 <button
                   onClick={() => setShowPushModal(true)}
@@ -382,48 +508,48 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
                 </button>
               </div>
             </div>
-
             <pre className="rounded-xl bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)] p-4 text-xs text-[var(--ff-text-secondary)] overflow-x-auto max-h-80 font-mono leading-relaxed whitespace-pre-wrap">
               {generatedYaml}
             </pre>
-
-            <button
-              onClick={() => { setStep(1); setGeneratedYaml(''); setGenError(''); }}
-              className="text-xs text-[var(--ff-muted)] hover:text-[var(--ff-text)] underline"
-            >
-              ← Re-select files
-            </button>
           </section>
         )}
 
-        {/* Step 3: Push success */}
-        {step >= 3 && pushResult && (
-          <section className="ff-surface-soft p-5">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-[var(--ff-success)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--ff-success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="7" cy="7" r="6"/><path d="M4.5 7l2 2 3.5-3.5"/>
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[var(--ff-success)]">
-                  {pushResult.mode === 'pr' || pushResult.mode === 'mr' ? 'Pull Request opened!' : 'Committed to repository!'}
-                </p>
-                {pushResult.url && (
-                  <a
-                    href={pushResult.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[var(--ff-accent)] hover:underline mt-0.5 block truncate"
-                  >
+        {pushResult && (
+          <section className="ff-surface-soft p-4">
+            <p className="text-xs font-semibold text-[var(--ff-success)]">
+              {pushResult.mode === 'pr' || pushResult.mode === 'mr'
+                ? 'Pull Request opened!'
+                : 'Committed to repository!'}
+              {pushResult.url && (
+                <>
+                  {' · '}
+                  <a href={pushResult.url} target="_blank" rel="noopener noreferrer" className="underline">
                     {pushResult.url}
                   </a>
-                )}
-                <p className="text-xs text-[var(--ff-muted)] mt-1">Branch: {pushResult.branch}</p>
-              </div>
-            </div>
+                </>
+              )}
+            </p>
           </section>
         )}
+
+        {/* Example Prompts */}
+        <div className="pt-1">
+          <h3 className="text-xs font-semibold text-[var(--ff-muted)] uppercase tracking-[0.14em] mb-3">
+            Example Prompts
+          </h3>
+          <div className="space-y-2">
+            {examplePrompts.map((example, i) => (
+              <button
+                key={i}
+                onClick={() => setPrompt(example)}
+                className="w-full text-left px-4 py-3 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)]
+                  text-sm text-[var(--ff-text-secondary)] hover:border-[var(--ff-border-strong)] hover:bg-[var(--ff-card-bg-hover)] transition-colors"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {showPushModal && (

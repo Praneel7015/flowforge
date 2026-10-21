@@ -3,20 +3,30 @@ services:
     name: flowforge-api
     runtime: node
     rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev || npm install --omit=dev
     startCommand: node server.js
-    plan: free
+    plan: starter
+    healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "3001"
+      - key: TRUST_PROXY
+        value: "true"
       - key: FRONTEND_URL
-        value: "https://highcortisol.xyz,https://www.highcortisol.xyz"
+        value: "https://highcortisol.xyz,https://www.highcortisol.xyz,https://flowforge.vercel.app"
       - key: DEFAULT_AI_PROVIDER
-        value: featherless
+        value: groq
       - key: DEFAULT_CICD_PLATFORM
         value: gitlab
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_BASE_URL
+        value: "https://api.groq.com/openai/v1"
+      - key: GROQ_MODEL
+        value: "llama-3.3-70b-versatile"
       - key: FEATHERLESS_API_KEY
         sync: false
       - key: FEATHERLESS_BASE_URL

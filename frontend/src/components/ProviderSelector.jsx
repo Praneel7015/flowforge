@@ -1,15 +1,16 @@
 import React from 'react';
 
 const prefixes = {
+  groq: 'GQ',
   anthropic: 'AN',
   gemini: 'GM',
   openai: 'OA',
-  featherless: 'FL',
   ollama: 'OL',
   gitlab: 'GL',
   github: 'GH',
   jenkins: 'JK',
   circleci: 'CC',
+  bitbucket: 'BB',
 };
 
 export default function ProviderSelector({
@@ -19,6 +20,7 @@ export default function ProviderSelector({
   onChange,
   compact = false,
   allowDisabled = false,
+  className = '',
 }) {
   const typeLabels = {
     ai: 'AI Model',
@@ -41,7 +43,7 @@ export default function ProviderSelector({
       <select
         value={selected || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="ff-select text-xs cursor-pointer"
+        className={`ff-select !py-1 !px-2 h-7 text-xs font-medium cursor-pointer ${className}`.trim()}
         title={typeLabels[type]}
         aria-label={typeLabels[type]}
       >

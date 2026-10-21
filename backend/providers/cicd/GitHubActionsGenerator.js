@@ -46,6 +46,7 @@ class GitHubActionsGenerator extends CICDGenerator {
   generate(nodes, edges) {
     const dependsOn = this._buildDependencies(edges);
     const triggers = this._extractTriggers(nodes);
+    const jobNameMap = this._buildUniqueJobNameMap(nodes);
 
     // Build 'on' section
     const on = {};
@@ -63,11 +64,16 @@ class GitHubActionsGenerator extends CICDGenerator {
         continue;
       }
 
-      const jobName = this._getJobName(node);
+      const jobName = jobNameMap[node.id] || this._getJobName(node);
       const job = {
         'runs-on': node.data?.config?.runsOn || 'ubuntu-latest',
         steps: [],
       };
+
+      const condition = this._resolveCondition(node.id, nodes, dependsOn);
+      if (condition) {
+        job.if = condition;
+      }
 
       // Add checkout step
       job.steps.push({
@@ -162,15 +168,7 @@ class GitHubActionsGenerator extends CICDGenerator {
       }
 
       // Add dependencies (needs)
-      const deps = (dependsOn[node.id] || [])
-        .map((srcId) => {
-          const srcNode = nodes.find((n) => n.id === srcId);
-          if (!srcNode || srcNode.type.startsWith('trigger_') || srcNode.type === 'conditional') {
-            return null;
-          }
-          return this._getJobName(srcNode);
-        })
-        .filter(Boolean);
+      const deps = this._resolveJobDependencies(node.id, nodes, dependsOn, jobNameMap);
 
       if (deps.length > 0) {
         job.needs = deps;

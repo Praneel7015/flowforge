@@ -4,6 +4,7 @@ test.describe('Generate Pipeline', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => {
+      localStorage.setItem('flowforge.hasVisited.v1', 'true');
       localStorage.setItem('flowforge.onboarding.v1', JSON.stringify({ status: 'completed' }));
       localStorage.setItem('flowforge.preferences.v1', JSON.stringify({
         selectedProviders: { ai: 'ollama', cicd: 'gitlab' },

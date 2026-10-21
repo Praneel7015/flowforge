@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/migrationController');
 
-const SUPPORTED_PLATFORMS = ['gitlab', 'github', 'jenkins', 'circleci'];
+const SUPPORTED_PLATFORMS = ['gitlab', 'github', 'jenkins', 'circleci', 'bitbucket'];
 
 function validateJenkinsfile(req, res, next) {
 	const content = req.body?.jenkinsfile;

@@ -1,6 +1,7 @@
 const githubService = require('../services/githubService');
 const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
+const { scanForSecrets } = require('../utils/secretScanner');
 
 function extractGitHubCreds(credentials) {
   return { token: credentials.token };
@@ -147,10 +148,23 @@ async function pushPipeline(req, res) {
     prTitle,
     prDescription,
     targetBranch,
+    allowSecrets,
   } = req.body;
 
   if (!yamlContent) return badRequest(res, 'yamlContent is required');
   if (!branch) return badRequest(res, 'branch is required');
+
+  // Refuse to help commit hardcoded credentials into a CI config unless the
+  // caller has explicitly acknowledged the findings.
+  const scan = scanForSecrets(yamlContent);
+  if (scan.counts.high > 0 && !allowSecrets) {
+    return res.status(422).json({
+      error: 'Potential hardcoded secrets detected in pipeline content. Push blocked.',
+      code: 'SECRETS_DETECTED',
+      findings: scan.findings,
+      hint: 'Move these values into CI/CD secret variables, or resend with allowSecrets: true to override.',
+    });
+  }
 
   const resolvedFilePath = filePath || '.github/workflows/ci.yml';
   const resolvedCommitMessage = commitMessage || 'ci: add pipeline config via FlowForge';

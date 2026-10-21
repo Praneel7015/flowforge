@@ -43,38 +43,8 @@ class JenkinsGenerator extends CICDGenerator {
   }
 
   generate(nodes, edges) {
-    const dependsOn = this._buildDependencies(edges);
     const triggers = this._extractTriggers(nodes);
-
-    // Collect stages in order (based on dependencies)
-    const stages = [];
-    const processed = new Set();
-
-    // Get job nodes (non-trigger, non-conditional)
-    const jobNodes = nodes.filter(
-      (n) => !n.type.startsWith('trigger_') && n.type !== 'conditional'
-    );
-
-    // Simple topological sort based on dependencies
-    const addNode = (node) => {
-      if (processed.has(node.id)) return;
-
-      // Process dependencies first
-      const deps = dependsOn[node.id] || [];
-      for (const depId of deps) {
-        const depNode = nodes.find((n) => n.id === depId);
-        if (depNode && !depNode.type.startsWith('trigger_') && depNode.type !== 'conditional') {
-          addNode(depNode);
-        }
-      }
-
-      processed.add(node.id);
-      stages.push(node);
-    };
-
-    for (const node of jobNodes) {
-      addNode(node);
-    }
+    const stages = this._topologicalSort(nodes, edges);
 
     // Generate Jenkinsfile
     let jenkinsfile = 'pipeline {\n';

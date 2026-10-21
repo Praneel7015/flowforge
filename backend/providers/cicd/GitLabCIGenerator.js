@@ -54,6 +54,7 @@ class GitLabCIGenerator extends CICDGenerator {
     const stages = new Set();
     const jobs = {};
     const dependsOn = this._buildDependencies(edges);
+    const jobNameMap = this._buildUniqueJobNameMap(nodes);
 
     // Collect trigger rules
     const triggerRules = [];
@@ -73,7 +74,7 @@ class GitLabCIGenerator extends CICDGenerator {
       const stage = node.data?.config?.stage || mapping.stage || 'build';
       stages.add(stage);
 
-      const jobName = this._getJobName(node);
+      const jobName = jobNameMap[node.id] || this._getJobName(node);
       const defaultScripts =
         mapping.template.script || [`echo "Running ${node.data?.label || node.type}..."`];
       const job = {
@@ -153,23 +154,20 @@ class GitLabCIGenerator extends CICDGenerator {
       }
 
       // Add dependencies
-      const deps = (dependsOn[node.id] || [])
-        .map((srcId) => {
-          const srcNode = nodes.find((n) => n.id === srcId);
-          if (!srcNode || srcNode.type.startsWith('trigger_') || srcNode.type === 'conditional') {
-            return null;
-          }
-          return this._getJobName(srcNode);
-        })
-        .filter(Boolean);
+      const deps = this._resolveJobDependencies(node.id, nodes, dependsOn, jobNameMap);
 
       if (deps.length > 0) {
         job.needs = deps;
       }
 
-      // Apply trigger rules
-      if (triggerRules.length > 0) {
-        job.rules = triggerRules;
+      // Apply trigger rules & conditional node rules
+      const jobRules = [...triggerRules];
+      const condition = this._resolveCondition(node.id, nodes, dependsOn);
+      if (condition) {
+        jobRules.push({ if: condition });
+      }
+      if (jobRules.length > 0) {
+        job.rules = jobRules;
       }
 
       // Add artifacts for security scan
