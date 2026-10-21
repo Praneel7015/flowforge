@@ -27,12 +27,6 @@ services:
         value: "https://api.groq.com/openai/v1"
       - key: GROQ_MODEL
         value: "llama-3.3-70b-versatile"
-      - key: FEATHERLESS_API_KEY
-        sync: false
-      - key: FEATHERLESS_BASE_URL
-        value: "https://api.featherless.ai/v1"
-      - key: FEATHERLESS_MODEL
-        value: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
