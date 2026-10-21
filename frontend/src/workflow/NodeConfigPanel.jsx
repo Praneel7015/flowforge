@@ -1,108 +1,177 @@
 import React, { useState, useEffect } from 'react';
 
 const STAGE_CONFIGS = {
-  build: ['image', 'script', 'stage'],
-  matrix_build: ['image', 'script', 'stage', 'matrix'],
-  lint: ['image', 'script', 'stage'],
-  test: ['image', 'script', 'stage'],
-  integration_test: ['image', 'script', 'stage'],
-  smoke_test: ['image', 'script', 'stage'],
-  cache_restore: ['image', 'script', 'stage', 'cacheKey', 'cachePaths'],
-  cache_save: ['image', 'script', 'stage', 'cacheKey', 'cachePaths'],
-  security_scan: ['image', 'script', 'stage'],
-  package: ['image', 'script', 'stage', 'artifactPath'],
-  release: ['image', 'script', 'stage', 'tag'],
-  approval_gate: ['stage', 'environment', 'approver'],
-  deploy: ['image', 'script', 'stage', 'environment'],
-  canary_deploy: ['image', 'script', 'stage', 'environment', 'trafficPercent'],
-  blue_green_deploy: ['image', 'script', 'stage', 'environment', 'activeColor'],
-  rollback: ['image', 'script', 'stage', 'environment'],
-  notify: ['script', 'stage', 'channel'],
+  build: ['image', 'stage', 'script'],
+  matrix_build: ['image', 'stage', 'matrix', 'script'],
+  lint: ['image', 'stage', 'script'],
+  test: ['image', 'stage', 'script'],
+  integration_test: ['image', 'stage', 'script'],
+  smoke_test: ['image', 'stage', 'script'],
+  cache_restore: ['image', 'stage', 'cacheKey', 'cachePaths', 'script'],
+  cache_save: ['image', 'stage', 'cacheKey', 'cachePaths', 'script'],
+  security_scan: ['image', 'stage', 'script'],
+  package: ['image', 'stage', 'artifactPath', 'script'],
+  release: ['image', 'stage', 'tag', 'script'],
+  approval_gate: ['stage', 'environment', 'approver', 'script'],
+  deploy: ['image', 'stage', 'environment', 'script'],
+  canary_deploy: ['image', 'stage', 'environment', 'trafficPercent', 'script'],
+  blue_green_deploy: ['image', 'stage', 'environment', 'activeColor', 'script'],
+  rollback: ['image', 'stage', 'environment', 'script'],
+  notify: ['stage', 'channel', 'script'],
   conditional: ['condition'],
   trigger_push: ['branch'],
   trigger_mr: ['targetBranch'],
+};
+
+const FIELD_LABELS = {
+  image: 'Container Image',
+  stage: 'Pipeline Stage',
+  script: 'Shell Script / Commands',
+  matrix: 'Matrix Strategy (JSON)',
+  cacheKey: 'Cache Key',
+  cachePaths: 'Cache Paths (comma-separated)',
+  artifactPath: 'Artifact Output Path',
+  environment: 'Target Environment',
+  approver: 'Required Approver / Group',
+  trafficPercent: 'Canary Traffic %',
+  activeColor: 'Active Stack Color',
+  tag: 'Release Tag',
+  channel: 'Notification Channel',
+  condition: 'Condition Expression',
+  branch: 'Trigger Branch',
+  targetBranch: 'Target Merge Branch',
 };
 
 const FIELD_PLACEHOLDERS = {
   image: 'node:20-alpine',
   stage: 'build',
   matrix: '{"NODE_VERSION":["18","20"],"OS":["ubuntu-latest"]}',
-  cacheKey: 'deps-${branch}',
+  cacheKey: 'deps-${CI_COMMIT_REF_SLUG}',
   cachePaths: 'node_modules/, .pnpm-store/',
   artifactPath: 'dist/',
   environment: 'production',
-  approver: 'team-leads',
+  approver: 'release-managers',
   trafficPercent: '10',
   activeColor: 'green',
   tag: 'v1.0.0',
   channel: '#deployments',
-  condition: 'branch == main',
+  condition: '$CI_COMMIT_BRANCH == "main"',
   branch: 'main',
   targetBranch: 'main',
 };
 
-export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
+const SCRIPT_PRESETS = {
+  build: ['npm ci && npm run build', 'pnpm install --frozen-lockfile && pnpm build', 'docker build -t app:$CI_COMMIT_SHA .'],
+  lint: ['npm run lint', 'npx eslint . --max-warnings=0', 'ruff check .'],
+  test: ['npm test -- --ci', 'pytest --maxfail=1 -q', 'go test -race ./...'],
+  security_scan: ['npm audit --audit-level=high', 'trivy fs --exit-code 1 .', 'semgrep ci'],
+  deploy: ['npx vercel --prod --token=$VERCEL_TOKEN', 'kubectl rollout restart deployment/app', './scripts/deploy.sh production'],
+};
+
+export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDelete }) {
   const [config, setConfig] = useState(node.data.config || {});
   const [label, setLabel] = useState(node.data.label || '');
-  const fields = STAGE_CONFIGS[node.type] || ['script'];
+  const fields = STAGE_CONFIGS[node.type] || ['image', 'stage', 'script'];
+  const presets = SCRIPT_PRESETS[node.type] || [];
 
   useEffect(() => {
     setConfig(node.data.config || {});
     setLabel(node.data.label || '');
-  }, [node]);
+  }, [node.id]);
 
-  const handleChange = (key, value) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
+  const handleLabelChange = (nextLabel) => {
+    setLabel(nextLabel);
+    onUpdate?.(node.id, config, nextLabel.trim() || node.data.label || node.type);
   };
 
-  const handleSave = () => {
+  const handleFieldChange = (key, value) => {
+    const nextConfig = { ...config, [key]: value };
+    setConfig(nextConfig);
+    onUpdate?.(node.id, nextConfig, label.trim() || node.data.label || node.type);
+  };
+
+  const handleDone = () => {
     const trimmed = label.trim();
-    onSave(node.id, config, trimmed || node.data.label || node.type);
+    onSave?.(node.id, config, trimmed || node.data.label || node.type);
   };
 
   return (
-    <div className="absolute top-4 left-4 w-80 bg-[var(--ff-modal-bg)] border border-[var(--ff-card-border-strong)] rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl z-20 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ff-card-border)]">
-        <div>
-          <h3 className="text-sm font-semibold text-[var(--ff-text)]">{node.data.label}</h3>
-          <span className="text-xs text-[var(--ff-muted)] ff-code">{node.type}</span>
+    <div
+      className="nodrag nopan absolute top-4 left-4 w-80 sm:w-96 max-h-[calc(100%-5rem)] flex flex-col bg-[var(--ff-modal-bg)] border border-[var(--ff-card-border-strong)] rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.5)] backdrop-blur-xl z-20 overflow-hidden ff-enter"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--ff-card-border)] bg-[var(--ff-surface)]">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ff-text)] truncate">
+              Node Inspector
+            </h3>
+          </div>
+          <span className="text-[11px] text-[var(--ff-muted)] ff-code">{node.type} · Live Sync</span>
         </div>
-        <button onClick={onClose} aria-label="Close node configuration" className="text-[var(--ff-muted)] hover:text-[var(--ff-text)] text-sm transition-colors">
-          Close
+        <button
+          onClick={onClose}
+          aria-label="Close node configuration"
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] text-sm transition-colors"
+        >
+          ✕
         </button>
       </div>
 
-      <div className="p-4 space-y-3">
+      <div className="p-4 space-y-3.5 overflow-y-auto flex-1">
         <div>
-          <label className="block text-xs text-[var(--ff-muted)] mb-1">Name</label>
+          <label className="block text-[11px] font-medium uppercase tracking-wider text-[var(--ff-muted)] mb-1">
+            Step / Job Name
+          </label>
           <input
             type="text"
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="ff-input px-3 py-2 text-sm"
+            onChange={(e) => handleLabelChange(e.target.value)}
+            className="ff-input px-3 py-2 text-sm font-medium"
             placeholder="Block name (e.g. Build & Test)"
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
+              if (e.key === 'Enter') handleDone();
             }}
           />
         </div>
+
         {fields.map((field) => (
           <div key={field}>
-            <label className="block text-xs text-[var(--ff-muted)] mb-1 capitalize">{field}</label>
+            <label className="block text-[11px] font-medium uppercase tracking-wider text-[var(--ff-muted)] mb-1">
+              {FIELD_LABELS[field] || field}
+            </label>
             {field === 'script' ? (
-              <textarea
-                value={config[field] || ''}
-                onChange={(e) => handleChange(field, e.target.value)}
-                rows={3}
-                className="ff-input px-3 py-2 text-sm ff-code resize-none"
-                placeholder={`echo "Running ${node.data.label}"`}
-              />
+              <div className="space-y-1.5">
+                <textarea
+                  value={config[field] || ''}
+                  onChange={(e) => handleFieldChange(field, e.target.value)}
+                  rows={4}
+                  className="ff-input px-3 py-2 text-xs ff-code leading-relaxed resize-y"
+                  placeholder={`echo "Running ${label || node.data.label}"`}
+                />
+                {presets.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {presets.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleFieldChange('script', preset)}
+                        className="text-[10px] ff-code px-2 py-0.5 rounded border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors truncate max-w-full"
+                        title={`Use preset: ${preset}`}
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               <input
                 type="text"
                 value={config[field] || ''}
-                onChange={(e) => handleChange(field, e.target.value)}
-                className="ff-input px-3 py-2 text-sm"
+                onChange={(e) => handleFieldChange(field, e.target.value)}
+                className="ff-input px-3 py-2 text-xs ff-code"
                 placeholder={FIELD_PLACEHOLDERS[field] || ''}
               />
             )}
@@ -110,24 +179,19 @@ export default function NodeConfigPanel({ node, onSave, onClose, onDelete }) {
         ))}
       </div>
 
-      <div className="flex gap-2 px-4 py-3 border-t border-[var(--ff-card-border)]">
+      <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--ff-card-border)] bg-[var(--ff-surface)]">
         <button
           onClick={() => onDelete?.(node.id)}
-          className="px-4 py-2 rounded-lg text-sm transition-colors bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20"
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20"
         >
-          Delete
+          Delete Node
         </button>
+        <span className="text-[11px] text-[var(--ff-muted)] ml-auto">Changes auto-sync to YAML</span>
         <button
-          onClick={handleSave}
-          className="flex-1 py-2 rounded-lg text-sm font-medium transition-opacity ff-btn-primary"
+          onClick={handleDone}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-opacity ff-btn-primary"
         >
-          Save
-        </button>
-        <button
-          onClick={onClose}
-          className="px-4 py-2 rounded-lg text-sm transition-colors ff-btn-secondary"
-        >
-          Cancel
+          Done
         </button>
       </div>
     </div>

@@ -139,17 +139,179 @@ const readAutoSyncPreference = () => {
   }
 };
 
+const DEFAULT_NODE_CONFIGS = {
+  trigger_push: { branch: 'main' },
+  trigger_mr: { targetBranch: 'main' },
+  build: { image: 'node:20-alpine', stage: 'build', script: 'npm ci\nnpm run build' },
+  matrix_build: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    matrix: '{"NODE_VERSION":["18","20"]}',
+    script: 'npm ci\nnpm test',
+  },
+  lint: { image: 'node:20-alpine', stage: 'test', script: 'npm run lint' },
+  test: { image: 'node:20-alpine', stage: 'test', script: 'npm test -- --ci' },
+  integration_test: { image: 'node:20-alpine', stage: 'test', script: 'npm run test:integration' },
+  smoke_test: { image: 'node:20-alpine', stage: 'test', script: 'curl -f http://localhost:3000/health || exit 1' },
+  cache_restore: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+    cachePaths: 'node_modules/',
+    script: 'echo "Restoring dependency cache..."',
+  },
+  cache_save: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+    cachePaths: 'node_modules/',
+    script: 'echo "Saving dependency cache..."',
+  },
+  security_scan: {
+    image: 'node:20-alpine',
+    stage: 'test',
+    script: 'npm audit --audit-level=high',
+  },
+  package: {
+    image: 'node:20-alpine',
+    stage: 'build',
+    artifactPath: 'dist/',
+    script: 'npm run build && tar -czf release.tar.gz dist/',
+  },
+  release: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    tag: 'v1.0.0',
+    script: 'echo "Publishing release $TAG..."',
+  },
+  approval_gate: {
+    stage: 'deploy',
+    environment: 'production',
+    approver: 'release-managers',
+    script: 'echo "Waiting for manual approval..."',
+  },
+  deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    script: 'echo "Deploying application to production..."',
+  },
+  canary_deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    trafficPercent: '10',
+    script: 'echo "Rolling out 10% canary traffic..."',
+  },
+  blue_green_deploy: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    activeColor: 'green',
+    script: 'echo "Switching active production stack to green..."',
+  },
+  rollback: {
+    image: 'node:20-alpine',
+    stage: 'deploy',
+    environment: 'production',
+    script: 'echo "Rolling back to previous stable release..."',
+  },
+  notify: {
+    stage: '.post',
+    channel: '#deployments',
+    script: 'echo "Notifying #deployments channel of pipeline status"',
+  },
+  conditional: {
+    condition: '$CI_COMMIT_BRANCH == "main"',
+  },
+};
+
+function getDefaultNodeConfig(type) {
+  return { ...(DEFAULT_NODE_CONFIGS[type] || { stage: 'build', script: `echo "Running ${type}"` }) };
+}
+
 // Local, offline-safe fallback used when the backend export endpoint is
 // unreachable so the live YAML panel still reflects the current graph.
-const buildLocalYaml = (nodeList) => {
-  const yamlLines = ['stages:', '  - build', '  - test', '  - deploy', ''];
-  nodeList.forEach((node) => {
-    if (node.type?.startsWith('trigger_') || node.type === 'conditional') return;
-    const name = node.data?.label?.toLowerCase().replace(/\s+/g, '_') || node.id;
-    yamlLines.push(`${name}:`);
-    yamlLines.push(`  stage: ${node.data?.config?.stage || node.type}`);
-    yamlLines.push(`  script:`);
-    yamlLines.push(`    - echo "Running ${node.data?.label || node.id}"`);
+const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
+  const stageSet = new Set();
+  const stageNodes = nodeList.filter(
+    (n) => !n.type?.startsWith('trigger_') && n.type !== 'conditional'
+  );
+  stageNodes.forEach((n) => stageSet.add(n.data?.config?.stage || 'build'));
+  const stages = stageSet.size > 0 ? [...stageSet] : ['build', 'test', 'deploy'];
+
+  const idToJobName = {};
+  const usedNames = new Set();
+  stageNodes.forEach((n) => {
+    const base =
+      (n.data?.label || n.type || n.id)
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '') || n.id;
+    let candidate = base;
+    let idx = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_${idx++}`;
+    }
+    usedNames.add(candidate);
+    idToJobName[n.id] = candidate;
+  });
+
+  if (platform === 'github') {
+    const lines = ['name: CI/CD Pipeline', 'on:', '  push:', '    branches: ["main"]', 'jobs:'];
+    stageNodes.forEach((node) => {
+      const jobName = idToJobName[node.id];
+      const cfg = node.data?.config || {};
+      const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const parentJobs = edgeList
+        .filter((e) => e.target === node.id && idToJobName[e.source])
+        .map((e) => idToJobName[e.source]);
+
+      lines.push(`  ${jobName}:`);
+      lines.push(`    runs-on: ${cfg.runsOn || 'ubuntu-latest'}`);
+      if (cfg.image) lines.push(`    container: ${cfg.image}`);
+      if (parentJobs.length > 0) {
+        lines.push(`    needs: [${parentJobs.map((p) => `"${p}"`).join(', ')}]`);
+      }
+      if (cfg.environment) lines.push(`    environment: ${cfg.environment}`);
+      lines.push('    steps:');
+      lines.push('      - uses: actions/checkout@v4');
+      scriptLines.forEach((cmd) => {
+        lines.push(`      - name: ${node.data?.label || jobName}`);
+        lines.push(`        run: ${cmd}`);
+      });
+    });
+    return lines.join('\n');
+  }
+
+  const yamlLines = ['stages:', ...stages.map((s) => `  - ${s}`), ''];
+  stageNodes.forEach((node) => {
+    const jobName = idToJobName[node.id];
+    const cfg = node.data?.config || {};
+    const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const parentJobs = edgeList
+      .filter((e) => e.target === node.id && idToJobName[e.source])
+      .map((e) => idToJobName[e.source]);
+
+    yamlLines.push(`${jobName}:`);
+    yamlLines.push(`  stage: ${cfg.stage || 'build'}`);
+    if (cfg.image) yamlLines.push(`  image: ${cfg.image}`);
+    if (parentJobs.length > 0) {
+      yamlLines.push(`  needs: [${parentJobs.join(', ')}]`);
+    }
+    if (cfg.environment) {
+      yamlLines.push(`  environment: ${cfg.environment}`);
+    }
+    yamlLines.push('  script:');
+    scriptLines.forEach((cmd) => {
+      yamlLines.push(`    - ${cmd}`);
+    });
     yamlLines.push('');
   });
   return yamlLines.join('\n');
@@ -558,7 +720,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         id: getNextId(),
         type,
         position,
-        data: { label, config: {} },
+        data: { label, config: getDefaultNodeConfig(type) },
       };
 
       applyTrackedWorkflowChange((current) => ({
@@ -566,18 +728,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         nodes: current.nodes.concat(newNode),
       }));
       setSelectedNodeId(newNode.id);
+      setConfigNodeId(newNode.id);
     },
     [applyTrackedWorkflowChange, reactFlowInstance]
   );
 
   const addNodeFromKeyboard = useCallback(
     (type, label) => {
-      const offset = nodes.length * 30;
+      const offset = (nodes.length % 8) * 32;
       const newNode = {
         id: getNextId(),
         type,
-        position: { x: 250 + offset, y: 100 + offset },
-        data: { label, config: {} },
+        position: { x: 240 + offset, y: 100 + offset },
+        data: { label, config: getDefaultNodeConfig(type) },
       };
 
       applyTrackedWorkflowChange((current) => ({
@@ -585,6 +748,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         nodes: current.nodes.concat(newNode),
       }));
       setSelectedNodeId(newNode.id);
+      setConfigNodeId(newNode.id);
     },
     [applyTrackedWorkflowChange, nodes.length]
   );
@@ -595,6 +759,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   const onNodeClick = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
+    setConfigNodeId(node.id);
     setSelectedEdgeIds(new Set());
   }, []);
 
@@ -726,11 +891,53 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     setSelectedEdgeIds(new Set());
   }, [applyUntrackedWorkflowChange]);
 
-  const handleNodeConfigSave = (nodeId, config, label) => {
+  const handleNodeInlineUpdate = useCallback(
+    (targetNodeId, patch) => {
+      applyTrackedWorkflowChange((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === targetNodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...(typeof patch.label === 'string' && patch.label ? { label: patch.label } : {}),
+                  ...(patch.config ? { config: patch.config } : {}),
+                },
+              }
+            : node
+        ),
+      }));
+    },
+    [applyTrackedWorkflowChange]
+  );
+
+  const handleNodeLiveConfigUpdate = useCallback(
+    (targetNodeId, config, label) => {
+      applyUntrackedWorkflowChange((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) =>
+          node.id === targetNodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  config,
+                  ...(typeof label === 'string' && label ? { label } : {}),
+                },
+              }
+            : node
+        ),
+      }));
+    },
+    [applyUntrackedWorkflowChange]
+  );
+
+  const handleNodeConfigSave = (targetNodeId, config, label) => {
     applyTrackedWorkflowChange((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
-        node.id === nodeId
+        node.id === targetNodeId
           ? {
               ...node,
               data: {
@@ -744,6 +951,18 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
     }));
     setConfigNodeId(null);
   };
+
+  const renderedNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onInlineUpdate: handleNodeInlineUpdate,
+        },
+      })),
+    [nodes, handleNodeInlineUpdate]
+  );
 
   const exportWorkflow = useCallback(
     async ({ signal } = {}) => {
@@ -788,7 +1007,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         // Ignore localStorage or n8n forward errors
       }
     } catch {
-      onYamlExport(buildLocalYaml(nodes));
+      onYamlExport(buildLocalYaml(nodes, edges, cicdPlatform));
       setSyncState('error');
     }
   }, [cicdPlatform, edges, nodes, onYamlExport]);
@@ -867,10 +1086,10 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         }
       } catch (err) {
         if (cancelled || axios.isCancel(err)) return;
-        onYamlExport(buildLocalYaml(currentNodes));
+        onYamlExport(buildLocalYaml(currentNodes, currentEdges, cicdPlatform));
         setSyncState('error');
       }
-    }, 700);
+    }, 350);
 
     return () => {
       cancelled = true;
@@ -902,7 +1121,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       onContextMenu={onWrapperContextMenu}
     >
       <ReactFlow
-        nodes={nodes}
+        nodes={renderedNodes}
         edges={edges.map((edge) => ({
           ...edge,
           style: selectedEdgeIds.has(edge.id)
@@ -1130,6 +1349,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
       {selectedNode && (
         <NodeConfigPanel
           node={selectedNode}
+          onUpdate={handleNodeLiveConfigUpdate}
           onSave={handleNodeConfigSave}
           onDelete={handleDeleteNodeById}
           onClose={() => setConfigNodeId(null)}

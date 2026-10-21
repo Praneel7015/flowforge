@@ -533,6 +533,7 @@ export default function App({ onBackToLanding }) {
         onClose={() => setYamlCollapsed(true)}
         onResizeDelta={handleYamlResize}
         platform={currentCICDPlatform}
+        onSyncToCanvas={handlePipelineImported}
       />
     );
   };
