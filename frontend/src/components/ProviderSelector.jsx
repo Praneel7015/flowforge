@@ -10,6 +10,7 @@ const prefixes = {
   github: 'GH',
   jenkins: 'JK',
   circleci: 'CC',
+  bitbucket: 'BB',
 };
 
 export default function ProviderSelector({

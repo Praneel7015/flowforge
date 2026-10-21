@@ -172,6 +172,7 @@ function getFallbackProviders() {
       { name: 'github', displayName: 'GitHub Actions', fileName: '.github/workflows/ci.yml', enabled: true },
       { name: 'jenkins', displayName: 'Jenkins Pipeline', fileName: 'Jenkinsfile', enabled: true },
       { name: 'circleci', displayName: 'CircleCI', fileName: '.circleci/config.yml', enabled: true },
+      { name: 'bitbucket', displayName: 'Bitbucket Pipelines', fileName: 'bitbucket-pipelines.yml', enabled: true },
     ],
     defaults: { aiProvider: 'featherless', cicdPlatform: 'gitlab' },
     features: { advancedNodes: true, providerSelfTest: true },
@@ -614,6 +615,7 @@ export default function App({ onBackToLanding }) {
               aiProvider={selectedProviders.ai}
               cicdPlatform={selectedProviders.cicd}
               aiOptions={aiOptions}
+              onLoadToBuilder={handleGenerated}
             />
           </Suspense>
         </ErrorBoundary>
