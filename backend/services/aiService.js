@@ -1227,6 +1227,164 @@ function buildRepoContextSection(repoContext) {
 // 1. AI Pipeline Generator (Platform-Agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
 
+function buildDeterministicPipelineFromPrompt(prompt, cicdPlatform = 'gitlab', repoContext = []) {
+  const generator = getCICDGenerator(cicdPlatform);
+  const supportedNodeTypes = getSupportedNodeTypes();
+  const text = `${prompt || ''}\n${(repoContext || []).map((f) => `${f.path}\n${f.content || ''}`).join('\n')}`.toLowerCase();
+
+  const isPython = /\b(python|pytest|pip|poetry|django|flask|fastapi|requirements\.txt)\b/.test(text);
+  const isGo = /\b(golang|go\s+build|go\s+test|go\.mod)\b/.test(text);
+  const isDocker = /\b(docker|dockerfile|container|image)\b/.test(text);
+
+  const image = isPython
+    ? 'python:3.12-slim'
+    : isGo
+      ? 'golang:1.22-alpine'
+      : 'node:20-alpine';
+
+  const installAndBuildScript = isPython
+    ? 'pip install --no-cache-dir -r requirements.txt\npython -m compileall .'
+    : isGo
+      ? 'go mod download\ngo build -v ./...'
+      : 'npm ci\nnpm run build';
+
+  const lintScript = isPython
+    ? 'ruff check . || flake8 .'
+    : isGo
+      ? 'go vet ./...'
+      : 'npm run lint';
+
+  const testScript = isPython
+    ? 'pytest --maxfail=1 --disable-warnings -q'
+    : isGo
+      ? 'go test -race -v ./...'
+      : 'npm test -- --ci';
+
+  const nodes = [
+    {
+      id: 'node_1',
+      type: 'trigger_push',
+      position: { x: 260, y: 60 },
+      data: { label: 'Git Push Trigger', config: { branch: 'main' } },
+    },
+    {
+      id: 'node_2',
+      type: 'cache_restore',
+      position: { x: 260, y: 180 },
+      data: {
+        label: 'Restore Dependencies Cache',
+        config: {
+          stage: 'build',
+          image,
+          cacheKey: 'deps-$CI_COMMIT_REF_SLUG',
+          cachePaths: isPython ? '.cache/pip' : 'node_modules/',
+          script: 'echo "Restoring dependency cache..."',
+        },
+      },
+    },
+    {
+      id: 'node_3',
+      type: 'build',
+      position: { x: 260, y: 300 },
+      data: {
+        label: isDocker ? 'Build Container & App' : 'Build Application',
+        config: {
+          stage: 'build',
+          image,
+          script: installAndBuildScript,
+        },
+      },
+    },
+    {
+      id: 'node_4',
+      type: 'lint',
+      position: { x: 40, y: 440 },
+      data: {
+        label: 'Static Analysis & Lint',
+        config: {
+          stage: 'test',
+          image,
+          script: lintScript,
+        },
+      },
+    },
+    {
+      id: 'node_5',
+      type: 'test',
+      position: { x: 260, y: 440 },
+      data: {
+        label: 'Unit & Integration Tests',
+        config: {
+          stage: 'test',
+          image,
+          script: testScript,
+        },
+      },
+    },
+    {
+      id: 'node_6',
+      type: 'security_scan',
+      position: { x: 480, y: 440 },
+      data: {
+        label: 'Security & Vulnerability Scan',
+        config: {
+          stage: 'test',
+          image,
+          script: isPython ? 'pip-audit || true' : 'npm audit --audit-level=high || true',
+        },
+      },
+    },
+    {
+      id: 'node_7',
+      type: 'package',
+      position: { x: 260, y: 580 },
+      data: {
+        label: 'Package Artifacts',
+        config: {
+          stage: 'build',
+          image,
+          artifactPath: 'dist/',
+          script: 'mkdir -p dist && echo "Packaging release bundle..."',
+        },
+      },
+    },
+    {
+      id: 'node_8',
+      type: 'deploy',
+      position: { x: 260, y: 720 },
+      data: {
+        label: 'Deploy to Production',
+        config: {
+          stage: 'deploy',
+          image,
+          environment: 'production',
+          script: 'echo "Deploying verified release to production..."',
+        },
+      },
+    },
+  ].filter((n) => supportedNodeTypes.includes(n.type));
+
+  const edges = [
+    { id: 'e_node_1_node_2', source: 'node_1', target: 'node_2', animated: true },
+    { id: 'e_node_2_node_3', source: 'node_2', target: 'node_3', animated: true },
+    { id: 'e_node_3_node_4', source: 'node_3', target: 'node_4', animated: true },
+    { id: 'e_node_3_node_5', source: 'node_3', target: 'node_5', animated: true },
+    { id: 'e_node_3_node_6', source: 'node_3', target: 'node_6', animated: true },
+    { id: 'e_node_4_node_7', source: 'node_4', target: 'node_7', animated: true },
+    { id: 'e_node_5_node_7', source: 'node_5', target: 'node_7', animated: true },
+    { id: 'e_node_6_node_7', source: 'node_6', target: 'node_7', animated: true },
+    { id: 'e_node_7_node_8', source: 'node_7', target: 'node_8', animated: true },
+  ];
+
+  const yamlText = generator.generate(nodes, edges);
+  return {
+    yaml: yamlText,
+    nodes,
+    edges,
+    generationMode: 'template-fallback',
+  };
+}
+
 async function generatePipelineFromPrompt(prompt, options = {}) {
   const cicdPlatform = options.cicdPlatform || 'gitlab';
   const generator = getCICDGenerator(cicdPlatform);
@@ -1268,13 +1426,22 @@ Return ONLY raw JSON, no markdown fences:
   const repoContextSection = buildRepoContextSection(options.repoContext);
   const userMessage = repoContextSection ? `${repoContextSection}\n\nUser request:\n${prompt}` : prompt;
 
-  const text = await ask(system, userMessage, {
-    aiProvider: options.aiProvider,
-    aiOptions: options.aiOptions,
-    maxTokens: 4096,
-  });
+  try {
+    const text = await ask(system, userMessage, {
+      aiProvider: options.aiProvider,
+      aiOptions: options.aiOptions,
+      maxTokens: 4096,
+    });
 
-  return parsePipelineResult(text, cicdPlatform);
+    return parsePipelineResult(text, cicdPlatform);
+  } catch (err) {
+    // Graceful smart-template synthesis if the AI key is depleted or not configured
+    const fallback = buildDeterministicPipelineFromPrompt(prompt, cicdPlatform, options.repoContext);
+    return {
+      ...fallback,
+      warning: `Generated using smart architecture engine (${err.message}). Add a free Groq API key in Settings for custom LLM synthesis.`,
+    };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1366,11 +1533,26 @@ Return ONLY raw JSON:
 
   const userMessage = `Source platform: ${sourcePlatform}\nTarget platform: ${targetPlatform}\n\nConfiguration to migrate:\n${pipelineConfig}`;
 
-  const text = await ask(system, userMessage, {
-    aiProvider: options.aiProvider,
-    aiOptions: options.aiOptions,
-    maxTokens: 4096,
-  });
+  let text;
+  try {
+    text = await ask(system, userMessage, {
+      aiProvider: options.aiProvider,
+      aiOptions: options.aiOptions,
+      maxTokens: 4096,
+    });
+  } catch (err) {
+    // Deterministic DAG-to-target conversion fallback when AI provider is unavailable
+    const dag = parseConfigToDAG(pipelineConfig, sourcePlatform);
+    const yamlText = generator.generate(dag.nodes, dag.edges);
+    return {
+      yaml: yamlText,
+      nodes: dag.nodes,
+      edges: dag.edges,
+      sourcePlatform,
+      targetPlatform,
+      warning: `Migrated using deterministic AST compiler (${err.message}).`,
+    };
+  }
 
   const parsed = parsePipelineResult(text, targetPlatform);
   return {
@@ -1662,7 +1844,14 @@ ${currentYaml || '# No pipeline loaded yet — drag nodes onto the canvas or use
 \`\`\``;
 
   const provider = getProvider(options.aiProvider, options.aiOptions || {});
-  return provider.chat(system, messages, { maxTokens: 2048 });
+  try {
+    return await provider.chat(system, messages, { maxTokens: 2048 });
+  } catch (err) {
+    const latestMsg = extractLatestMessageText(messages, 'user').toLowerCase();
+    const health = buildHeuristicHealthReport(currentYaml || '', metadata.displayName);
+    const tips = health.topRecommendations.map((t) => `- ${t}`).join('\n');
+    return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Connect a free **Groq API Key** in **Settings → Step 2** for full conversational AI.*`;
+  }
 }
 
 function extractN8NReply(data) {

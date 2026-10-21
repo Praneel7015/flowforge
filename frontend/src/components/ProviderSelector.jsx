@@ -1,6 +1,7 @@
 import React from 'react';
 
 const prefixes = {
+  groq: 'GQ',
   anthropic: 'AN',
   gemini: 'GM',
   openai: 'OA',

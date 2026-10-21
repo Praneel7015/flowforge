@@ -4,6 +4,10 @@ import axios from 'axios';
 const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
 const providerHints = {
+  groq: {
+    model: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
+  },
   featherless: {
     model: 'Qwen/Qwen2.5-Coder-1.5B-Instruct',
     baseUrl: 'https://api.featherless.ai/v1',

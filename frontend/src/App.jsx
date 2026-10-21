@@ -161,6 +161,7 @@ function canUseProvider(providerList, name) {
 function getFallbackProviders() {
   return {
     ai: [
+      { name: 'groq', displayName: 'Groq (Fast Free Tier)', enabled: false },
       { name: 'featherless', displayName: 'Featherless AI', enabled: false },
       { name: 'anthropic', displayName: 'Claude (Anthropic)', enabled: false },
       { name: 'gemini', displayName: 'Gemini (Google)', enabled: false },
@@ -174,17 +175,17 @@ function getFallbackProviders() {
       { name: 'circleci', displayName: 'CircleCI', fileName: '.circleci/config.yml', enabled: true },
       { name: 'bitbucket', displayName: 'Bitbucket Pipelines', fileName: 'bitbucket-pipelines.yml', enabled: true },
     ],
-    defaults: { aiProvider: 'featherless', cicdPlatform: 'gitlab' },
+    defaults: { aiProvider: 'groq', cicdPlatform: 'gitlab' },
     features: { advancedNodes: true, providerSelfTest: true },
   };
 }
 
 function pickInitialSelection(providerData, storedPreferences) {
   const defaultAI =
-    providerData.defaults?.aiProvider ||
     providerData.ai.find((provider) => provider.enabled)?.name ||
+    providerData.defaults?.aiProvider ||
     providerData.ai[0]?.name ||
-    'featherless';
+    'groq';
 
   const defaultCICD =
     providerData.defaults?.cicdPlatform ||

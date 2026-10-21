@@ -8,9 +8,11 @@ const GeminiProvider = require('./GeminiProvider');
 const OpenAIProvider = require('./OpenAIProvider');
 const OllamaProvider = require('./OllamaProvider');
 const FeatherlessProvider = require('./FeatherlessProvider');
+const GroqProvider = require('./GroqProvider');
 
 // Provider registry
 const providers = {
+  groq: GroqProvider,
   anthropic: AnthropicProvider,
   gemini: GeminiProvider,
   openai: OpenAIProvider,
@@ -63,28 +65,47 @@ function getAIProvider(name, runtimeConfig = {}) {
     return instances[providerName];
   }
 
-  const ProviderClass = providers[providerName];
+  let resolvedName = providerName;
+  let config = getAIConfig(resolvedName);
+
+  // If requested provider has no server key and no BYOM runtime key, fall back to
+  // the first enabled cloud provider (e.g. groq -> gemini -> openai -> anthropic -> featherless).
+  if ((!config || !config.enabled) && !useRuntimeConfig) {
+    const fallbackOrder = ['groq', 'gemini', 'openai', 'anthropic', 'featherless', 'ollama'];
+    const fallback = fallbackOrder.find((candidate) => {
+      const c = getAIConfig(candidate);
+      return c && c.enabled;
+    });
+    if (fallback) {
+      resolvedName = fallback;
+      config = getAIConfig(resolvedName);
+      if (instances[resolvedName]) {
+        return instances[resolvedName];
+      }
+    }
+  }
+
+  const ProviderClass = providers[resolvedName];
   if (!ProviderClass) {
     throw new Error(
-      `Unknown AI provider: ${providerName}. Available: ${Object.keys(providers).join(', ')}`
+      `Unknown AI provider: ${resolvedName}. Available: ${Object.keys(providers).join(', ')}`
     );
   }
 
-  const config = getAIConfig(providerName);
   if (!config) {
-    throw new Error(`No configuration found for AI provider: ${providerName}`);
+    throw new Error(`No configuration found for AI provider: ${resolvedName}`);
   }
 
   if (!config.enabled && !useRuntimeConfig) {
     throw new Error(
-      `AI provider '${providerName}' is not enabled. Check your environment variables.`
+      `AI provider '${resolvedName}' is not enabled. Set GROQ_API_KEY on the backend or provide a free API key in Settings -> Bring Your Own Model.`
     );
   }
 
-  const providerRequiresApiKey = providerName !== 'ollama';
+  const providerRequiresApiKey = resolvedName !== 'ollama';
   if (!config.enabled && providerRequiresApiKey && !requestConfig.apiKey) {
     throw new Error(
-      `AI provider '${providerName}' requires an API key. Provide aiOptions.apiKey when using a custom key.`
+      `AI provider '${resolvedName}' requires an API key. Provide aiOptions.apiKey when using a custom key.`
     );
   }
 
@@ -102,8 +123,8 @@ function getAIProvider(name, runtimeConfig = {}) {
   }
 
   // Create and cache the instance
-  instances[providerName] = instance;
-  return instances[providerName];
+  instances[resolvedName] = instance;
+  return instances[resolvedName];
 }
 
 /**

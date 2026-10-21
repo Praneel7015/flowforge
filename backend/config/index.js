@@ -16,6 +16,14 @@ function readFeatureFlag(name, defaultValue = true) {
 
 const config = {
   ai: {
+    groq: {
+      name: 'groq',
+      displayName: 'Groq (Fast Free Tier)',
+      enabled: !!process.env.GROQ_API_KEY,
+      apiKey: process.env.GROQ_API_KEY,
+      baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    },
     anthropic: {
       name: 'anthropic',
       displayName: 'Claude (Anthropic)',
@@ -86,7 +94,7 @@ const config = {
     },
   },
   defaults: {
-    aiProvider: process.env.DEFAULT_AI_PROVIDER || 'featherless',
+    aiProvider: process.env.DEFAULT_AI_PROVIDER || 'groq',
     cicdPlatform: process.env.DEFAULT_CICD_PLATFORM || 'gitlab',
   },
   features: {
