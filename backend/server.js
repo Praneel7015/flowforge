@@ -40,7 +40,7 @@ app.use(cors({
       }
       return callback(new Error('CORS: Set FRONTEND_URL env var for production'));
     }
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) {
       return callback(null, true);
     }
     callback(new Error(`CORS: Origin ${origin} not allowed`));
@@ -73,12 +73,26 @@ app.use('/api/platforms', platformRoutes);
 app.use('/api/repo', repoRoutes);
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'flowforge-backend' });
+  res.json({
+    status: 'ok',
+    service: 'flowforge-backend',
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use('/api', notFound);
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`FlowForge backend running on port ${PORT}`);
 });
+
+const shutdown = (signal) => {
+  console.log(`${signal} received: closing HTTP server gracefully...`);
+  server.close(() => {
+    process.exit(0);
+  });
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
