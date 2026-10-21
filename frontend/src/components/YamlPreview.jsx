@@ -192,7 +192,7 @@ export default function YamlPreview({ yaml, onClose, onResizeDelta, platform, on
               title="Collapse panel"
               className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 3l5 5-5 5M9 3l5 5-5 5" />
               </svg>
             </button>

@@ -31,11 +31,6 @@ const MODEL_PRESETS = {
     'qwen-2.5-coder-32b',
     'mixtral-8x7b-32768',
   ],
-  featherless: [
-    'Qwen/Qwen2.5-Coder-1.5B-Instruct',
-    'meta-llama/Llama-3.1-70B-Instruct',
-    'mistralai/Mistral-7B-Instruct-v0.3',
-  ],
   openai: ['gpt-4o', 'gpt-4.1-mini', 'gpt-4o-mini'],
   anthropic: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-3-haiku-20240307'],
   gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-pro'],
@@ -91,7 +86,7 @@ function LlmAndProviderStep({
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <RuntimeCard
           title="Cloud LLM"
-          description="Use hosted APIs like OpenAI, Anthropic, Gemini, or Featherless for high quality and scale."
+          description="Use hosted APIs like Groq (Llama 3.3 70B), Claude, Gemini, or OpenAI for high-speed pipeline synthesis."
           selected={llmType === 'cloud'}
           onSelect={() => onLlmTypeChange('cloud')}
         />

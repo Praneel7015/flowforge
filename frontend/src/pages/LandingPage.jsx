@@ -1,826 +1,896 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useTheme } from '../utils/theme';
+import React, { useState } from 'react';
 import ThemeToggleButton from '../components/ThemeToggleButton';
 
-/* ── Pipeline mini-preview nodes ── */
-const PIPELINE_NODES = [
-  { id: 'n1', label: 'Push Trigger', type: 'trigger', x: 80, y: 40, color: '#22c55e' },
-  { id: 'n2', label: 'Cache Restore', type: 'cache', x: 280, y: 10, color: '#0d9488' },
-  { id: 'n3', label: 'Build', type: 'build', x: 480, y: 10, color: '#38bdf8' },
-  { id: 'n4', label: 'Unit Tests', type: 'test', x: 280, y: 80, color: '#f59e0b' },
-  { id: 'n5', label: 'Security Scan', type: 'security', x: 480, y: 80, color: '#f43f5e' },
-  { id: 'n6', label: 'Deploy', type: 'deploy', x: 680, y: 40, color: '#6366f1' },
-  { id: 'n7', label: 'Notify', type: 'notify', x: 880, y: 40, color: '#ec4899' },
+const TARGET_SPECS = {
+  gitlab: {
+    id: 'gitlab',
+    fileName: '.gitlab-ci.yml',
+    platform: 'GitLab CI',
+    syntax: 'YAML / DAG needs[]',
+    lines: [
+      { num: 1, text: 'stages: [build, verify, deploy]', node: null },
+      { num: 2, text: '', node: null },
+      { num: 3, text: 'workflow:', node: 'trigger_push' },
+      { num: 4, text: '  rules:', node: 'trigger_push' },
+      { num: 5, text: '    - if: $CI_COMMIT_BRANCH == "main"', node: 'trigger_push' },
+      { num: 6, text: '', node: null },
+      { num: 7, text: 'restore_cache:', node: 'cache_restore' },
+      { num: 8, text: '  stage: build', node: 'cache_restore' },
+      { num: 9, text: '  cache: { key: "deps-$CI_COMMIT_REF_SLUG", paths: ["node_modules/"] }', node: 'cache_restore' },
+      { num: 10, text: '  script: ["npm ci --prefer-offline"]', node: 'cache_restore' },
+      { num: 11, text: '', node: null },
+      { num: 12, text: 'compile_bundle:', node: 'build' },
+      { num: 13, text: '  stage: build', node: 'build' },
+      { num: 14, text: '  image: node:20-alpine', node: 'build' },
+      { num: 15, text: '  needs: [restore_cache]', node: 'build' },
+      { num: 16, text: '  script: ["npm run build"]', node: 'build' },
+      { num: 17, text: '', node: null },
+      { num: 18, text: 'unit_suite:', node: 'test' },
+      { num: 19, text: '  stage: verify', node: 'test' },
+      { num: 20, text: '  needs: [compile_bundle]', node: 'test' },
+      { num: 21, text: '  script: ["npm test -- --ci"]', node: 'test' },
+      { num: 22, text: '', node: null },
+      { num: 23, text: 'security_audit:', node: 'security_scan' },
+      { num: 24, text: '  stage: verify', node: 'security_scan' },
+      { num: 25, text: '  needs: [compile_bundle]', node: 'security_scan' },
+      { num: 26, text: '  script: ["npm audit --audit-level=high"]', node: 'security_scan' },
+      { num: 27, text: '', node: null },
+      { num: 28, text: 'canary_rollout:', node: 'canary_deploy' },
+      { num: 29, text: '  stage: deploy', node: 'canary_deploy' },
+      { num: 30, text: '  environment: production', node: 'canary_deploy' },
+      { num: 31, text: '  needs: [unit_suite, security_audit]', node: 'canary_deploy' },
+      { num: 32, text: '  script: ["./scripts/rollout.sh --canary=10%"]', node: 'canary_deploy' },
+    ],
+  },
+  github: {
+    id: 'github',
+    fileName: '.github/workflows/ci.yml',
+    platform: 'GitHub Actions',
+    syntax: 'Workflow Dispatch + Jobs DAG',
+    lines: [
+      { num: 1, text: 'name: FlowForge Production Pipeline', node: null },
+      { num: 2, text: 'on:', node: 'trigger_push' },
+      { num: 3, text: '  push:', node: 'trigger_push' },
+      { num: 4, text: '    branches: ["main"]', node: 'trigger_push' },
+      { num: 5, text: '', node: null },
+      { num: 6, text: 'jobs:', node: null },
+      { num: 7, text: '  restore_cache:', node: 'cache_restore' },
+      { num: 8, text: '    runs-on: ubuntu-latest', node: 'cache_restore' },
+      { num: 9, text: '    steps:', node: 'cache_restore' },
+      { num: 10, text: '      - uses: actions/checkout@v4', node: 'cache_restore' },
+      { num: 11, text: '      - uses: actions/cache@v4', node: 'cache_restore' },
+      { num: 12, text: '        with: { path: node_modules, key: deps-${{ runner.os }} }', node: 'cache_restore' },
+      { num: 13, text: '', node: null },
+      { num: 14, text: '  compile_bundle:', node: 'build' },
+      { num: 15, text: '    needs: [restore_cache]', node: 'build' },
+      { num: 16, text: '    runs-on: ubuntu-latest', node: 'build' },
+      { num: 17, text: '    container: node:20-alpine', node: 'build' },
+      { num: 18, text: '    steps: [{ run: "npm ci && npm run build" }]', node: 'build' },
+      { num: 19, text: '', node: null },
+      { num: 20, text: '  unit_suite:', node: 'test' },
+      { num: 21, text: '    needs: [compile_bundle]', node: 'test' },
+      { num: 22, text: '    runs-on: ubuntu-latest', node: 'test' },
+      { num: 23, text: '    steps: [{ run: "npm test -- --ci" }]', node: 'test' },
+      { num: 24, text: '', node: null },
+      { num: 25, text: '  security_audit:', node: 'security_scan' },
+      { num: 26, text: '    needs: [compile_bundle]', node: 'security_scan' },
+      { num: 27, text: '    runs-on: ubuntu-latest', node: 'security_scan' },
+      { num: 28, text: '    steps: [{ run: "npm audit --audit-level=high" }]', node: 'security_scan' },
+      { num: 29, text: '', node: null },
+      { num: 30, text: '  canary_rollout:', node: 'canary_deploy' },
+      { num: 31, text: '    needs: [unit_suite, security_audit]', node: 'canary_deploy' },
+      { num: 32, text: '    environment: production', node: 'canary_deploy' },
+      { num: 33, text: '    steps: [{ run: "./scripts/rollout.sh --canary=10%" }]', node: 'canary_deploy' },
+    ],
+  },
+  jenkins: {
+    id: 'jenkins',
+    fileName: 'Jenkinsfile',
+    platform: 'Jenkins Declarative',
+    syntax: 'Groovy Pipeline DSL',
+    lines: [
+      { num: 1, text: 'pipeline {', node: null },
+      { num: 2, text: '  agent { docker { image "node:20-alpine" } }', node: 'trigger_push' },
+      { num: 3, text: '  triggers { pollSCM("H/5 * * * *") }', node: 'trigger_push' },
+      { num: 4, text: '  stages {', node: null },
+      { num: 5, text: '    stage("Restore Cache") {', node: 'cache_restore' },
+      { num: 6, text: '      steps { sh "npm ci --prefer-offline" }', node: 'cache_restore' },
+      { num: 7, text: '    }', node: 'cache_restore' },
+      { num: 8, text: '    stage("Compile Bundle") {', node: 'build' },
+      { num: 9, text: '      steps { sh "npm run build" }', node: 'build' },
+      { num: 10, text: '    }', node: 'build' },
+      { num: 11, text: '    stage("Parallel Verification") {', node: null },
+      { num: 12, text: '      parallel {', node: null },
+      { num: 13, text: '        stage("Unit Suite") {', node: 'test' },
+      { num: 14, text: '          steps { sh "npm test -- --ci" }', node: 'test' },
+      { num: 15, text: '        }', node: 'test' },
+      { num: 16, text: '        stage("Security Audit") {', node: 'security_scan' },
+      { num: 17, text: '          steps { sh "npm audit --audit-level=high" }', node: 'security_scan' },
+      { num: 18, text: '        }', node: 'security_scan' },
+      { num: 19, text: '      }', node: null },
+      { num: 20, text: '    }', node: null },
+      { num: 21, text: '    stage("Canary Rollout") {', node: 'canary_deploy' },
+      { num: 22, text: '      when { branch "main" }', node: 'canary_deploy' },
+      { num: 23, text: '      steps { sh "./scripts/rollout.sh --canary=10%" }', node: 'canary_deploy' },
+      { num: 24, text: '    }', node: 'canary_deploy' },
+      { num: 25, text: '  }', node: null },
+      { num: 26, text: '}', node: null },
+    ],
+  },
+  bitbucket: {
+    id: 'bitbucket',
+    fileName: 'bitbucket-pipelines.yml',
+    platform: 'Bitbucket Pipelines',
+    syntax: 'Pipelines YAML v2',
+    lines: [
+      { num: 1, text: 'image: node:20-alpine', node: null },
+      { num: 2, text: 'pipelines:', node: 'trigger_push' },
+      { num: 3, text: '  branches:', node: 'trigger_push' },
+      { num: 4, text: '    main:', node: 'trigger_push' },
+      { num: 5, text: '      - step:', node: 'cache_restore' },
+      { num: 6, text: '          name: Restore Cache', node: 'cache_restore' },
+      { num: 7, text: '          caches: [node]', node: 'cache_restore' },
+      { num: 8, text: '          script: ["npm ci --prefer-offline"]', node: 'cache_restore' },
+      { num: 9, text: '      - step:', node: 'build' },
+      { num: 10, text: '          name: Compile Bundle', node: 'build' },
+      { num: 11, text: '          script: ["npm run build"]', node: 'build' },
+      { num: 12, text: '      - parallel:', node: null },
+      { num: 13, text: '          - step:', node: 'test' },
+      { num: 14, text: '              name: Unit Suite', node: 'test' },
+      { num: 15, text: '              script: ["npm test -- --ci"]', node: 'test' },
+      { num: 16, text: '          - step:', node: 'security_scan' },
+      { num: 17, text: '              name: Security Audit', node: 'security_scan' },
+      { num: 18, text: '              script: ["npm audit --audit-level=high"]', node: 'security_scan' },
+      { num: 19, text: '      - step:', node: 'canary_deploy' },
+      { num: 20, text: '          name: Canary Rollout (10%)', node: 'canary_deploy' },
+      { num: 21, text: '          deployment: production', node: 'canary_deploy' },
+      { num: 22, text: '          script: ["./scripts/rollout.sh --canary=10%"]', node: 'canary_deploy' },
+    ],
+  },
+};
+
+const WORKBENCH_NODES = [
+  {
+    id: 'trigger_push',
+    kind: 'trigger',
+    label: 'on: push (main)',
+    meta: 'ref: refs/heads/main',
+    stage: 'trigger',
+    command: 'git rev-parse HEAD',
+    tone: 'border-emerald-500/40 text-emerald-500',
+    dot: 'bg-emerald-500',
+  },
+  {
+    id: 'cache_restore',
+    kind: 'cache',
+    label: 'restore_cache',
+    meta: 'key: deps-$LOCK_SHA',
+    stage: 'build',
+    command: 'npm ci --prefer-offline',
+    tone: 'border-teal-500/40 text-teal-500',
+    dot: 'bg-teal-500',
+  },
+  {
+    id: 'build',
+    kind: 'build',
+    label: 'compile_bundle',
+    meta: 'image: node:20-alpine',
+    stage: 'build',
+    command: 'npm run build',
+    tone: 'border-sky-500/40 text-sky-500',
+    dot: 'bg-sky-500',
+  },
+  {
+    id: 'test',
+    kind: 'verify',
+    label: 'unit_suite',
+    meta: 'needs: [compile_bundle]',
+    stage: 'verify',
+    command: 'npm test -- --ci',
+    tone: 'border-amber-500/40 text-amber-500',
+    dot: 'bg-amber-500',
+  },
+  {
+    id: 'security_scan',
+    kind: 'verify',
+    label: 'security_audit',
+    meta: 'needs: [compile_bundle]',
+    stage: 'verify',
+    command: 'npm audit --audit-level=high',
+    tone: 'border-rose-500/40 text-rose-500',
+    dot: 'bg-rose-500',
+  },
+  {
+    id: 'canary_deploy',
+    kind: 'deploy',
+    label: 'canary_rollout',
+    meta: 'env: production (10%)',
+    stage: 'deploy',
+    command: './scripts/rollout.sh --canary=10%',
+    tone: 'border-indigo-500/40 text-indigo-500',
+    dot: 'bg-indigo-500',
+  },
 ];
 
-const PIPELINE_EDGES = [
-  { from: 'n1', to: 'n2' }, { from: 'n1', to: 'n4' },
-  { from: 'n2', to: 'n3' }, { from: 'n3', to: 'n6' },
-  { from: 'n4', to: 'n5' }, { from: 'n5', to: 'n6' },
-  { from: 'n6', to: 'n7' },
-];
-
-function PipelineViz() {
-  const { theme } = useTheme();
-  const nodeMap = Object.fromEntries(PIPELINE_NODES.map(n => [n.id, n]));
-  const [animated, setAnimated] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setAnimated(true), 300);
-    return () => clearTimeout(t);
-  }, []);
-
-  const textColor = theme === 'light' ? '#1a1a2e' : '#f0f0f2';
-
-  return (
-    <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
-      <svg
-        viewBox="0 0 1000 130"
-        style={{ width: '100%', minWidth: 640, height: 'auto', display: 'block' }}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* Edges - rendered first so they appear behind nodes */}
-        <g>
-          {PIPELINE_EDGES.map((e, i) => {
-            const from = nodeMap[e.from];
-            const to = nodeMap[e.to];
-            const x1 = from.x + 60; const y1 = from.y + 17;
-            const x2 = to.x; const y2 = to.y + 17;
-            const cx = (x1 + x2) / 2;
-            return (
-              <g key={i}>
-                <path
-                  d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                  fill="none"
-                  stroke="rgba(115,122,230,0.2)"
-                  strokeWidth="1.5"
-                />
-                <path
-                  d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                  fill="none"
-                  stroke="rgba(115,122,230,0.7)"
-                  strokeWidth="1.5"
-                  strokeDasharray="6 4"
-                  style={{
-                    strokeDashoffset: animated ? 0 : 200,
-                    transition: `stroke-dashoffset ${1.2 + i * 0.1}s ease`,
-                  }}
-                />
-              </g>
-            );
-          })}
-        </g>
-        {/* Nodes - rendered after edges so they appear on top */}
-        <g>
-          {PIPELINE_NODES.map((node, i) => (
-            <g
-              key={node.id}
-              style={{
-                opacity: animated ? 1 : 0,
-                transform: animated ? 'translateY(0)' : 'translateY(8px)',
-                transition: `opacity 0.4s ease ${i * 0.07}s, transform 0.4s ease ${i * 0.07}s`,
-              }}
-            >
-              <rect
-                x={node.x} y={node.y}
-                width={118} height={34}
-                rx={8}
-                fill={theme === 'light' ? node.color + '25' : node.color + '18'}
-                stroke={node.color + '60'}
-                strokeWidth="1"
-              />
-              <circle cx={node.x + 14} cy={node.y + 17} r={4} fill={node.color} />
-              <text
-                x={node.x + 26} y={node.y + 22}
-                fill={textColor}
-                fontSize="11"
-                fontWeight="600"
-                fontFamily="'JetBrains Mono', monospace"
-              >
-                {node.label}
-              </text>
-            </g>
-          ))}
-        </g>
-      </svg>
-    </div>
-  );
-}
-
-/* ── Feature cards ── */
-const FEATURES = [
+const ARCHITECTURE_SPECS = [
   {
+    id: 'dag-compiler',
+    code: 'SYS-DAG',
+    title: 'Multi-Target DAG Compiler',
+    summary: 'Compiles a single directed acyclic stage graph into idiomatic configuration for 5 CI/CD runtimes.',
+    latency: '< 15ms local AST pass',
+    guarantee: 'Topological sort + cycle detection',
     icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="2" width="7" height="7" rx="1.5"/>
-        <rect x="13" y="2" width="7" height="7" rx="1.5"/>
-        <rect x="2" y="13" width="7" height="7" rx="1.5"/>
-        <rect x="13" y="13" width="7" height="7" rx="1.5"/>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="2" width="5" height="5" rx="1" />
+        <rect x="9" y="2" width="5" height="5" rx="1" />
+        <rect x="2" y="9" width="5" height="5" rx="1" />
+        <path d="M11.5 9v5M9 11.5h5" />
       </svg>
     ),
-    title: 'Visual Workflow Builder',
-    desc: 'Drag-and-drop pipeline stages onto a canvas. Connect nodes, configure settings, and see your CI/CD architecture come to life visually.',
-    accent: '#38bdf8',
+    specs: [
+      'Resolves upstream job dependencies into GitLab `needs: []` and GitHub Actions `needs` arrays.',
+      'Translates parallel verification branches into Jenkins Declarative `parallel {}` blocks.',
+      'Preserves container images, matrix axes, cache keys, artifact paths, and deployment gates.',
+    ],
   },
   {
+    id: 'bidirectional-sync',
+    code: 'AST-SYNC',
+    title: 'Bidirectional YAML ⇄ Graph Sync',
+    summary: 'Edit nodes inline on the canvas or type raw YAML directly — changes round-trip without losing stage wiring.',
+    latency: '350ms debounced sync',
+    guarantee: 'Lossless stage & script mapping',
     icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M11 3v5M7 6l4 2 4-2M4 11a7 7 0 0014 0"/>
-        <path d="M8 16l3 3 3-3"/>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3.5 8a4.5 4.5 0 018.2-2.2" />
+        <path d="M12.5 8a4.5 4.5 0 01-8.2 2.2" />
+        <path d="M12 3.5V6H9.5" />
       </svg>
     ),
-    title: 'AI Pipeline Generator',
-    desc: 'Describe your project in plain English. The AI writes production-grade YAML and builds the visual node graph — in seconds.',
-    accent: '#737AE6',
+    specs: [
+      'Double-click any node label, script command, or condition expression to edit directly on the canvas.',
+      'Import existing `.gitlab-ci.yml`, `.github/workflows/*.yml`, or `Jenkinsfile` into editable nodes.',
+      'Offline-resilient local compiler fallback keeps the YAML preview live even without backend connectivity.',
+    ],
   },
   {
+    id: 'groq-synthesis',
+    code: 'LPU-GEN',
+    title: 'Groq LPU & Repo-Aware Synthesis',
+    summary: 'First-class Groq (Llama 3.3 70B) integration synthesizes complete pipelines from repository manifests.',
+    latency: 'Sub-second token streaming',
+    guarantee: 'BYOM & zero server key storage',
     icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h5M13 4h5M4 11h14M6 18h10"/>
-        <path d="M6.5 4v7M15.5 4v7M11 11v7"/>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 2v4M4.5 4l2 2M11.5 4l-2 2" />
+        <rect x="3" y="8" width="10" height="6" rx="1.5" />
       </svg>
     ),
-    title: 'Multi-Platform Output',
-    desc: 'Export to GitLab CI, GitHub Actions, Jenkins, or CircleCI — all from the same visual canvas. Switch targets anytime.',
-    accent: '#22c55e',
+    specs: [
+      'Reads `package.json`, `Dockerfile`, `go.mod`, `Cargo.toml`, and `requirements.txt` from connected repos.',
+      'Supports Groq (Llama 3.3 70B) by default, plus Claude, Gemini, OpenAI, and local Ollama instances.',
+      'Bring-Your-Own-Model (BYOM) credentials stay in browser storage and are never persisted on the server.',
+    ],
   },
   {
+    id: 'health-scanner',
+    code: 'SEC-lint',
+    title: 'Heuristic Secret & Bottleneck Advisor',
+    summary: 'Static heuristic rules + LLM analysis grade pipelines across speed, security, and failure recovery.',
+    latency: 'Deterministic + AI pass',
+    guarantee: '1-click remediated graph load',
     icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="9"/>
-        <path d="M7 11h3l1-3 2 6 1-3h3"/>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M8 2L3 4.2v3.3c0 3.8 5 6 5 6s5-2.2 5-6V4.2L8 2z" />
       </svg>
     ),
-    title: 'Pipeline Health Advisor',
-    desc: 'AI grades your pipeline A–F across speed, security, reliability, and best practices — with actionable fix recommendations.',
-    accent: '#f59e0b',
+    specs: [
+      'Flags unpinned `:latest` container tags, missing dependency caches, and hardcoded secret tokens.',
+      'Detects serial test bottlenecks that can be parallelized across independent DAG branches.',
+      'Applies recommended fixes directly into a new visual workflow with one click.',
+    ],
   },
   {
+    id: 'git-push',
+    code: 'GIT-PR',
+    title: 'Direct Repository Commit & PR Push',
+    summary: 'Ship validated pipeline configs straight to GitHub, GitLab, or Bitbucket via branch commit or pull request.',
+    latency: 'Direct REST API transport',
+    guarantee: 'SSRF-guarded outbound proxy',
     icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h14a1 1 0 011 1v8a1 1 0 01-1 1H8l-4 3v-3a1 1 0 01-1-1V5a1 1 0 011-1z"/>
-        <path d="M8 9h6M8 12h4"/>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="5" cy="4" r="1.5" />
+        <circle cx="5" cy="12" r="1.5" />
+        <circle cx="11" cy="6" r="1.5" />
+        <path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3" />
       </svg>
     ),
-    title: 'Pipeline Chat',
-    desc: 'Ask anything about your pipeline. "Why is this slow?" "Add caching." "Is this secure?" Get answers with runnable snippets.',
-    accent: '#ec4899',
-  },
-  {
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6 6h4M12 6h4M6 11h10M8 16h6"/>
-        <path d="M7 6v5M15 6v5M11 11v5"/>
-      </svg>
-    ),
-    title: 'Pipeline Migration',
-    desc: 'Upload any Jenkinsfile. FlowForge converts it to your target platform, preserving all stage behavior and intent.',
-    accent: '#f43f5e',
+    specs: [
+      'Creates feature branches and opens Pull Requests / Merge Requests without leaving the workspace.',
+      'Legacy Jenkinsfile migrator converts imperative/declarative Groovy pipelines into modern YAML targets.',
+      'Optional n8n webhook forwarding dispatches exported pipeline payloads to external automation hooks.',
+    ],
   },
 ];
 
-/* ── How it works steps ── */
-const STEPS = [
-  {
-    num: '01',
-    title: 'Build or Generate',
-    desc: 'Drag nodes from the library to design your pipeline visually, or use the AI generator — just describe what you want.',
-    color: '#737AE6',
-  },
-  {
-    num: '02',
-    title: 'Configure & Connect',
-    desc: 'Click any node to set images, scripts, environments, and approvers. Connect stages with edges to define flow and dependencies.',
-    color: '#38bdf8',
-  },
-  {
-    num: '03',
-    title: 'Export & Ship',
-    desc: 'Export clean, production-ready YAML for your platform. Download the file, commit it, and watch your pipeline run.',
-    color: '#22c55e',
-  },
+const SUPPORTED_MODELS = [
+  { name: 'Groq (Llama 3.3 70B)', role: 'Primary Default', tag: 'LPU Cloud' },
+  { name: 'Claude Sonnet 4.5', role: 'Anthropic', tag: 'Cloud API' },
+  { name: 'GPT-4o / 4.1 Mini', role: 'OpenAI', tag: 'Cloud API' },
+  { name: 'Gemini 2.5 Pro', role: 'Google', tag: 'Cloud API' },
+  { name: 'Ollama (Llama 3 / CodeLlama)', role: 'Local Runtime', tag: 'Air-gapped' },
 ];
 
-/* ── AI Provider badges ── */
-const AI_PROVIDERS = ['Groq (Llama 3.3)', 'Claude 4.5', 'GPT-4o', 'Gemini 2.5', 'Featherless', 'Ollama'];
-const CICD_PLATFORMS = ['GitLab CI', 'GitHub Actions', 'Jenkins', 'CircleCI', 'Bitbucket Pipelines'];
-
-/* ── A single animated counter ── */
-function Stat({ value, label }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--ff-accent)', letterSpacing: '-0.03em' }}>
-        {value}
-      </div>
-      <div style={{ fontSize: '0.75rem', color: 'var(--ff-muted)', textTransform: 'uppercase', letterSpacing: '0.12em', marginTop: 4 }}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
-/* ── Main component ── */
 export default function LandingPage({ onEnterApp }) {
-  const { theme } = useTheme();
-  const heroRef = useRef(null);
-  const [scrolled, setScrolled] = useState(false);
-  const [entered, setEntered] = useState(false);
+  const [activeTarget, setActiveTarget] = useState('gitlab');
+  const [selectedNodeId, setSelectedNodeId] = useState('canary_deploy');
+  const [activeSpecId, setActiveSpecId] = useState('dag-compiler');
 
-  useEffect(() => {
-    const t = setTimeout(() => setEntered(true), 60);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll);
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  /* ── Inline style helpers ── */
-  const s = {
-    page: {
-      minHeight: '100vh',
-      background: 'var(--ff-bg)',
-      color: 'var(--ff-text)',
-      fontFamily: "'Inter', -apple-system, sans-serif",
-      overflowX: 'hidden',
-    },
-    nav: {
-      position: 'sticky',
-      top: 0,
-      zIndex: 50,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 clamp(1.5rem, 5vw, 4rem)',
-      height: 60,
-      background: scrolled ? 'rgba(16,16,18,0.92)' : 'transparent',
-      backdropFilter: scrolled ? 'blur(14px)' : 'none',
-      borderBottom: scrolled ? '1px solid var(--ff-border)' : '1px solid transparent',
-      transition: 'all 300ms ease',
-    },
-    navLight: {
-      background: scrolled ? 'rgba(250,250,250,0.92)' : 'transparent',
-    },
-    logo: {
-      display: 'flex', alignItems: 'center', gap: 10,
-    },
-    logoMark: {
-      width: 30, height: 30, borderRadius: 8,
-      background: 'linear-gradient(135deg, var(--ff-accent), #a5b4fc)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      flexShrink: 0,
-    },
-    logoText: {
-      fontSize: '0.9375rem', fontWeight: 700, letterSpacing: '-0.02em',
-      color: 'var(--ff-text)',
-    },
-    navLinks: {
-      display: 'flex', alignItems: 'center', gap: 8,
-    },
-    hero: {
-      padding: 'clamp(4rem, 10vh, 7rem) clamp(1.5rem, 5vw, 4rem) clamp(3rem, 7vh, 5rem)',
-      maxWidth: 1100,
-      margin: '0 auto',
-      opacity: entered ? 1 : 0,
-      transform: entered ? 'none' : 'translateY(16px)',
-      transition: 'opacity 0.6s ease, transform 0.6s ease',
-    },
-    eyebrow: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 8,
-      padding: '5px 12px',
-      borderRadius: 99,
-      border: '1px solid rgba(115,122,230,0.3)',
-      background: 'rgba(115,122,230,0.08)',
-      fontSize: '0.75rem',
-      fontWeight: 600,
-      color: 'var(--ff-accent)',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      marginBottom: '1.25rem',
-    },
-    h1: {
-      fontSize: 'clamp(2.25rem, 5.5vw, 4rem)',
-      fontWeight: 800,
-      letterSpacing: '-0.035em',
-      lineHeight: 1.1,
-      color: 'var(--ff-text)',
-      marginBottom: '1.25rem',
-    },
-    h1Accent: {
-      background: 'linear-gradient(135deg, var(--ff-accent), #a5b4fc)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      backgroundClip: 'text',
-    },
-    heroSub: {
-      fontSize: 'clamp(1rem, 2vw, 1.2rem)',
-      color: 'var(--ff-text-secondary)',
-      maxWidth: 560,
-      lineHeight: 1.65,
-      marginBottom: '2rem',
-    },
-    ctaRow: {
-      display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: '3.5rem',
-    },
-    btnPrimary: {
-      display: 'inline-flex', alignItems: 'center', gap: 8,
-      padding: '0.7rem 1.6rem',
-      background: 'var(--ff-accent)',
-      color: '#fff',
-      borderRadius: 12,
-      border: 'none',
-      fontWeight: 600,
-      fontSize: '0.9rem',
-      cursor: 'pointer',
-      transition: 'filter 180ms ease, transform 120ms ease',
-      letterSpacing: '-0.01em',
-    },
-    btnSecondary: {
-      display: 'inline-flex', alignItems: 'center', gap: 8,
-      padding: '0.7rem 1.4rem',
-      background: 'var(--ff-card-bg)',
-      color: 'var(--ff-text-secondary)',
-      borderRadius: 12,
-      border: '1px solid var(--ff-border)',
-      fontWeight: 500,
-      fontSize: '0.9rem',
-      cursor: 'pointer',
-      transition: 'all 180ms ease',
-    },
-    vizWrap: {
-      borderRadius: 16,
-      border: '1px solid var(--ff-card-border)',
-      background: 'var(--ff-surface)',
-      padding: '1.25rem 1rem',
-      boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04)',
-    },
-    vizBar: {
-      display: 'flex', alignItems: 'center', gap: 6,
-      marginBottom: 14,
-      paddingBottom: 12,
-      borderBottom: '1px solid var(--ff-card-border)',
-    },
-    vizDot: (c) => ({
-      width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0,
-    }),
-    vizLabel: {
-      fontSize: '0.7rem',
-      color: 'var(--ff-muted)',
-      fontFamily: "'JetBrains Mono', monospace",
-      marginLeft: 'auto',
-    },
-    section: {
-      padding: 'clamp(3rem, 8vh, 5rem) clamp(1.5rem, 5vw, 4rem)',
-      maxWidth: 1100,
-      margin: '0 auto',
-    },
-    sectionLabel: {
-      fontSize: '0.7rem',
-      color: 'var(--ff-accent)',
-      fontWeight: 600,
-      textTransform: 'uppercase',
-      letterSpacing: '0.14em',
-      marginBottom: 10,
-    },
-    sectionTitle: {
-      fontSize: 'clamp(1.5rem, 3.5vw, 2.25rem)',
-      fontWeight: 700,
-      letterSpacing: '-0.025em',
-      color: 'var(--ff-text)',
-      marginBottom: '0.6rem',
-      lineHeight: 1.2,
-    },
-    sectionSub: {
-      fontSize: '1rem',
-      color: 'var(--ff-text-secondary)',
-      maxWidth: 500,
-      lineHeight: 1.6,
-      marginBottom: '2.5rem',
-    },
-    grid3: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))',
-      gap: 16,
-    },
-    featureCard: {
-      background: 'var(--ff-card-bg)',
-      border: '1px solid var(--ff-card-border)',
-      borderRadius: 16,
-      padding: '1.4rem',
-      transition: 'border-color 200ms ease, background 200ms ease',
-      cursor: 'default',
-    },
-    featureIcon: (accent) => ({
-      width: 42, height: 42,
-      borderRadius: 10,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: accent + '18',
-      color: accent,
-      marginBottom: 14,
-      flexShrink: 0,
-    }),
-    featureTitle: {
-      fontSize: '0.9375rem',
-      fontWeight: 600,
-      color: 'var(--ff-text)',
-      marginBottom: 6,
-    },
-    featureDesc: {
-      fontSize: '0.8125rem',
-      color: 'var(--ff-text-secondary)',
-      lineHeight: 1.6,
-    },
-    stepsRow: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
-      gap: 20,
-    },
-    stepCard: {
-      padding: '1.5rem',
-      borderRadius: 16,
-      background: 'var(--ff-card-bg)',
-      border: '1px solid var(--ff-card-border)',
-      position: 'relative',
-      overflow: 'hidden',
-    },
-    stepNum: (c) => ({
-      fontSize: '3.5rem',
-      fontWeight: 800,
-      color: c + '50',
-      fontFamily: "'JetBrains Mono', monospace",
-      lineHeight: 1,
-      marginBottom: 12,
-      letterSpacing: '-0.04em',
-    }),
-    stepTitle: {
-      fontSize: '1rem',
-      fontWeight: 600,
-      color: 'var(--ff-text)',
-      marginBottom: 8,
-    },
-    stepDesc: {
-      fontSize: '0.8125rem',
-      color: 'var(--ff-text-secondary)',
-      lineHeight: 1.65,
-    },
-    divider: {
-      height: 1,
-      background: 'var(--ff-border)',
-      margin: '0 clamp(1.5rem, 5vw, 4rem)',
-    },
-    platformSection: {
-      padding: 'clamp(2.5rem, 6vh, 4rem) clamp(1.5rem, 5vw, 4rem)',
-      maxWidth: 1100,
-      margin: '0 auto',
-    },
-    badgeRow: {
-      display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12,
-    },
-    badge: {
-      padding: '5px 12px',
-      borderRadius: 8,
-      border: '1px solid var(--ff-card-border)',
-      background: 'var(--ff-card-bg)',
-      fontSize: '0.7875rem',
-      fontWeight: 500,
-      color: 'var(--ff-text-secondary)',
-      fontFamily: "'JetBrains Mono', monospace",
-    },
-    statsRow: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-      justifyItems: 'center',
-      gap: 24,
-      padding: '2.25rem 1.5rem',
-      background: 'var(--ff-card-bg)',
-      border: '1px solid var(--ff-card-border)',
-      borderRadius: 16,
-      marginBottom: '3rem',
-    },
-    cta: {
-      padding: 'clamp(3rem, 8vh, 5rem) clamp(1.5rem, 5vw, 4rem)',
-      textAlign: 'center',
-    },
-    ctaBox: {
-      maxWidth: 620,
-      margin: '0 auto',
-      padding: 'clamp(2.5rem, 5vw, 4rem)',
-      borderRadius: 24,
-      border: '1px solid rgba(115,122,230,0.2)',
-      background: 'radial-gradient(ellipse at 50% 0%, rgba(115,122,230,0.08), transparent 70%)',
-      boxShadow: '0 0 60px rgba(115,122,230,0.06)',
-    },
-    ctaTitle: {
-      fontSize: 'clamp(1.6rem, 3.5vw, 2.25rem)',
-      fontWeight: 700,
-      letterSpacing: '-0.025em',
-      color: 'var(--ff-text)',
-      marginBottom: 12,
-    },
-    ctaSub: {
-      fontSize: '0.9375rem',
-      color: 'var(--ff-text-secondary)',
-      marginBottom: 28,
-      lineHeight: 1.6,
-    },
-    footer: {
-      borderTop: '1px solid var(--ff-border)',
-      padding: '1.5rem clamp(1.5rem, 5vw, 4rem)',
-      display: 'flex',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 12,
-    },
-    footerText: {
-      fontSize: '0.75rem',
-      color: 'var(--ff-muted)',
-    },
-  };
-
-  /* Hover state for feature cards */
-  const [hoveredFeature, setHoveredFeature] = useState(null);
-  const [hoveredBtn, setHoveredBtn] = useState(null);
+  const currentTarget = TARGET_SPECS[activeTarget] || TARGET_SPECS.gitlab;
+  const activeNode = WORKBENCH_NODES.find((n) => n.id === selectedNodeId) || WORKBENCH_NODES[0];
+  const activeSpec = ARCHITECTURE_SPECS.find((s) => s.id === activeSpecId) || ARCHITECTURE_SPECS[0];
 
   return (
-    <div style={s.page}>
-      {/* ── Nav ── */}
-      <nav style={{ ...s.nav, ...(theme === 'light' ? s.navLight : {}) }}>
-        <span style={s.logoText}>FlowForge</span>
-
-        <div style={s.navLinks}>
-          <ThemeToggleButton />
-          <button
-            onClick={onEnterApp}
-            onMouseEnter={() => setHoveredBtn('nav')}
-            onMouseLeave={() => setHoveredBtn(null)}
-            style={{
-              ...s.btnPrimary,
-              filter: hoveredBtn === 'nav' ? 'brightness(1.12)' : 'none',
-              transform: hoveredBtn === 'nav' ? 'scale(1.02)' : 'none',
-            }}
-          >
-            Launch App
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 7h8M7 3l4 4-4 4"/></svg>
-          </button>
-        </div>
-      </nav>
-
-      {/* ── Hero ── */}
-      <div style={s.hero}>
-        <div style={s.eyebrow}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ff-accent)', display: 'inline-block' }} />
-          AI-Powered CI/CD Automation
-        </div>
-
-        <h1 style={s.h1}>
-          Build pipelines{' '}
-          <span style={s.h1Accent}>visually,</span>
-          <br />
-          ship them confidently.
-        </h1>
-
-        <p style={s.heroSub}>
-          FlowForge lets you design CI/CD workflows with drag-and-drop nodes, generate them from natural language,
-          and export clean config for any platform — powered by the AI of your choice.
-        </p>
-
-        <div style={s.ctaRow}>
-          <button
-            onClick={onEnterApp}
-            onMouseEnter={() => setHoveredBtn('hero')}
-            onMouseLeave={() => setHoveredBtn(null)}
-            style={{
-              ...s.btnPrimary,
-              padding: '0.8rem 1.8rem',
-              fontSize: '0.9375rem',
-              filter: hoveredBtn === 'hero' ? 'brightness(1.12)' : 'none',
-              transform: hoveredBtn === 'hero' ? 'scale(1.02)' : 'none',
-            }}
-          >
-            Start Building — Free
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 7h8M7 3l4 4-4 4"/></svg>
-          </button>
-          <button
-            onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-            onMouseEnter={() => setHoveredBtn('learn')}
-            onMouseLeave={() => setHoveredBtn(null)}
-            style={{
-              ...s.btnSecondary,
-              padding: '0.8rem 1.6rem',
-              fontSize: '0.9375rem',
-              borderColor: hoveredBtn === 'learn' ? 'var(--ff-border-strong)' : undefined,
-              color: hoveredBtn === 'learn' ? 'var(--ff-text)' : undefined,
-            }}
-          >
-            See how it works
-          </button>
-        </div>
-
-        {/* Pipeline preview */}
-        <div style={s.vizWrap}>
-          <div style={s.vizBar}>
-            <span style={s.vizDot('#ff5f57')} />
-            <span style={s.vizDot('#febc2e')} />
-            <span style={s.vizDot('#28c840')} />
-            <span style={s.vizLabel}>flowforge — pipeline-canvas.ff</span>
+    <div className="min-h-screen bg-[var(--ff-bg)] text-[var(--ff-text)] flex flex-col selection:bg-[var(--ff-accent-soft)]">
+      {/* ── Top Studio Bar ─────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 h-12 border-b border-[var(--ff-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-4 md:px-8">
+        <div className="max-w-7xl mx-auto h-full flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-6 h-6 rounded-md bg-[var(--ff-accent)] flex items-center justify-center text-[var(--ff-btn-primary-text)]">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="5" height="5" rx="1" />
+                <rect x="9" y="2" width="5" height="5" rx="1" />
+                <rect x="2" y="9" width="5" height="5" rx="1" />
+                <path d="M11.5 9v5M9 11.5h5" />
+              </svg>
+            </div>
+            <span className="text-sm font-semibold tracking-tight text-[var(--ff-text)]">
+              FlowForge
+            </span>
+            <span className="hidden sm:inline-block text-xs text-[var(--ff-muted)] ff-code border-l border-[var(--ff-border)] pl-3">
+              pipeline-studio v2.4
+            </span>
           </div>
-          <PipelineViz />
-        </div>
-      </div>
 
-      {/* ── Stats bar ── */}
-      <div style={{ padding: '0 clamp(1.5rem, 5vw, 4rem)', maxWidth: 1100, margin: '0 auto' }}>
-        <div style={s.statsRow}>
-          <Stat value="6+" label="AI Providers" />
-          <Stat value="5" label="CI/CD Platforms" />
-          <Stat value="20" label="Stage Nodes" />
-          <Stat value="2-Way" label="YAML ⇄ DAG Sync" />
-        </div>
-      </div>
+          <div className="flex items-center gap-4">
+            <nav className="hidden md:flex items-center gap-5 text-xs font-medium text-[var(--ff-text-secondary)]">
+              <a href="#workbench" className="hover:text-[var(--ff-text)] transition-colors">
+                Compiler Workbench
+              </a>
+              <a href="#architecture" className="hover:text-[var(--ff-text)] transition-colors">
+                Architecture
+              </a>
+              <a href="#runtimes" className="hover:text-[var(--ff-text)] transition-colors">
+                Runtimes & Models
+              </a>
+            </nav>
 
-      {/* ── Features ── */}
-      <div id="features" style={s.section}>
-        <div style={s.sectionLabel}>Capabilities</div>
-        <h2 style={s.sectionTitle}>Everything your CI/CD workflow needs</h2>
-        <p style={s.sectionSub}>
-          From visual design to AI generation, health scoring to live chat — FlowForge covers the full pipeline lifecycle.
-        </p>
-
-        <div style={s.grid3}>
-          {FEATURES.map((f, i) => (
-            <div
-              key={i}
-              style={{
-                ...s.featureCard,
-                borderColor: hoveredFeature === i ? f.accent + '40' : 'var(--ff-card-border)',
-                background: hoveredFeature === i ? f.accent + '08' : 'var(--ff-card-bg)',
-              }}
-              onMouseEnter={() => setHoveredFeature(i)}
-              onMouseLeave={() => setHoveredFeature(null)}
-            >
-              <div style={s.featureIcon(f.accent)}>{f.icon}</div>
-              <div style={s.featureTitle}>{f.title}</div>
-              <div style={s.featureDesc}>{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={s.divider} />
-
-      {/* ── How it works ── */}
-      <div style={s.section}>
-        <div style={s.sectionLabel}>Workflow</div>
-        <h2 style={s.sectionTitle}>From idea to running pipeline in 3 steps</h2>
-        <p style={s.sectionSub}>
-          No YAML expertise required. FlowForge handles the config — you focus on what your pipeline should do.
-        </p>
-
-        <div style={s.stepsRow}>
-          {STEPS.map((step, i) => (
-            <div key={i} style={s.stepCard}>
-              <div style={s.stepNum(step.color)}>{step.num}</div>
-              <div style={{ ...s.stepTitle, color: step.color }}>{step.title}</div>
-              <div style={s.stepDesc}>{step.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={s.divider} />
-
-      {/* ── Platforms ── */}
-      <div style={s.platformSection}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', gap: 32 }}>
-          <div>
-            <div style={s.sectionLabel}>AI Providers</div>
-            <div style={{ fontSize: '1.0625rem', fontWeight: 600, color: 'var(--ff-text)', marginBottom: 6 }}>
-              Bring your own model
-            </div>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--ff-text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
-              Use any AI provider — from hosted APIs to your own local Ollama. Even plug in a custom key per-request.
-            </div>
-            <div style={s.badgeRow}>
-              {AI_PROVIDERS.map(p => (
-                <span key={p} style={s.badge}>{p}</span>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div style={s.sectionLabel}>CI/CD Targets</div>
-            <div style={{ fontSize: '1.0625rem', fontWeight: 600, color: 'var(--ff-text)', marginBottom: 6 }}>
-              Platform-independent
-            </div>
-            <div style={{ fontSize: '0.8125rem', color: 'var(--ff-text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
-              Design once, export anywhere. GitLab CI, GitHub Actions, Jenkins, or CircleCI — clean output every time.
-            </div>
-            <div style={s.badgeRow}>
-              {CICD_PLATFORMS.map(p => (
-                <span key={p} style={s.badge}>{p}</span>
-              ))}
+            <div className="flex items-center gap-2">
+              <ThemeToggleButton />
+              <button
+                type="button"
+                onClick={onEnterApp}
+                className="ff-btn-primary h-8 px-3.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
+              >
+                <span>Open Studio</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3.5 8h9M8.5 4l4 4-4 4" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div style={s.divider} />
+      <main className="flex-1">
+        {/* ── Hero + Interactive Compiler Workbench ──────────────────── */}
+        <section className="border-b border-[var(--ff-border)] py-10 md:py-16 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto">
+            {/* Editorial Asymmetric Header */}
+            <div className="grid lg:grid-cols-12 gap-8 items-end mb-10">
+              <div className="lg:col-span-7 space-y-4">
+                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] text-xs text-[var(--ff-text-secondary)] ff-code">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--ff-accent)]" />
+                  <span>DAG Pipeline Compiler &amp; Groq LPU Synthesis</span>
+                </div>
 
-      {/* ── BYOM callout ── */}
-      <div style={{ ...s.section, paddingTop: 'clamp(2.5rem, 6vh, 4rem)', paddingBottom: 'clamp(2.5rem, 6vh, 4rem)' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 460px), 1fr))',
-          gap: 24,
-          alignItems: 'center',
-        }}>
-          <div>
-            <div style={s.sectionLabel}>Privacy-First</div>
-            <h2 style={{ ...s.sectionTitle, marginBottom: 10 }}>Your keys, your models, your data</h2>
-            <p style={{ fontSize: '0.875rem', color: 'var(--ff-text-secondary)', lineHeight: 1.65 }}>
-              FlowForge never stores your API keys. Supply them per-request via Bring-Your-Own-Model mode,
-              or use your backend's configured keys. Run fully local with Ollama — no cloud calls, no telemetry.
-            </p>
-          </div>
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
-          }}>
-            {[
-              { label: 'Keys never persisted', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="4" y="7" width="8" height="7" rx="1.5"/><path d="M6 7V5a2 2 0 014 0v2"/></svg> },
-              { label: 'Local LLM support', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="8" rx="1.5"/><path d="M5 14h6M8 11v3"/></svg> },
-              { label: 'Self-hostable backend', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 3h10v4H3zM3 9h10v4H3z"/><circle cx="5" cy="5" r="0.5" fill="currentColor"/><circle cx="5" cy="11" r="0.5" fill="currentColor"/></svg> },
-              { label: 'Open source friendly', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2l2.5 5 5.5.8-4 3.9.9 5.3L8 14.5l-4.9 2.5.9-5.3-4-3.9 5.5-.8z"/></svg> },
-            ].map((item, i) => (
-              <div key={i} style={{
-                padding: '0.875rem 1rem',
-                borderRadius: 12,
-                border: '1px solid var(--ff-card-border)',
-                background: 'var(--ff-card-bg)',
-                display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: '0.8125rem',
-                color: 'var(--ff-text-secondary)',
-                fontWeight: 500,
-              }}>
-                <span style={{ color: 'var(--ff-accent)' }}>{item.icon}</span>
-                {item.label}
+                <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold tracking-tight text-[var(--ff-text)] leading-[1.12]">
+                  Visual CI/CD architecture that compiles to native platform YAML.
+                </h1>
               </div>
-            ))}
+
+              <div className="lg:col-span-5 space-y-5">
+                <p className="text-sm sm:text-base text-[var(--ff-text-secondary)] leading-relaxed">
+                  Model stages, caches, security audits, and canary rollouts as an explicit directed acyclic graph. Sync bidirectionally with GitLab CI, GitHub Actions, Jenkins, CircleCI, and Bitbucket Pipelines.
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={onEnterApp}
+                    className="ff-btn-primary h-10 px-5 rounded-lg text-sm font-semibold inline-flex items-center gap-2"
+                  >
+                    <span>Launch Pipeline Studio</span>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3.5 8h9M8.5 4l4 4-4 4" />
+                    </svg>
+                  </button>
+                  <a
+                    href="#architecture"
+                    className="ff-btn-secondary h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2"
+                  >
+                    <span>System Specifications</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Workbench Preview */}
+            <div
+              id="workbench"
+              className="rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] overflow-hidden shadow-sm"
+            >
+              {/* Workbench Chrome Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 border-b border-[var(--ff-border)] bg-[var(--ff-bg-soft)]">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--ff-text)] ff-code">
+                    interactive-compiler.ff
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-[var(--ff-accent-soft)] text-[var(--ff-accent-text)] font-medium">
+                    Click any node or target tab to inspect
+                  </span>
+                </div>
+
+                {/* Live CI/CD Target Tabs */}
+                <div className="flex flex-wrap items-center gap-1" role="tablist" aria-label="CI/CD compilation targets">
+                  {Object.values(TARGET_SPECS).map((target) => {
+                    const isSelected = activeTarget === target.id;
+                    return (
+                      <button
+                        key={target.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => setActiveTarget(target.id)}
+                        className={`px-2.5 py-1 rounded-md text-xs ff-code transition-colors ${
+                          isSelected
+                            ? 'bg-[var(--ff-accent)] text-[var(--ff-btn-primary-text)] font-medium'
+                            : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
+                        }`}
+                      >
+                        {target.fileName}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Split Canvas + Compiled Output */}
+              <div className="grid lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[var(--ff-border)]">
+                {/* Left: Interactive DAG Topology */}
+                <div className="lg:col-span-7 p-4 sm:p-6 flex flex-col justify-between bg-[var(--ff-bg)]">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <span className="text-xs font-medium text-[var(--ff-muted)] ff-code">
+                        DAG TOPOLOGY (6 NODES · 6 EDGES)
+                      </span>
+                      <span className="text-xs text-[var(--ff-text-secondary)] ff-code">
+                        target: {currentTarget.platform}
+                      </span>
+                    </div>
+
+                    {/* Interactive DAG Grid Layout */}
+                    <div className="grid sm:grid-cols-3 gap-3 items-center my-2">
+                      {/* Column 1: Trigger + Cache */}
+                      <div className="space-y-3">
+                        {WORKBENCH_NODES.slice(0, 2).map((node) => {
+                          const selected = node.id === selectedNodeId;
+                          return (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              className={`w-full text-left p-3 rounded-lg border transition-all bg-[var(--ff-surface-solid)] ${
+                                selected
+                                  ? 'border-[var(--ff-accent)] ring-2 ring-[var(--ff-accent-glow)]'
+                                  : 'border-[var(--ff-card-border-strong)] hover:border-[var(--ff-border-strong)]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ff-text)] ff-code">
+                                  <span className={`w-2 h-2 rounded-full ${node.dot}`} />
+                                  {node.label}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--ff-surface-inset)] text-[var(--ff-muted)] ff-code">
+                                  {node.stage}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[var(--ff-text-secondary)] ff-code mt-1.5 truncate">
+                                {node.meta}
+                              </p>
+                              <div className="mt-2 px-2 py-1 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border)] text-[11px] text-[var(--ff-text-secondary)] ff-code truncate">
+                                $ {node.command}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Column 2: Build + Parallel Verify */}
+                      <div className="space-y-3">
+                        {WORKBENCH_NODES.slice(2, 5).map((node) => {
+                          const selected = node.id === selectedNodeId;
+                          return (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              className={`w-full text-left p-2.5 rounded-lg border transition-all bg-[var(--ff-surface-solid)] ${
+                                selected
+                                  ? 'border-[var(--ff-accent)] ring-2 ring-[var(--ff-accent-glow)]'
+                                  : 'border-[var(--ff-card-border-strong)] hover:border-[var(--ff-border-strong)]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ff-text)] ff-code">
+                                  <span className={`w-2 h-2 rounded-full ${node.dot}`} />
+                                  {node.label}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--ff-surface-inset)] text-[var(--ff-muted)] ff-code">
+                                  {node.stage}
+                                </span>
+                              </div>
+                              <div className="mt-1.5 px-2 py-0.5 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border)] text-[11px] text-[var(--ff-text-secondary)] ff-code truncate">
+                                $ {node.command}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Column 3: Canary Deploy */}
+                      <div className="space-y-3">
+                        {WORKBENCH_NODES.slice(5).map((node) => {
+                          const selected = node.id === selectedNodeId;
+                          return (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              className={`w-full text-left p-3 rounded-lg border transition-all bg-[var(--ff-surface-solid)] ${
+                                selected
+                                  ? 'border-[var(--ff-accent)] ring-2 ring-[var(--ff-accent-glow)]'
+                                  : 'border-[var(--ff-card-border-strong)] hover:border-[var(--ff-border-strong)]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--ff-text)] ff-code">
+                                  <span className={`w-2 h-2 rounded-full ${node.dot}`} />
+                                  {node.label}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--ff-accent-soft)] text-[var(--ff-accent-text)] ff-code">
+                                  {node.stage}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[var(--ff-text-secondary)] ff-code mt-1.5 truncate">
+                                {node.meta}
+                              </p>
+                              <div className="mt-2 px-2 py-1 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border)] text-[11px] text-[var(--ff-text-secondary)] ff-code truncate">
+                                $ {node.command}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Selected Node Inspector Footer */}
+                  <div className="mt-5 pt-3.5 border-t border-[var(--ff-border)] flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[var(--ff-muted)] ff-code">INSPECTING:</span>
+                      <span className="font-semibold text-[var(--ff-text)] ff-code">{activeNode.label}</span>
+                      <span className="text-[var(--ff-text-secondary)] hidden sm:inline">
+                        ({activeNode.meta})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onEnterApp}
+                      className="text-xs font-semibold text-[var(--ff-accent-text)] hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>Open in Visual Builder</span>
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3.5 8h9M8.5 4l4 4-4 4" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: Live Compiled YAML Output */}
+                <div className="lg:col-span-5 flex flex-col bg-[var(--ff-code-bg)]">
+                  <div className="px-4 py-2.5 border-b border-[var(--ff-border)] flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-[var(--ff-text)] ff-code">
+                      {currentTarget.fileName}
+                    </span>
+                    <span className="text-[11px] text-[var(--ff-muted)] ff-code">
+                      {currentTarget.syntax}
+                    </span>
+                  </div>
+
+                  <div className="p-3 sm:p-4 overflow-x-auto flex-1 max-h-[380px] overflow-y-auto ff-code text-xs leading-relaxed">
+                    {currentTarget.lines.map((line) => {
+                      const isHighlighted = line.node && line.node === selectedNodeId;
+                      return (
+                        <div
+                          key={line.num}
+                          onClick={() => {
+                            if (line.node) setSelectedNodeId(line.node);
+                          }}
+                          className={`flex items-start px-2 py-0.5 rounded transition-colors ${
+                            line.node ? 'cursor-pointer' : ''
+                          } ${
+                            isHighlighted
+                              ? 'bg-[var(--ff-accent-soft)] text-[var(--ff-text)] font-medium'
+                              : 'text-[var(--ff-text-secondary)] hover:bg-[var(--ff-nav-hover)]'
+                          }`}
+                        >
+                          <span className="w-7 flex-shrink-0 select-none text-[var(--ff-muted)] text-[11px]">
+                            {line.num}
+                          </span>
+                          <span className="whitespace-pre">{line.text || ' '}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* ── CTA ── */}
-      <div style={s.cta}>
-        <div style={s.ctaBox}>
-          <div style={{ ...s.sectionLabel, textAlign: 'center', marginBottom: 12 }}>Get Started</div>
-          <div style={s.ctaTitle}>Ready to build your pipeline?</div>
-          <p style={s.ctaSub}>
-            No account required. No credit card. Open FlowForge, drag in your first node,
-            and have a working CI/CD config in under five minutes.
-          </p>
-          <button
-            onClick={onEnterApp}
-            onMouseEnter={() => setHoveredBtn('cta')}
-            onMouseLeave={() => setHoveredBtn(null)}
-            style={{
-              ...s.btnPrimary,
-              padding: '0.85rem 2rem',
-              fontSize: '0.9375rem',
-              filter: hoveredBtn === 'cta' ? 'brightness(1.12)' : 'none',
-              transform: hoveredBtn === 'cta' ? 'scale(1.02)' : 'none',
-            }}
-          >
-            Open FlowForge
-            <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 7h8M7 3l4 4-4 4"/></svg>
-          </button>
-        </div>
-      </div>
+        {/* ── Interactive Architecture Specification Matrix ──────────── */}
+        <section id="architecture" className="border-b border-[var(--ff-border)] py-12 md:py-16 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="max-w-2xl mb-8">
+              <p className="text-xs font-semibold text-[var(--ff-accent-text)] ff-code mb-2">
+                SYSTEM ARCHITECTURE
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ff-text)]">
+                Built around an explicit pipeline AST, not string templates.
+              </h2>
+              <p className="text-sm text-[var(--ff-text-secondary)] mt-2 leading-relaxed">
+                Every canvas interaction, YAML edit, repository scan, and health audit operates on the same normalized node-and-edge graph.
+              </p>
+            </div>
 
-      {/* ── Footer ── */}
-      <footer style={s.footer}>
-        <span style={{ ...s.footerText, fontWeight: 600 }}>FlowForge</span>
-        <span style={s.footerText}>
-          AI-powered visual CI/CD automation — build, export, ship.
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <a
-            href="https://github.com/praneel7015/flowforge"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ ...s.footerText, color: 'var(--ff-muted)', textDecoration: 'none' }}
-          >
-            GitHub Repo
-          </a>
-          <button
-            onClick={onEnterApp}
-            style={{ ...s.footerText, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ff-accent)' }}
-          >
-            Open App →
-          </button>
+            <div className="grid lg:grid-cols-12 gap-6 items-start">
+              {/* Left Selector List */}
+              <div className="lg:col-span-5 space-y-2">
+                {ARCHITECTURE_SPECS.map((item) => {
+                  const selected = item.id === activeSpec.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveSpecId(item.id)}
+                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                        selected
+                          ? 'border-[var(--ff-accent)] bg-[var(--ff-accent-soft)]'
+                          : 'border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] hover:border-[var(--ff-border-strong)]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-7 h-7 rounded-lg bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] flex items-center justify-center text-[var(--ff-accent-text)]">
+                            {item.icon}
+                          </span>
+                          <span className="text-sm font-semibold text-[var(--ff-text)]">
+                            {item.title}
+                          </span>
+                        </div>
+                        <span className="text-[11px] ff-code text-[var(--ff-muted)]">
+                          {item.code}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--ff-text-secondary)] mt-2 leading-relaxed">
+                        {item.summary}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Specification Detail Panel */}
+              <div className="lg:col-span-7 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] p-6 space-y-6">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--ff-border)] pb-4">
+                  <div>
+                    <span className="text-xs font-semibold text-[var(--ff-accent-text)] ff-code">
+                      MODULE // {activeSpec.code}
+                    </span>
+                    <h3 className="text-xl font-bold text-[var(--ff-text)] mt-1">
+                      {activeSpec.title}
+                    </h3>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 text-xs ff-code">
+                    <span className="px-2.5 py-1 rounded-md bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)]">
+                      {activeSpec.latency}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-md bg-[var(--ff-accent-soft)] text-[var(--ff-accent-text)]">
+                      {activeSpec.guarantee}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-sm text-[var(--ff-text-secondary)] leading-relaxed">
+                  {activeSpec.summary}
+                </p>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-[var(--ff-muted)] ff-code">
+                    IMPLEMENTATION SPECIFICATIONS
+                  </p>
+                  <ul className="space-y-2.5">
+                    {activeSpec.specs.map((spec, idx) => (
+                      <li
+                        key={idx}
+                        className="flex items-start gap-2.5 text-sm text-[var(--ff-text)] leading-relaxed p-3 rounded-lg bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border)]"
+                      >
+                        <svg
+                          className="w-4 h-4 text-[var(--ff-accent-text)] flex-shrink-0 mt-0.5"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3.5 8.5l3 3 6-6.5" />
+                        </svg>
+                        <span>{spec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-4 border-t border-[var(--ff-border)]">
+                  <span className="text-xs text-[var(--ff-muted)] ff-code">
+                    20 built-in stage node types · full keyboard &amp; drag support
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onEnterApp}
+                    className="ff-btn-primary px-4 py-2 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <span>Try in Workspace</span>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3.5 8h9M8.5 4l4 4-4 4" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Runtimes, AI Inference & Privacy Matrix ────────────────── */}
+        <section id="runtimes" className="py-12 md:py-16 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-6 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] p-6">
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div>
+                  <p className="text-xs font-semibold text-[var(--ff-accent-text)] ff-code">
+                    INFERENCE ENGINES
+                  </p>
+                  <h3 className="text-lg font-bold text-[var(--ff-text)] mt-0.5">
+                    Groq LPU default + Bring Your Own Model
+                  </h3>
+                </div>
+                <span className="text-xs px-2.5 py-1 rounded-md bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] ff-code">
+                  Zero telemetry
+                </span>
+              </div>
+
+              <p className="text-xs sm:text-sm text-[var(--ff-text-secondary)] leading-relaxed mb-5">
+                Groq (Llama 3.3 70B) powers instant pipeline synthesis out of the box. Override the model, endpoint URL, or API key per session—or run 100% locally via Ollama.
+              </p>
+
+              <div className="divide-y divide-[var(--ff-border)] border border-[var(--ff-card-border-strong)] rounded-lg overflow-hidden">
+                {SUPPORTED_MODELS.map((m) => (
+                  <div
+                    key={m.name}
+                    className="px-3.5 py-2.5 bg-[var(--ff-surface-inset)] flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="font-semibold text-[var(--ff-text)] ff-code">{m.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[var(--ff-muted)]">{m.role}</span>
+                      <span className="px-2 py-0.5 rounded bg-[var(--ff-surface)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] ff-code text-[11px]">
+                        {m.tag}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-6 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] p-6 flex flex-col justify-between">
+              <div>
+                <p className="text-xs font-semibold text-[var(--ff-accent-text)] ff-code">
+                  COMPILER TARGETS &amp; SECURITY
+                </p>
+                <h3 className="text-lg font-bold text-[var(--ff-text)] mt-0.5">
+                  Five CI/CD targets. Browser-scoped credentials.
+                </h3>
+                <p className="text-xs sm:text-sm text-[var(--ff-text-secondary)] leading-relaxed mt-2 mb-5">
+                  Switch target platforms at any time to recompile your current graph. Repository tokens and custom LLM keys remain in local storage and are validated directly against official platform APIs.
+                </p>
+
+                <div className="grid sm:grid-cols-2 gap-2.5">
+                  {[
+                    { name: 'GitLab CI', file: '.gitlab-ci.yml' },
+                    { name: 'GitHub Actions', file: '.github/workflows/ci.yml' },
+                    { name: 'Jenkins Pipeline', file: 'Jenkinsfile' },
+                    { name: 'CircleCI', file: '.circleci/config.yml' },
+                    { name: 'Bitbucket Pipelines', file: 'bitbucket-pipelines.yml' },
+                  ].map((target) => (
+                    <div
+                      key={target.name}
+                      className="p-3 rounded-lg bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] flex items-center justify-between gap-2"
+                    >
+                      <span className="text-xs font-semibold text-[var(--ff-text)]">{target.name}</span>
+                      <span className="text-[11px] text-[var(--ff-muted)] ff-code">{target.file}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-[var(--ff-border)] flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-[var(--ff-text-secondary)]">
+                  Ready to design or import a pipeline?
+                </div>
+                <button
+                  type="button"
+                  onClick={onEnterApp}
+                  className="ff-btn-primary h-9 px-4 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5"
+                >
+                  <span>Enter FlowForge Studio</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3.5 8h9M8.5 4l4 4-4 4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* ── Footer ─────────────────────────────────────────────────── */}
+      <footer className="border-t border-[var(--ff-border)] py-5 px-4 md:px-8 bg-[var(--ff-bg-soft)]">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--ff-muted)]">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-[var(--ff-text)]">FlowForge</span>
+            <span>—</span>
+            <span>Visual CI/CD DAG Studio &amp; Multi-Target YAML Compiler</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <a
+              href="https://github.com/praneel7015/flowforge"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--ff-text)] transition-colors"
+            >
+              GitHub Repository
+            </a>
+            <button
+              type="button"
+              onClick={onEnterApp}
+              className="text-[var(--ff-accent-text)] font-medium hover:underline"
+            >
+              Open Studio
+            </button>
+          </div>
         </div>
       </footer>
     </div>

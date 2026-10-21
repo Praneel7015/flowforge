@@ -2,26 +2,26 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import NodeTemplates from './NodeTemplates';
 
 const NODE_TYPES = [
-  { type: 'trigger_push', label: 'Git Push Trigger', tone: 'emerald', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 2v7M7 2L4.5 4.5M7 2l2.5 2.5"/><circle cx="7" cy="11" r="1.5"/></svg> },
-  { type: 'trigger_mr', label: 'Merge Request Trigger', tone: 'green', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><circle cx="4" cy="4" r="1.5"/><circle cx="10" cy="4" r="1.5"/><circle cx="4" cy="11" r="1.5"/><path d="M4 5.5v4M10 5.5c0 3-6 3-6 4"/></svg> },
-  { type: 'build', label: 'Build Stage', tone: 'sky', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="10" height="7" rx="1.5"/><path d="M5 5V3.5A2 2 0 019 3.5V5"/></svg> },
-  { type: 'matrix_build', label: 'Matrix Build', tone: 'blue', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="2" y="2" width="4" height="4" rx="0.5"/><rect x="8" y="2" width="4" height="4" rx="0.5"/><rect x="2" y="8" width="4" height="4" rx="0.5"/><rect x="8" y="8" width="4" height="4" rx="0.5"/></svg> },
-  { type: 'lint', label: 'Lint / Static Analysis', tone: 'cyan', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M4 4h6M4 7h4M4 10h5"/></svg> },
-  { type: 'test', label: 'Unit Tests', tone: 'amber', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7l2 2 4-4"/></svg> },
-  { type: 'integration_test', label: 'Integration Tests', tone: 'orange', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><rect x="2" y="4" width="4" height="6" rx="1"/><rect x="8" y="4" width="4" height="6" rx="1"/><path d="M6 7h2"/></svg> },
-  { type: 'smoke_test', label: 'Smoke Tests', tone: 'lime', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><circle cx="7" cy="7" r="3"/><path d="M7 2v2M7 10v2M2 7h2M10 7h2"/></svg> },
-  { type: 'cache_restore', label: 'Cache Restore', tone: 'emerald', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M3 7a4 4 0 017.5-2"/><path d="M11 7a4 4 0 01-7.5 2"/><path d="M10.5 3v2h-2"/></svg> },
-  { type: 'cache_save', label: 'Cache Save', tone: 'teal', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 2v7M7 9L4.5 6.5M7 9l2.5-2.5"/><path d="M3 11h8"/></svg> },
-  { type: 'security_scan', label: 'Security Scan', tone: 'rose', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M7 1.5L2.5 3.5v3c0 3.5 4.5 5.5 4.5 5.5s4.5-2 4.5-5.5v-3L7 1.5z"/></svg> },
-  { type: 'package', label: 'Package Artifact', tone: 'violet', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 4.5L7 2l4.5 2.5v5L7 12l-4.5-2.5z"/><path d="M7 7v5M2.5 4.5L7 7l4.5-2.5"/></svg> },
-  { type: 'release', label: 'Release', tone: 'fuchsia', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 2l1.5 3h3L9 7.5l1 3.5L7 9l-3 2 1-3.5L2.5 5h3z"/></svg> },
-  { type: 'approval_gate', label: 'Approval Gate', tone: 'yellow', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 3v4M5 5l2 2 2-2"/><rect x="3" y="9" width="8" height="3" rx="1"/></svg> },
-  { type: 'deploy', label: 'Deploy', tone: 'indigo', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 12V4M7 4l3 3M7 4L4 7"/><path d="M3 2h8"/></svg> },
-  { type: 'canary_deploy', label: 'Canary Deploy', tone: 'indigo', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 12V6M7 6l2 2M7 6L5 8"/><circle cx="7" cy="3.5" r="1.5"/></svg> },
-  { type: 'blue_green_deploy', label: 'Blue/Green Deploy', tone: 'blue', advanced: true, icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="5" cy="7" r="3"/><circle cx="9" cy="7" r="3"/></svg> },
-  { type: 'rollback', label: 'Rollback', tone: 'red', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M4 5l-2 2 2 2"/><path d="M2 7h8a2 2 0 010 4H7"/></svg> },
-  { type: 'notify', label: 'Notification', tone: 'pink', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 11a2 2 0 004 0"/><path d="M7 2a4 4 0 014 4c0 2 1 3 1 3H2s1-1 1-3a4 4 0 014-4z"/></svg> },
-  { type: 'conditional', label: 'Conditional Logic', tone: 'slate', icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><path d="M7 2l4 5-4 5-4-5z"/></svg> },
+  { type: 'trigger_push', label: 'Git Push Trigger', tone: 'emerald', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2.5v7.5M8 2.5L5.5 5M8 2.5L10.5 5"/><circle cx="8" cy="12" r="1.5"/></svg> },
+  { type: 'trigger_mr', label: 'Merge Request Trigger', tone: 'green', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="4.5" cy="4.5" r="1.5"/><circle cx="11.5" cy="4.5" r="1.5"/><circle cx="4.5" cy="11.5" r="1.5"/><path d="M4.5 6v4M11.5 6c0 3-7 3-7 4"/></svg> },
+  { type: 'build', label: 'Build Stage', tone: 'sky', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="5.5" width="11" height="7.5" rx="1.5"/><path d="M5.5 5.5V4a2.5 2.5 0 015 0v1.5"/></svg> },
+  { type: 'matrix_build', label: 'Matrix Build', tone: 'blue', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="0.75"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="0.75"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="0.75"/><rect x="9" y="9" width="4.5" height="4.5" rx="0.75"/></svg> },
+  { type: 'lint', label: 'Lint / Static Analysis', tone: 'cyan', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 4.5h7M4.5 8h4.5M4.5 11.5h6"/></svg> },
+  { type: 'test', label: 'Unit Tests', tone: 'amber', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8.5l2.5 2.5 5.5-5.5"/></svg> },
+  { type: 'integration_test', label: 'Integration Tests', tone: 'orange', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4.5" width="4.5" height="7" rx="1"/><rect x="9.5" y="4.5" width="4.5" height="7" rx="1"/><path d="M6.5 8h3"/></svg> },
+  { type: 'smoke_test', label: 'Smoke Tests', tone: 'lime', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg> },
+  { type: 'cache_restore', label: 'Cache Restore', tone: 'emerald', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8a4.5 4.5 0 018.2-2.2"/><path d="M12.5 8a4.5 4.5 0 01-8.2 2.2"/><path d="M12 3.5V6H9.5"/></svg> },
+  { type: 'cache_save', label: 'Cache Save', tone: 'teal', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2.5V10M8 10L5.5 7.5M8 10l2.5-2.5"/><path d="M3.5 12.5h9"/></svg> },
+  { type: 'security_scan', label: 'Security Scan', tone: 'rose', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2L3 4.2v3.3c0 3.8 5 6 5 6s5-2.2 5-6V4.2L8 2z"/></svg> },
+  { type: 'package', label: 'Package Artifact', tone: 'violet', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5l5-2.8L13 5v6l-5 2.8L3 11z"/><path d="M8 7.8v6M3 5l5 2.8L13 5"/></svg> },
+  { type: 'release', label: 'Release', tone: 'fuchsia', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2.2l1.6 3.3h3.4l-2.7 2.6.9 3.7L8 9.9l-3.2 1.9.9-3.7L3 5.5h3.4z"/></svg> },
+  { type: 'approval_gate', label: 'Approval Gate', tone: 'yellow', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v4.5M5.8 5.5L8 7.5l2.2-2"/><rect x="3.5" y="10" width="9" height="3.2" rx="1"/></svg> },
+  { type: 'deploy', label: 'Deploy', tone: 'indigo', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 13V4.5M8 4.5l3 3M8 4.5l-3 3"/><path d="M3.5 2.5h9"/></svg> },
+  { type: 'canary_deploy', label: 'Canary Deploy', tone: 'indigo', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 13V7M8 7l2.2 2.2M8 7L5.8 9.2"/><circle cx="8" cy="4" r="1.5"/></svg> },
+  { type: 'blue_green_deploy', label: 'Blue/Green Deploy', tone: 'blue', advanced: true, icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="8" r="3.2"/><circle cx="10" cy="8" r="3.2"/></svg> },
+  { type: 'rollback', label: 'Rollback', tone: 'red', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 5.5L2.5 7.5l2 2"/><path d="M2.5 7.5h8.5a2.5 2.5 0 010 5H8"/></svg> },
+  { type: 'notify', label: 'Notification', tone: 'pink', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12.2a2 2 0 004 0"/><path d="M8 2.5a4 4 0 014 4c0 2.2 1.2 3.2 1.2 3.2H2.8S4 8.7 4 6.5a4 4 0 014-4z"/></svg> },
+  { type: 'conditional', label: 'Conditional Logic', tone: 'slate', icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2.5L12.5 8 8 13.5 3.5 8z"/></svg> },
 ];
 
 // Node types grouped by pipeline phase so the library reads top-to-bottom like a
@@ -161,8 +161,8 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
             className="w-full mb-4 flex items-center justify-center gap-2 ff-btn-secondary rounded-lg px-3 py-2 text-[13px] font-medium"
             title="Import an existing pipeline file and visualize it"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 9V2M7 9L4.5 6.5M7 9l2.5-2.5" /><path d="M2.5 11h9" />
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 10V2.5M8 10L5.5 7.5M8 10l2.5-2.5" /><path d="M3 12.5h10" />
             </svg>
             Import Pipeline
           </button>
@@ -176,9 +176,9 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
         <div className="relative mb-3">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ff-muted)] pointer-events-none"
-            width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+            width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
           >
-            <circle cx="6" cy="6" r="4" /><path d="M9 9l3 3" />
+            <circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5l3 3" />
           </svg>
           <input
             type="text"
@@ -194,7 +194,7 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
               aria-label="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors"
             >
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
             </button>
           )}
         </div>
@@ -212,10 +212,10 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
                   className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-md text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors disabled:hover:bg-transparent disabled:cursor-default"
                 >
                   <svg
-                    width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+                    width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
                     className={`transition-transform ${open ? 'rotate-90' : ''}`}
                   >
-                    <path d="M4 2.5L8 6l-4 3.5" />
+                    <path d="M5.5 3.5L10 8l-4.5 4.5" />
                   </svg>
                   <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">{category.label}</span>
                   <span className="ml-auto text-[10px] font-medium text-[var(--ff-muted)] tabular-nums">

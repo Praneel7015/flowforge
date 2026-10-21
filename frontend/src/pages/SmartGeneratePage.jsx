@@ -9,18 +9,18 @@ const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket'];
 const PLATFORM_LABELS = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
 const PLATFORM_ICONS = {
   github: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/>
     </svg>
   ),
   gitlab: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 13.5L2 9l1.8-6L6 7.5h4L12.2 3 14 9 8 13.5z"/>
     </svg>
   ),
   bitbucket: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z"/>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 3h11l-1.6 10H4.1L2.5 3z"/><path d="M6.2 6.5h3.6l-.5 3.2H6.7l-.5-3.2z"/>
     </svg>
   ),
 };
@@ -56,8 +56,8 @@ function StepIndicator({ current }) {
                   : 'border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-muted)]'
             }`}>
               {i < current ? (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1.5 5l2.5 2.5 4.5-4"/>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3.5 8.5l3 3 6-6.5"/>
                 </svg>
               ) : i + 1}
             </div>
@@ -236,9 +236,9 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
     return (
       <div className="h-full overflow-y-auto p-4 md:p-6">
         <div className="max-w-2xl mx-auto pt-8 text-center space-y-4 ff-enter">
-          <div className="w-12 h-12 rounded-2xl bg-[var(--ff-accent-soft)] border border-[var(--ff-border)] flex items-center justify-center mx-auto">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ff-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/>
+          <div className="w-12 h-12 rounded-2xl bg-[var(--ff-accent-soft)] border border-[var(--ff-border)] flex items-center justify-center mx-auto text-[var(--ff-accent)]">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/>
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-[var(--ff-text)]">No platforms connected</h2>
@@ -400,9 +400,9 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
         {step >= 3 && pushResult && (
           <section className="ff-surface-soft p-5">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-[var(--ff-success)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--ff-success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="7" cy="7" r="6"/><path d="M4.5 7l2 2 3.5-3.5"/>
+              <div className="w-8 h-8 rounded-full bg-[var(--ff-success)]/20 flex items-center justify-center flex-shrink-0 mt-0.5 text-[var(--ff-success)]">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/>
                 </svg>
               </div>
               <div className="flex-1 min-w-0">

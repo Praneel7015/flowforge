@@ -69,9 +69,9 @@ function getAIProvider(name, runtimeConfig = {}) {
   let config = getAIConfig(resolvedName);
 
   // If requested provider has no server key and no BYOM runtime key, fall back to
-  // the first enabled cloud provider (e.g. groq -> gemini -> openai -> anthropic -> featherless).
+  // the first enabled cloud provider (e.g. groq -> gemini -> openai -> anthropic).
   if ((!config || !config.enabled) && !useRuntimeConfig) {
-    const fallbackOrder = ['groq', 'gemini', 'openai', 'anthropic', 'featherless', 'ollama'];
+    const fallbackOrder = ['groq', 'gemini', 'openai', 'anthropic', 'ollama'];
     const fallback = fallbackOrder.find((candidate) => {
       const c = getAIConfig(candidate);
       return c && c.enabled;

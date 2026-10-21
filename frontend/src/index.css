@@ -71,7 +71,7 @@
 
 /* ═══════════════════════════════════════════════════════════════
    LIGHT THEME
-   Clean black-on-white. No color accents — neutral grays only.
+   High-contrast studio light palette with indigo/cobalt accent.
    ═══════════════════════════════════════════════════════════════ */
 [data-theme="light"] {
   --ff-bg: #FAFAFA;
@@ -85,11 +85,11 @@
   --ff-text: #18181B;
   --ff-text-secondary: #3F3F46;
   --ff-muted: #71717A;
-  --ff-accent: #27272A;
-  --ff-accent-soft: rgba(39, 39, 42, 0.06);
-  --ff-accent-glow: rgba(39, 39, 42, 0.12);
-  --ff-accent-text: #18181B;
-  --ff-accent-text-muted: #52525B;
+  --ff-accent: #4F46E5;
+  --ff-accent-soft: rgba(79, 70, 229, 0.08);
+  --ff-accent-glow: rgba(79, 70, 229, 0.16);
+  --ff-accent-text: #4338CA;
+  --ff-accent-text-muted: rgba(67, 56, 202, 0.72);
   --ff-danger: #DC2626;
   --ff-danger-soft: rgba(220, 38, 38, 0.06);
   --ff-warning: #B45309;
@@ -103,7 +103,7 @@
   --ff-card-border-hover: #D4D4D8;
   --ff-card-border-strong: #D4D4D8;
   --ff-sidebar-bg: #FFFFFF;
-  --ff-header-bg: rgba(250, 250, 250, 0.88);
+  --ff-header-bg: rgba(255, 255, 255, 0.92);
   --ff-code-bg: #F4F4F5;
   --ff-code-bg-inline: #F4F4F5;
   --ff-overlay: rgba(0, 0, 0, 0.25);
@@ -118,11 +118,11 @@
   --ff-bubble-bot-bg: #F4F4F5;
   --ff-bubble-bot-border: #E4E4E7;
   --ff-minimap-bg: #FFFFFF;
-  --ff-node-counter-bg: #FFFFFF;
+  --ff-node-counter-bg: rgba(255, 255, 255, 0.95);
   --ff-scrollbar-thumb: #D4D4D8;
   --ff-scrollbar-thumb-hover: #A1A1AA;
-  --ff-edge-stroke: #D4D4D8;
-  --ff-dots-color: #E4E4E7;
+  --ff-edge-stroke: #A1A1AA;
+  --ff-dots-color: #D4D4D8;
   --ff-surface-inset: #F4F4F5;
   color-scheme: light;
 }
@@ -342,9 +342,9 @@ body {
 }
 
 [data-theme="light"] .ff-nav-btn-active {
-  background: #F4F4F5;
-  color: #18181B;
-  border-color: var(--ff-border);
+  background: var(--ff-accent-soft);
+  color: var(--ff-accent-text);
+  border-color: rgba(79, 70, 229, 0.18);
 }
 
 .ff-nav-btn-active:hover {
@@ -414,17 +414,16 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--ff-scrollbar-thumb); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ff-scrollbar-thumb-hover); }
 
-/* ── Theme toggle (text-style sun / moon glyphs, not emoji) ─ */
+/* ── Theme toggle (single crisp 32x32 icon button) ───────── */
 .ff-theme-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.125rem;
+  width: 2rem;
   height: 2rem;
-  min-width: 2.375rem;
-  padding: 0 0.35rem;
-  border-radius: var(--ff-radius-sm);
-  border: 1px solid var(--ff-card-border);
+  padding: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ff-card-border-strong);
   background: var(--ff-card-bg);
   color: var(--ff-text-secondary);
   cursor: pointer;
@@ -445,19 +444,4 @@ body {
 .ff-theme-toggle:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
-}
-
-.ff-theme-toggle-mark {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  opacity: 0.3;
-  transition: opacity var(--ff-transition);
-  user-select: none;
-}
-
-.ff-theme-toggle-mark-active {
-  opacity: 1;
-  color: var(--ff-text);
 }

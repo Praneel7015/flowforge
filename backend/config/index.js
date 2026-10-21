@@ -18,7 +18,7 @@ const config = {
   ai: {
     groq: {
       name: 'groq',
-      displayName: 'Groq (Fast Free Tier)',
+      displayName: 'Groq (Llama 3.3 70B)',
       enabled: !!process.env.GROQ_API_KEY,
       apiKey: process.env.GROQ_API_KEY,
       baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
@@ -44,14 +44,6 @@ const config = {
       enabled: !!process.env.OPENAI_API_KEY,
       apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
-    },
-    featherless: {
-      name: 'featherless',
-      displayName: 'Featherless AI',
-      enabled: !!process.env.FEATHERLESS_API_KEY,
-      apiKey: process.env.FEATHERLESS_API_KEY,
-      baseUrl: process.env.FEATHERLESS_BASE_URL || 'https://api.featherless.ai/v1',
-      model: process.env.FEATHERLESS_MODEL || 'Qwen/Qwen2.5-Coder-1.5B-Instruct',
     },
     ollama: {
       name: 'ollama',

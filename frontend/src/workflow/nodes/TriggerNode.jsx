@@ -30,7 +30,7 @@ function TriggerNode({ id, data, type, selected }) {
 
   const selectedTone = selected
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
-    : 'hover:border-emerald-400/50 transition-all';
+    : 'hover:border-emerald-500/60 transition-all shadow-sm';
 
   const branchValue = isMR
     ? data.config?.targetBranch || 'main'
@@ -38,13 +38,13 @@ function TriggerNode({ id, data, type, selected }) {
 
   return (
     <div
-      className={`px-3.5 py-2.5 rounded-xl border border-emerald-500/35 bg-emerald-500/10 min-w-[195px] backdrop-blur-md ${selectedTone}`}
+      className={`px-3.5 py-2.5 rounded-xl border border-emerald-500/40 bg-[var(--ff-surface-solid)] min-w-[195px] backdrop-blur-md ${selectedTone}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">
+        <span className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wider">
           {isMR ? 'PR / MR Trigger' : 'Push Trigger'}
         </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 ff-code">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] ff-code">
           {branchValue}
         </span>
       </div>

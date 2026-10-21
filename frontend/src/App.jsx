@@ -44,7 +44,7 @@ const ONBOARDING_STATUS = {
 const NAV_ICONS = {
   builder: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v5M9 11.5h5"/></svg>,
   prompt: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M4.5 4l2 2M11.5 4l-2 2"/><rect x="3" y="8" width="10" height="6" rx="1.5"/></svg>,
-  repo: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>,
+  repo: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/></svg>,
   jenkins: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h3M9 4h3M4 8h8M6 12h4"/><path d="M5.5 4v4M10.5 4v4M8 8v4"/></svg>,
   health: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8h2l1-2 2 4 1-2h2"/></svg>,
   chat: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 2v-2a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M5.5 7h5M5.5 5h3"/></svg>,
@@ -162,8 +162,7 @@ function canUseProvider(providerList, name) {
 function getFallbackProviders() {
   return {
     ai: [
-      { name: 'groq', displayName: 'Groq (Fast Free Tier)', enabled: false },
-      { name: 'featherless', displayName: 'Featherless AI', enabled: false },
+      { name: 'groq', displayName: 'Groq (Llama 3.3 70B)', enabled: true },
       { name: 'anthropic', displayName: 'Claude (Anthropic)', enabled: false },
       { name: 'gemini', displayName: 'Gemini (Google)', enabled: false },
       { name: 'openai', displayName: 'GPT (OpenAI)', enabled: false },
@@ -182,9 +181,13 @@ function getFallbackProviders() {
 }
 
 function pickInitialSelection(providerData, storedPreferences) {
+  const enabledCloud = providerData.ai.find(
+    (provider) => provider.enabled && provider.name !== 'ollama'
+  );
   const defaultAI =
-    providerData.ai.find((provider) => provider.enabled)?.name ||
+    enabledCloud?.name ||
     providerData.defaults?.aiProvider ||
+    providerData.ai.find((provider) => provider.enabled)?.name ||
     providerData.ai[0]?.name ||
     'groq';
 
@@ -519,7 +522,7 @@ export default function App({ onBackToLanding }) {
           aria-label="Expand YAML panel"
           className="ff-surface h-full w-full flex xl:flex-col items-center justify-center gap-2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors ff-enter"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3L7 8l5 5M7 3L2 8l5 5" />
           </svg>
           <span className="text-[10px] font-semibold uppercase tracking-[0.16em] xl:[writing-mode:vertical-rl] xl:rotate-180">
@@ -745,7 +748,7 @@ export default function App({ onBackToLanding }) {
                 aria-label="Close sidebar"
                 title="Close sidebar"
               >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M10 3L5 8l5 5"/></svg>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
               </button>
             </div>
             <h1 className="text-lg font-bold tracking-tight text-[var(--ff-text)] mt-0.5">Pipeline Studio</h1>
@@ -788,67 +791,78 @@ export default function App({ onBackToLanding }) {
             sidebarOpen ? 'lg:ml-60' : 'ml-0'
           }`}
         >
-          {/* ── Top Bar ──────────────────────── */}
-          <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-4 md:px-6 py-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+          {/* ── Top Bar (48px single-line studio toolbar) ── */}
+          <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-3 md:px-4">
+            <div className="h-12 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors flex-shrink-0"
                   aria-label="Toggle navigation sidebar"
                   title="Toggle navigation sidebar"
                 >
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h12M3 9h12M3 13h12"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+                    <path d="M6 2.5v11" />
+                  </svg>
                 </button>
-                {onBackToLanding && (
-                  <button
-                    onClick={onBackToLanding}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
-                    aria-label="Back to home"
-                    title="Back to home"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l6-6 6 6"/><path d="M5 7.5V15h3v-4h2v4h3V7.5"/></svg>
-                  </button>
-                )}
-                <div>
-                  <h2 className="text-base md:text-lg font-semibold tracking-tight text-[var(--ff-text)]">
+
+                <div className="flex items-center gap-1.5 text-sm min-w-0">
+                  {onBackToLanding ? (
+                    <button
+                      type="button"
+                      onClick={onBackToLanding}
+                      className="font-semibold tracking-tight text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] transition-colors truncate"
+                      title="Back to FlowForge overview"
+                    >
+                      FlowForge
+                    </button>
+                  ) : (
+                    <span className="font-semibold tracking-tight text-[var(--ff-text-secondary)]">
+                      FlowForge
+                    </span>
+                  )}
+                  <span className="text-[var(--ff-muted)] select-none">/</span>
+                  <h2 className="font-semibold tracking-tight text-[var(--ff-text)] truncate">
                     {currentPanelMeta.title}
                   </h2>
-                  <p className="hidden sm:block text-xs text-[var(--ff-muted)] mt-0.5">{currentPanelMeta.subtitle}</p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {providers.ai?.length > 0 && (
-                  <ProviderSelector
-                    type="ai"
-                    providers={providers.ai}
-                    selected={selectedProviders.ai}
-                    onChange={(val) => handleProviderChange('ai', val)}
-                    compact
-                    allowDisabled
-                  />
-                )}
-                {providers.cicd?.length > 0 && (
-                  <ProviderSelector
-                    type="cicd"
-                    providers={providers.cicd}
-                    selected={selectedProviders.cicd}
-                    onChange={(val) => handleProviderChange('cicd', val)}
-                    compact
-                  />
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {(providers.ai?.length > 0 || providers.cicd?.length > 0) && (
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-0.5">
+                    {providers.ai?.length > 0 && (
+                      <ProviderSelector
+                        type="ai"
+                        providers={providers.ai}
+                        selected={selectedProviders.ai}
+                        onChange={(val) => handleProviderChange('ai', val)}
+                        compact
+                        allowDisabled
+                        className="!border-0 !bg-transparent hover:!bg-[var(--ff-nav-hover)] focus:!shadow-none"
+                      />
+                    )}
+                    {providers.ai?.length > 0 && providers.cicd?.length > 0 && (
+                      <span className="w-px h-4 bg-[var(--ff-card-border-strong)]" aria-hidden="true" />
+                    )}
+                    {providers.cicd?.length > 0 && (
+                      <ProviderSelector
+                        type="cicd"
+                        providers={providers.cicd}
+                        selected={selectedProviders.cicd}
+                        onChange={(val) => handleProviderChange('cicd', val)}
+                        compact
+                        className="!border-0 !bg-transparent hover:!bg-[var(--ff-nav-hover)] focus:!shadow-none"
+                      />
+                    )}
+                  </div>
                 )}
                 <ThemeToggleButton />
-                <button
-                  onClick={() => setActivePanel('settings')}
-                  className="ff-btn-secondary rounded-lg px-3 py-1.5 text-xs font-medium"
-                >
-                  Settings
-                </button>
               </div>
             </div>
 
-            <nav className="mt-3 lg:hidden flex gap-2 overflow-x-auto pb-1">
+            <nav className="lg:hidden flex gap-1.5 overflow-x-auto pb-2 pt-0.5 border-t border-[var(--ff-card-border)]">
               {NAV_ITEMS.map((item) => renderNavigationButton(item, true))}
             </nav>
           </header>

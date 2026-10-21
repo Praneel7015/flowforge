@@ -29,10 +29,10 @@ function ConditionalNode({ id, data, selected }) {
 
   const selectedTone = selected
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
-    : 'hover:border-slate-400/50 transition-all';
+    : 'hover:border-[var(--ff-border-strong)] transition-all shadow-sm';
 
   return (
-    <div className={`px-3.5 py-2.5 rounded-xl border border-slate-500/35 bg-slate-500/10 min-w-[195px] backdrop-blur-md ${selectedTone}`}>
+    <div className={`px-3.5 py-2.5 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface-solid)] min-w-[195px] backdrop-blur-md ${selectedTone}`}>
       <Handle type="target" position={Position.Top} className="!bg-slate-400 !w-3 !h-3" />
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] text-[var(--ff-text-secondary)] font-semibold uppercase tracking-wider">
@@ -68,7 +68,7 @@ function ConditionalNode({ id, data, selected }) {
               setEditing(true);
             }}
             title="Double-click to edit condition expression"
-            className="text-[11px] text-[var(--ff-text-secondary)] ff-code bg-black/20 hover:bg-black/30 px-2 py-1 rounded border border-white/5 cursor-text truncate"
+            className="text-[11px] text-[var(--ff-text-secondary)] ff-code bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded border border-[var(--ff-card-border-strong)] cursor-text truncate transition-colors"
           >
             {data.config?.condition || 'if: branch == main'}
           </div>

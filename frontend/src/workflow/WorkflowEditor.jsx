@@ -1232,7 +1232,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           title="Undo (Ctrl+Z)"
           aria-label="Undo"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 4.5 2.5 8 6 11.5" /><path d="M2.5 8H9.5a4 4 0 0 1 0 8H7" />
           </svg>
         </button>
@@ -1243,18 +1243,18 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           title="Redo (Ctrl+Y)"
           aria-label="Redo"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 4.5 13.5 8 10 11.5" /><path d="M13.5 8H6.5a4 4 0 0 0 0 8H9" />
           </svg>
         </button>
         <button
           onClick={handleDeleteSelectedNode}
           disabled={!(selectedNodeId || configNodeId || nodes.some((node) => node.selected))}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--ff-danger)] hover:bg-[var(--ff-danger-soft)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Delete selected node"
           aria-label="Delete selected node"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 4.5h10M6.5 4.5V3.2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.3M4.8 4.5l.6 9a1 1 0 0 0 1 .9h3.2a1 1 0 0 0 1-.9l.6-9" />
           </svg>
         </button>
@@ -1265,7 +1265,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           title="Clear all nodes and connections"
           aria-label="Clear canvas"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="8" cy="8" r="5.5" /><path d="M4.5 4.5l7 7" />
           </svg>
         </button>
@@ -1276,7 +1276,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           title="Save current workflow as a reusable template"
           aria-label="Save as template"
         >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 2.5h8v11l-4-2.8-4 2.8z" />
           </svg>
         </button>
