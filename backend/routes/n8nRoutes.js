@@ -1,24 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
-
-// === Security: block SSRF via private/internal URLs ===
-function isSafeWebhookUrl(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return false;
-    if (/^10\./.test(host)) return false;
-    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
-    if (/^192\.168\./.test(host)) return false;
-    if (/^169\.254\./.test(host)) return false;
-    if (host.endsWith('.internal') || host.endsWith('.local')) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
+const { isSafePublicUrl } = require('../utils/ssrf');
 
 // === Chat payload helpers (from main) ===
 function sanitizeText(value, maxLen = 200) {
@@ -119,7 +102,7 @@ router.post('/forward', async (req, res) => {
     return res.status(400).json({ error: 'webhookUrl is required' });
   }
 
-  if (!isSafeWebhookUrl(webhookUrl)) {
+  if (!isSafePublicUrl(webhookUrl)) {
     return res.status(400).json({ error: 'Invalid webhook URL. Must be a public HTTP(S) URL.' });
   }
 
@@ -156,7 +139,7 @@ router.post('/chat', async (req, res) => {
     return res.status(400).json({ error: 'chatWebhookUrl is required' });
   }
 
-  if (!isSafeWebhookUrl(chatWebhookUrl)) {
+  if (!isSafePublicUrl(chatWebhookUrl)) {
     return res.status(400).json({ error: 'Invalid webhook URL. Must be a public HTTP(S) URL.' });
   }
 

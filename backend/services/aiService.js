@@ -4,6 +4,7 @@
  */
 const { getAIProvider } = require('../providers/ai');
 const { getCICDGenerator } = require('../providers/cicd');
+const { scanForSecrets } = require('../utils/secretScanner');
 const axios = require('axios');
 const yaml = require('js-yaml');
 
@@ -255,13 +256,13 @@ function buildHeuristicHealthReport(configText, platformDisplayName = 'CI/CD') {
     breakdown.security.tips.push('Use CI secrets/variables and avoid hardcoded credentials.');
   }
 
-  // Hardcoded Secret Scanner
-  const hardcodedSecretRegex =
-    /(?:\bAKIA[0-9A-Z]{16}\b|\bghp_[A-Za-z0-9]{20,}\b|\bglpat-[A-Za-z0-9_-]{10,}\b|\b(?:password|api_key|apikey|secret_key|access_token)\s*[:=]\s*['"][^'"{$\s]{4,}['"])/i;
-  if (hardcodedSecretRegex.test(String(configText || ''))) {
+  // Hardcoded Secret Scanner (uses unified 10-rule secretScanner)
+  const secretScan = scanForSecrets(String(configText || ''));
+  if (!secretScan.ok && secretScan.findings.length > 0) {
+    const labels = [...new Set(secretScan.findings.map((f) => f.label))].join(', ');
     breakdown.security.score -= 25;
     breakdown.security.issues.push(
-      'CRITICAL: Potential hardcoded secret or credential literal (AWS key, GitHub/GitLab token, or password/api_key) detected in pipeline configuration.'
+      `CRITICAL: Potential hardcoded secret or credential literal (${labels}) detected in pipeline configuration.`
     );
     breakdown.security.tips.push(
       'Immediately revoke leaked credentials and move all secrets to encrypted CI/CD environment variables or a secret manager.'

@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
+const { isSafePublicUrl } = require('../utils/ssrf');
 const GITHUB_VALIDATE_TIMEOUT_MS = Number(process.env.GITHUB_VALIDATE_TIMEOUT_MS || 30000);
 const GITLAB_VALIDATE_TIMEOUT_MS = Number(process.env.GITLAB_VALIDATE_TIMEOUT_MS || 30000);
 const BITBUCKET_VALIDATE_TIMEOUT_MS = Number(process.env.BITBUCKET_VALIDATE_TIMEOUT_MS || 30000);
@@ -28,27 +29,6 @@ router.post('/validate', async (req, res) => {
   }
 });
 
-/**
- * Block SSRF: reject private IPs, localhost, and non-HTTPS URLs.
- */
-function isSafeUrl(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.protocol !== 'https:') return false;
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return false;
-    // Block private IP ranges
-    if (/^10\./.test(host)) return false;
-    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
-    if (/^192\.168\./.test(host)) return false;
-    if (/^169\.254\./.test(host)) return false; // AWS metadata
-    if (host.endsWith('.internal') || host.endsWith('.local')) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function validatePlatform(platform, creds) {
   switch (platform) {
     case 'gitlab':
@@ -70,7 +50,7 @@ async function validateGitLab(creds) {
 
   const baseUrl = (instanceUrl || 'https://gitlab.com').replace(/\/+$/, '');
 
-  if (!isSafeUrl(baseUrl + '/api/v4/user')) {
+  if (!isSafePublicUrl(baseUrl + '/api/v4/user') || !baseUrl.startsWith('https://')) {
     return { valid: false, error: 'Invalid instance URL. Must be a public HTTPS URL.' };
   }
 

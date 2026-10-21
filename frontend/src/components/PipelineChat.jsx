@@ -58,10 +58,21 @@ function readOrCreateChatIdentity() {
   return identity;
 }
 
-function Message({ role, content, timestamp }) {
+function extractPipelineBlock(text) {
+  if (typeof text !== 'string') return null;
+  const match = text.match(/```(?:ya?ml|groovy|jenkinsfile)?\s*\n([\s\S]*?)```/i);
+  if (match && match[1] && match[1].trim().length > 15) {
+    return match[1].trim();
+  }
+  return null;
+}
+
+function Message({ role, content, timestamp, onApplyCode }) {
   const isUser = role === 'user';
   const displayContent = decodeEscapedNewlines(content);
   const [copied, setCopied] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const extractedYaml = !isUser ? extractPipelineBlock(displayContent) : null;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
@@ -70,16 +81,26 @@ function Message({ role, content, timestamp }) {
     });
   }, [content]);
 
+  const handleApply = async () => {
+    if (!extractedYaml || !onApplyCode) return;
+    setApplying(true);
+    try {
+      await onApplyCode(extractedYaml);
+    } finally {
+      setApplying(false);
+    }
+  };
+
   return (
-    <div className={`group flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`group flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
         <div className="w-7 h-7 rounded-full bg-[var(--ff-avatar-bg)] text-[var(--ff-text)] flex-shrink-0 flex items-center justify-center text-xs font-bold">
           FF
         </div>
       )}
-      <div className="max-w-[80%]">
+      <div className="max-w-[85%] min-w-0">
         <div
-          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed
+          className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed
             ${isUser
               ? 'bg-[var(--ff-accent)] text-white rounded-tr-sm border border-[var(--ff-accent)]'
               : 'bg-[var(--ff-bubble-bot-bg)] text-[var(--ff-text)] rounded-tl-sm border border-[var(--ff-card-border-strong)]'}`}
@@ -99,6 +120,15 @@ function Message({ role, content, timestamp }) {
               className="text-[10px] text-[var(--ff-muted)] hover:text-[var(--ff-text-secondary)] opacity-0 group-hover:opacity-100 transition-opacity"
             >
               {copied ? 'Copied' : 'Copy'}
+            </button>
+          )}
+          {extractedYaml && onApplyCode && (
+            <button
+              onClick={handleApply}
+              disabled={applying}
+              className="text-[10px] font-semibold text-[var(--ff-accent)] hover:underline disabled:opacity-50"
+            >
+              {applying ? 'Applying...' : '↻ Apply to Canvas'}
             </button>
           )}
         </div>
@@ -122,7 +152,7 @@ const SUGGESTION_CATEGORIES = [
   },
 ];
 
-export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, aiOptions }) {
+export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, aiOptions, onApplyToCanvas }) {
   const [chatIdentity] = useState(() => readOrCreateChatIdentity());
   const [conversationId, setConversationId] = useState(() => createConversationId(chatIdentity.userId));
   const [messages, setMessages] = useState([
@@ -137,6 +167,32 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
+
+  const handleApplyCodeToCanvas = useCallback(
+    async (yamlText) => {
+      if (!onApplyToCanvas || !yamlText?.trim()) return;
+      try {
+        const { data } = await axios.post('/api/pipelines/import', {
+          configText: yamlText,
+          cicdPlatform: cicdPlatform || 'gitlab',
+        });
+        onApplyToCanvas({
+          yaml: yamlText,
+          nodes: data?.nodes || [],
+          edges: data?.edges || [],
+          targetPlatform: data?.detectedPlatform || cicdPlatform,
+        });
+      } catch {
+        onApplyToCanvas({
+          yaml: yamlText,
+          nodes: [],
+          edges: [],
+          targetPlatform: cicdPlatform,
+        });
+      }
+    },
+    [onApplyToCanvas, cicdPlatform]
+  );
 
   useEffect(() => {
     return () => { abortRef.current?.abort(); };
@@ -268,9 +324,15 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
       </div>
 
       {/* Messages */}
-      <div role="log" aria-live="polite" aria-label="Chat messages" className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-transparent">
+      <div role="log" aria-live="polite" aria-label="Chat messages" className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-transparent">
         {messages.map((msg, i) => (
-          <Message key={i} role={msg.role} content={msg.content} timestamp={msg.timestamp} />
+          <Message
+            key={i}
+            role={msg.role}
+            content={msg.content}
+            timestamp={msg.timestamp}
+            onApplyCode={onApplyToCanvas ? handleApplyCodeToCanvas : undefined}
+          />
         ))}
         {loading && (
           <div className="flex gap-3" aria-busy="true" aria-label="Assistant is typing">

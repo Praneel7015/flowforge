@@ -14,6 +14,7 @@ const PromptPanel = lazy(() => import('./components/PromptPanel'));
 const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
 const HealthAdvisor = lazy(() => import('./components/HealthAdvisor'));
 const PipelineChat = lazy(() => import('./components/PipelineChat'));
+const LiveRunsPanel = lazy(() => import('./components/LiveRunsPanel'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SmartGeneratePage = lazy(() => import('./pages/SmartGeneratePage'));
 
@@ -22,9 +23,9 @@ const SETTINGS_STORAGE_KEY = 'flowforge.preferences.v1';
 const ONBOARDING_STORAGE_KEY = 'flowforge.onboarding.v1';
 const YAML_WIDTH_KEY = 'flowforge.yaml.width.v1';
 const YAML_COLLAPSED_KEY = 'flowforge.yaml.collapsed.v1';
-const YAML_MIN_WIDTH = 300;
+const YAML_MIN_WIDTH = 320;
 const YAML_MAX_WIDTH = 760;
-const YAML_DEFAULT_WIDTH = 360;
+const YAML_DEFAULT_WIDTH = 400;
 const clampYamlWidth = (value) => Math.max(YAML_MIN_WIDTH, Math.min(YAML_MAX_WIDTH, value));
 
 function readLocalStorage(key) {
@@ -44,7 +45,7 @@ const ONBOARDING_STATUS = {
 const NAV_ICONS = {
   builder: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v5M9 11.5h5"/></svg>,
   prompt: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M4.5 4l2 2M11.5 4l-2 2"/><rect x="3" y="8" width="10" height="6" rx="1.5"/></svg>,
-  repo: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2.5-6 1.5-6 3"/></svg>,
+  repo: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4M4.5 4l2 2M11.5 4l-2 2"/><rect x="3" y="8" width="10" height="6" rx="1.5"/></svg>,
   jenkins: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h3M9 4h3M4 8h8M6 12h4"/><path d="M5.5 4v4M10.5 4v4M8 8v4"/></svg>,
   health: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5 8h2l1-2 2 4 1-2h2"/></svg>,
   chat: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 2v-2a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M5.5 7h5M5.5 5h3"/></svg>,
@@ -53,12 +54,53 @@ const NAV_ICONS = {
 
 const NAV_ITEMS = [
   { id: 'builder', label: 'Builder' },
-  { id: 'prompt', label: 'Generate' },
-  { id: 'repo', label: 'Smart Generate' },
+  { id: 'repo', label: 'AI Generator' },
   { id: 'jenkins', label: 'Migrate' },
   { id: 'health', label: 'Health' },
-  { id: 'chat', label: 'Chat' },
+  { id: 'chat', label: 'Copilot' },
   { id: 'settings', label: 'Settings' },
+];
+
+const INSPECTOR_TABS = [
+  {
+    id: 'code',
+    label: 'Code',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'health',
+    label: 'Health',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M5 8h2l1-2 2 4 1-2h2" />
+      </svg>
+    ),
+  },
+  {
+    id: 'copilot',
+    label: 'Copilot',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 2v-2a1 1 0 01-1-1V4a1 1 0 011-1z" />
+        <path d="M5.5 7h5M5.5 5h3" />
+      </svg>
+    ),
+  },
+  {
+    id: 'runs',
+    label: 'Live Runs',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M6.5 5.5l4 2.5-4 2.5v-5z" />
+      </svg>
+    ),
+  },
 ];
 
 const PANEL_META = {
@@ -67,23 +109,23 @@ const PANEL_META = {
     subtitle: 'Build pipelines visually, connect stages, and export clean CI/CD YAML.',
   },
   prompt: {
-    title: 'Generate From Prompt',
-    subtitle: 'Describe the workflow and generate a production-ready pipeline structure.',
+    title: 'AI Generator',
+    subtitle: 'Describe the workflow or attach repository files to generate a production-ready pipeline.',
   },
   repo: {
-    title: 'Smart Generate',
-    subtitle: 'Connect a repo, select files as context, generate a tailored pipeline, and push it back.',
+    title: 'AI Generator',
+    subtitle: 'Prompt templates + repository context to generate and push tailored CI/CD pipelines.',
   },
   jenkins: {
     title: 'Migrate Existing Pipeline',
-    subtitle: 'Convert Jenkinsfiles into modern pipeline configs and editable nodes.',
+    subtitle: 'Convert Jenkinsfiles and CI configs into modern pipeline configs and editable nodes.',
   },
   health: {
     title: 'Health Advisor',
     subtitle: 'Analyze pipeline quality across speed, security, and reliability.',
   },
   chat: {
-    title: 'Pipeline Assistant',
+    title: 'Pipeline Copilot',
     subtitle: 'Ask questions, troubleshoot, and improve your current pipeline quickly.',
   },
   settings: {
@@ -236,8 +278,11 @@ function pickInitialSelection(providerData, storedPreferences) {
 export default function App({ onBackToLanding }) {
   const [yamlOutput, setYamlOutput] = useState('');
   const [activePanel, setActivePanel] = useState('builder');
+  const [inspectorTab, setInspectorTab] = useState('code'); // 'code' | 'health' | 'copilot' | 'runs'
   const [importedWorkflow, setImportedWorkflow] = useState(null);
   const [addNodeToCanvas, setAddNodeToCanvas] = useState(null);
+  const [nodeRunStatuses, setNodeRunStatuses] = useState({});
+  const [canvasGraph, setCanvasGraph] = useState({ nodes: [], edges: [] });
 
   // Provider state
   const [providers, setProviders] = useState({ ai: [], cicd: [], defaults: {} });
@@ -502,14 +547,39 @@ export default function App({ onBackToLanding }) {
   const currentPanelMeta = PANEL_META[activePanel] || PANEL_META.builder;
   const showSidebar = activePanel === 'builder';
   const showYamlPanel =
-    Boolean(yamlOutput) &&
-    activePanel !== 'chat' &&
-    activePanel !== 'health' &&
-    activePanel !== 'settings';
+    activePanel === 'builder' ||
+    (Boolean(yamlOutput) &&
+      activePanel !== 'chat' &&
+      activePanel !== 'health' &&
+      activePanel !== 'settings');
 
-  // Width of the YAML grid column: a slim strip when collapsed, otherwise the
+  // Width of the right inspector grid column: a slim strip when collapsed, otherwise the
   // (persisted, resizable) width. Consumed via the `--yaml-col` CSS variable.
   const yamlColValue = yamlCollapsed ? '2.75rem' : `${yamlWidth}px`;
+
+  const startInspectorResize = useCallback(
+    (event) => {
+      event.preventDefault();
+      const onMove = (ev) => handleYamlResize(ev.movementX);
+      const stop = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', stop);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', stop);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    },
+    [handleYamlResize]
+  );
+
+  const lazyFallback = (
+    <div className="h-full flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-[var(--ff-border)] border-t-[var(--ff-accent)] rounded-full animate-spin" />
+    </div>
+  );
 
   const renderYamlRegion = () => {
     if (!showYamlPanel) return null;
@@ -518,36 +588,151 @@ export default function App({ onBackToLanding }) {
       return (
         <button
           onClick={() => setYamlCollapsed(false)}
-          title="Show YAML"
-          aria-label="Expand YAML panel"
+          title="Expand Studio Inspector (Code, Health, Copilot, Live Runs)"
+          aria-label="Expand Studio Inspector"
           className="ff-surface h-full w-full flex xl:flex-col items-center justify-center gap-2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors ff-enter"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3L7 8l5 5M7 3L2 8l5 5" />
           </svg>
           <span className="text-[10px] font-semibold uppercase tracking-[0.16em] xl:[writing-mode:vertical-rl] xl:rotate-180">
-            YAML
+            INSPECTOR
           </span>
         </button>
       );
     }
 
+    if (activePanel !== 'builder') {
+      return (
+        <YamlPreview
+          yaml={yamlOutput}
+          onClose={() => setYamlCollapsed(true)}
+          onResizeDelta={handleYamlResize}
+          platform={currentCICDPlatform}
+          onSyncToCanvas={handlePipelineImported}
+        />
+      );
+    }
+
     return (
-      <YamlPreview
-        yaml={yamlOutput}
-        onClose={() => setYamlCollapsed(true)}
-        onResizeDelta={handleYamlResize}
-        platform={currentCICDPlatform}
-        onSyncToCanvas={handlePipelineImported}
-      />
+      <aside className="ff-surface relative flex flex-col h-full min-h-[280px] ff-enter overflow-hidden">
+        {/* Resize handle (desktop only) */}
+        <div
+          onMouseDown={startInspectorResize}
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize Studio Inspector"
+          className="group hidden xl:block absolute left-0 top-0 h-full w-2 -translate-x-1/2 cursor-col-resize z-20"
+        >
+          <div className="mx-auto h-full w-0.5 group-hover:bg-[var(--ff-accent)] transition-colors" />
+        </div>
+
+        {/* Segmented Docked Studio Inspector Header: Code | Health | Copilot | Live Runs */}
+        <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-[var(--ff-card-border)] bg-[var(--ff-surface-2)]">
+          <div className="flex items-center gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)]">
+            {INSPECTOR_TABS.map((tab) => {
+              const active = inspectorTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setInspectorTab(tab.id)}
+                  className={`flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 rounded-md text-[11px] font-medium transition-colors truncate ${
+                    active
+                      ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-sm'
+                      : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
+                  }`}
+                  title={`Switch inspector to ${tab.label}`}
+                >
+                  <span className="flex-shrink-0">{tab.icon}</span>
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            {(inspectorTab === 'health' || inspectorTab === 'copilot') && (
+              <button
+                type="button"
+                onClick={() => setActivePanel(inspectorTab === 'health' ? 'health' : 'chat')}
+                title="Open in full workspace view"
+                aria-label="Open in full workspace view"
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 2h4v4M6 14H2v-4M14 2L9.5 6.5M2 14l4.5-4.5" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setYamlCollapsed(true)}
+              title="Collapse Studio Inspector"
+              aria-label="Collapse Studio Inspector"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 3l5 5-5 5M9 3l5 5-5 5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Active Docked Tab Content */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {inspectorTab === 'code' && (
+            <YamlPreview
+              yaml={yamlOutput}
+              platform={currentCICDPlatform}
+              onSyncToCanvas={handlePipelineImported}
+            />
+          )}
+          {inspectorTab === 'health' && (
+            <ErrorBoundary name="Docked Health Advisor" key="docked-health">
+              <Suspense fallback={lazyFallback}>
+                <HealthAdvisor
+                  currentYaml={yamlOutput}
+                  aiProvider={selectedProviders.ai}
+                  cicdPlatform={selectedProviders.cicd}
+                  aiOptions={aiOptions}
+                  onLoadToBuilder={handleGenerated}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {inspectorTab === 'copilot' && (
+            <ErrorBoundary name="Docked Copilot" key="docked-copilot">
+              <Suspense fallback={lazyFallback}>
+                <PipelineChat
+                  currentYaml={yamlOutput}
+                  aiProvider={selectedProviders.ai}
+                  cicdPlatform={selectedProviders.cicd}
+                  aiOptions={aiOptions}
+                  onApplyToCanvas={handleGenerated}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {inspectorTab === 'runs' && (
+            <ErrorBoundary name="Live Runs Telemetry" key="docked-runs">
+              <Suspense fallback={lazyFallback}>
+                <LiveRunsPanel
+                  currentYaml={yamlOutput}
+                  cicdPlatform={selectedProviders.cicd}
+                  aiProvider={selectedProviders.ai}
+                  aiOptions={aiOptions}
+                  canvasGraph={canvasGraph}
+                  onUpdateNodeStatuses={setNodeRunStatuses}
+                  onApplyFixedPipeline={handlePipelineImported}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </div>
+      </aside>
     );
   };
-
-  const lazyFallback = (
-    <div className="h-full flex items-center justify-center">
-      <div className="w-6 h-6 border-2 border-[var(--ff-border)] border-t-[var(--ff-accent)] rounded-full animate-spin" />
-    </div>
-  );
 
   const panelContent = (() => {
     if (activePanel === 'builder') {
@@ -561,30 +746,22 @@ export default function App({ onBackToLanding }) {
               cicdPlatform={selectedProviders.cicd}
               onRegisterAddNode={(fn) => setAddNodeToCanvas(() => fn)}
               onOpenImport={() => setShowImport(true)}
+              onPlatformDetected={(plat) => {
+                if (plat && providers.cicd.some((p) => p.name === plat)) {
+                  setSelectedProviders((prev) => ({ ...prev, cicd: plat }));
+                }
+              }}
+              nodeRunStatuses={nodeRunStatuses}
+              onGraphChange={setCanvasGraph}
             />
           </Suspense>
         </ErrorBoundary>
       );
     }
 
-    if (activePanel === 'prompt') {
+    if (activePanel === 'prompt' || activePanel === 'repo') {
       return (
-        <ErrorBoundary name="Generate" key="prompt">
-          <Suspense fallback={lazyFallback}>
-            <PromptPanel
-              onGenerated={handleGenerated}
-              aiProvider={selectedProviders.ai}
-              cicdPlatform={selectedProviders.cicd}
-              aiOptions={aiOptions}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      );
-    }
-
-    if (activePanel === 'repo') {
-      return (
-        <ErrorBoundary name="Smart Generate" key="repo">
+        <ErrorBoundary name="AI Generator" key="repo">
           <Suspense fallback={lazyFallback}>
             <SmartGeneratePage
               onGenerated={handleGenerated}
@@ -638,6 +815,7 @@ export default function App({ onBackToLanding }) {
               aiProvider={selectedProviders.ai}
               cicdPlatform={selectedProviders.cicd}
               aiOptions={aiOptions}
+              onApplyToCanvas={handleGenerated}
             />
           </Suspense>
         </ErrorBoundary>
@@ -668,7 +846,11 @@ export default function App({ onBackToLanding }) {
   })();
 
   const renderNavigationButton = (item, compact = false) => {
-    const isActive = activePanel === item.id;
+    const isDockedHealthActive =
+      activePanel === 'builder' && !yamlCollapsed && inspectorTab === 'health' && item.id === 'health';
+    const isDockedCopilotActive =
+      activePanel === 'builder' && !yamlCollapsed && inspectorTab === 'copilot' && item.id === 'chat';
+    const isActive = activePanel === item.id || isDockedHealthActive || isDockedCopilotActive;
     const isLocked =
       (isOnboardingRequired && item.id !== 'settings') ||
       (isLimitedMode && !['builder', 'settings', 'repo'].includes(item.id));
@@ -683,6 +865,19 @@ export default function App({ onBackToLanding }) {
         onClick={() => {
           if (isLocked) {
             setActivePanel('settings');
+            return;
+          }
+          // Clicking Health or Copilot on desktop docks them right beside the visual DAG canvas!
+          // Clicking a second time toggles full-screen view.
+          if ((item.id === 'health' || item.id === 'chat') && typeof window !== 'undefined' && window.innerWidth >= 1280) {
+            const targetTab = item.id === 'health' ? 'health' : 'copilot';
+            if (activePanel === 'builder' && !yamlCollapsed && inspectorTab === targetTab) {
+              setActivePanel(item.id);
+            } else {
+              setActivePanel('builder');
+              setYamlCollapsed(false);
+              setInspectorTab(targetTab);
+            }
             return;
           }
           setActivePanel(item.id);

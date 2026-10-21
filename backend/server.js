@@ -10,6 +10,7 @@ const configRoutes = require('./routes/configRoutes');
 const n8nRoutes = require('./routes/n8nRoutes');
 const platformRoutes = require('./routes/platformRoutes');
 const repoRoutes = require('./routes/repoRoutes');
+const runRoutes = require('./routes/runRoutes');
 const { securityHeaders, createRateLimiter } = require('./middleware/security');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
@@ -71,6 +72,7 @@ app.use('/api/config', configRoutes);
 app.use('/api/n8n', n8nRoutes);
 app.use('/api/platforms', platformRoutes);
 app.use('/api/repo', repoRoutes);
+app.use('/api/runs', runRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({

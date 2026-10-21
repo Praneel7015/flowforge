@@ -96,7 +96,7 @@ function inspectUrl(rawUrl) {
     return { safe: false, reason: `Host ${hostname} is not allowed` };
   }
 
-  if (hostname.endsWith('.localhost') || hostname.endsWith('.internal')) {
+  if (hostname.endsWith('.localhost') || hostname.endsWith('.internal') || hostname.endsWith('.local')) {
     return { safe: false, reason: `Host ${hostname} is not allowed` };
   }
 

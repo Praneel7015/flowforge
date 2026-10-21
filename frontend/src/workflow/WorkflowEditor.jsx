@@ -16,6 +16,7 @@ import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
 import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/NodeTemplates';
+import { buildBlueprintShareUrl, readBlueprintFromLocationHash } from '../utils/blueprintShare';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -101,6 +102,17 @@ const createInitialEditorState = () => {
   }
 
   try {
+    const sharedBlueprint = readBlueprintFromLocationHash();
+    if (sharedBlueprint && Array.isArray(sharedBlueprint.nodes) && sharedBlueprint.nodes.length > 0) {
+      const normalized = normalizeWorkflow(sharedBlueprint);
+      nodeId = Math.max(nodeId, getMaxNodeId(normalized.nodes));
+      return {
+        past: [],
+        present: normalized,
+        future: [],
+      };
+    }
+
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
@@ -317,7 +329,51 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
   return yamlLines.join('\n');
 };
 
-function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflowApplied, onRegisterAddNode, cicdPlatform, onOpenImport }) {
+function resolveNodeRunOverlay(node, nodeRunStatuses) {
+  if (!nodeRunStatuses || typeof nodeRunStatuses !== 'object') {
+    return null;
+  }
+
+  // Direct match by node.id
+  if (nodeRunStatuses[node.id]) {
+    const entry = nodeRunStatuses[node.id];
+    return typeof entry === 'string' ? { runStatus: entry } : entry;
+  }
+
+  const normalizeKey = (val) =>
+    String(val || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+  const candidates = [
+    normalizeKey(node.id),
+    normalizeKey(node.data?.label),
+    normalizeKey(node.type),
+    normalizeKey(node.data?.config?.stage),
+  ].filter(Boolean);
+
+  for (const [key, val] of Object.entries(nodeRunStatuses)) {
+    const normKey = normalizeKey(key);
+    if (normKey && candidates.some((c) => c === normKey || c.includes(normKey) || normKey.includes(c))) {
+      return typeof val === 'string' ? { runStatus: val } : val;
+    }
+  }
+
+  return null;
+}
+
+function WorkflowEditorInner({
+  onYamlExport,
+  importedWorkflow,
+  onImportedWorkflowApplied,
+  onRegisterAddNode,
+  cicdPlatform,
+  onOpenImport,
+  onPlatformDetected,
+  nodeRunStatuses,
+  onGraphChange,
+}) {
   const reactFlowWrapper = useRef(null);
   const [editorState, setEditorState] = useState(createInitialEditorState);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -330,6 +386,8 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
   const [autoSync, setAutoSync] = useState(readAutoSyncPreference);
   const [syncState, setSyncState] = useState('idle'); // idle | syncing | synced | error
+  const [shareCopied, setShareCopied] = useState(false);
+  const [blueprintToast, setBlueprintToast] = useState('');
   const importFileInputRef = useRef(null);
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
@@ -542,7 +600,50 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   useEffect(() => {
     nodeId = Math.max(nodeId, getMaxNodeId(nodes));
-  }, [nodes]);
+    onGraphChange?.({ nodes, edges });
+  }, [nodes, edges, onGraphChange]);
+
+  // Check #blueprint=<base64url> on initial mount and on hashchange
+  useEffect(() => {
+    const applyHashBlueprint = () => {
+      const shared = readBlueprintFromLocationHash();
+      if (!shared || !Array.isArray(shared.nodes) || shared.nodes.length === 0) return;
+
+      const normalized = normalizeWorkflow(shared);
+      nodeId = Math.max(nodeId, getMaxNodeId(normalized.nodes));
+      setEditorState({
+        past: [],
+        present: cloneWorkflow(normalized),
+        future: [],
+      });
+      if (shared.cicdPlatform) {
+        onPlatformDetected?.(shared.cicdPlatform);
+      }
+      setBlueprintToast(`Shared blueprint loaded (${normalized.nodes.length} nodes)`);
+      const timer = setTimeout(() => setBlueprintToast(''), 4000);
+      return () => clearTimeout(timer);
+    };
+
+    const cleanup = applyHashBlueprint();
+    window.addEventListener('hashchange', applyHashBlueprint);
+    return () => {
+      if (typeof cleanup === 'function') cleanup();
+      window.removeEventListener('hashchange', applyHashBlueprint);
+    };
+  }, [onPlatformDetected]);
+
+  const handleShareBlueprint = useCallback(() => {
+    if (nodes.length === 0) return;
+    const shareUrl = buildBlueprintShareUrl({ nodes, edges, cicdPlatform });
+    try {
+      window.history.replaceState(null, '', `#blueprint=${shareUrl.split('#blueprint=')[1] || ''}`);
+    } catch {
+      // Ignore history replace errors
+    }
+    navigator.clipboard?.writeText(shareUrl).catch(() => {});
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2200);
+  }, [nodes, edges, cicdPlatform]);
 
   useEffect(() => {
     try {
@@ -954,14 +1055,19 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
   const renderedNodes = useMemo(
     () =>
-      nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          onInlineUpdate: handleNodeInlineUpdate,
-        },
-      })),
-    [nodes, handleNodeInlineUpdate]
+      nodes.map((node) => {
+        const overlay = resolveNodeRunOverlay(node, nodeRunStatuses);
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            ...(overlay?.runStatus ? { runStatus: overlay.runStatus } : {}),
+            ...(overlay?.runDuration ? { runDuration: overlay.runDuration } : {}),
+            onInlineUpdate: handleNodeInlineUpdate,
+          },
+        };
+      }),
+    [nodes, handleNodeInlineUpdate, nodeRunStatuses]
   );
 
   const exportWorkflow = useCallback(
@@ -1182,8 +1288,14 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         />
       </ReactFlow>
 
-      {/* Node count + live sync indicator + Import YAML (top-right, unobtrusive) */}
+      {/* Node count + live sync indicator + Share + Import YAML (top-right, unobtrusive) */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+        {blueprintToast && (
+          <div className="px-2.5 py-1 bg-emerald-500/15 backdrop-blur-sm border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-medium flex items-center gap-1.5 whitespace-nowrap ff-enter">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>{blueprintToast}</span>
+          </div>
+        )}
         <input
           ref={importFileInputRef}
           type="file"
@@ -1191,6 +1303,23 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
           onChange={handleImportYamlFile}
           className="hidden"
         />
+        <button
+          onClick={handleShareBlueprint}
+          disabled={nodes.length === 0}
+          className={`px-2.5 py-1 backdrop-blur-sm border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
+            shareCopied
+              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400 font-medium'
+              : 'bg-[var(--ff-node-counter-bg)] border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)]'
+          }`}
+          title="Copy zero-database shareable blueprint URL (#blueprint=...)"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.5 9.5l3-3" />
+            <path d="M9 5l1.5-1.5a2.1 2.1 0 0 1 3 3L12 8" />
+            <path d="M7 11l-1.5 1.5a2.1 2.1 0 0 1-3-3L4 8" />
+          </svg>
+          <span>{shareCopied ? 'Copied Link!' : 'Share'}</span>
+        </button>
         <button
           onClick={() => importFileInputRef.current?.click()}
           className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)] transition-colors whitespace-nowrap"
@@ -1472,6 +1601,9 @@ export default function WorkflowEditor(props) {
         cicdPlatform={props.cicdPlatform}
         onRegisterAddNode={props.onRegisterAddNode}
         onOpenImport={props.onOpenImport}
+        onPlatformDetected={props.onPlatformDetected}
+        nodeRunStatuses={props.nodeRunStatuses}
+        onGraphChange={props.onGraphChange}
       />
     </ReactFlowProvider>
   );

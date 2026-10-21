@@ -21,8 +21,43 @@ const COLORS = {
   notify: { border: 'border-pink-500/40', bg: 'bg-[var(--ff-surface-solid)]', text: 'text-pink-500', handle: '!bg-pink-500', badge: 'bg-pink-500/15 text-pink-500 border border-pink-500/25' },
 };
 
+const RUN_STATUS_STYLES = {
+  passed: {
+    label: 'PASSED',
+    pill: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+    dot: 'bg-emerald-400',
+    nodeRing: 'border-emerald-500/50 shadow-[0_0_14px_rgba(16,185,129,0.16)]',
+  },
+  running: {
+    label: 'RUNNING',
+    pill: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+    dot: 'bg-amber-400 animate-pulse',
+    nodeRing: 'border-amber-500/60 shadow-[0_0_16px_rgba(245,158,11,0.22)]',
+  },
+  failed: {
+    label: 'FAILED',
+    pill: 'bg-rose-500/15 text-rose-400 border border-rose-500/35',
+    dot: 'bg-rose-500',
+    nodeRing: 'border-rose-500/70 ring-1 ring-rose-500/40 shadow-[0_0_18px_rgba(244,63,94,0.28)]',
+  },
+  pending: {
+    label: 'PENDING',
+    pill: 'bg-sky-500/10 text-sky-400 border border-sky-500/25',
+    dot: 'bg-sky-400/80 animate-pulse',
+    nodeRing: '',
+  },
+  skipped: {
+    label: 'SKIPPED',
+    pill: 'bg-[var(--ff-surface-inset)] text-[var(--ff-muted)] border border-[var(--ff-card-border-strong)]',
+    dot: 'bg-[var(--ff-muted)]',
+    nodeRing: 'opacity-75',
+  },
+};
+
 function StageNode({ id, data, type, selected }) {
   const c = COLORS[type] || COLORS.build;
+  const runStatusKey = typeof data?.runStatus === 'string' ? data.runStatus.toLowerCase() : '';
+  const statusStyle = RUN_STATUS_STYLES[runStatusKey] || null;
   const [editingField, setEditingField] = useState(null); // 'label' | 'script' | null
   const [draftLabel, setDraftLabel] = useState(data.label || '');
   const [draftScript, setDraftScript] = useState(data.config?.script || '');
@@ -75,19 +110,33 @@ function StageNode({ id, data, type, selected }) {
 
   return (
     <div
-      className={`px-3.5 py-2.5 rounded-xl border ${c.border} ${c.bg} min-w-[205px] max-w-[260px] backdrop-blur-md ${selectedTone}`}
+      className={`px-3.5 py-2.5 rounded-xl border ${statusStyle?.nodeRing || c.border} ${c.bg} min-w-[205px] max-w-[260px] backdrop-blur-md ${selectedTone}`}
     >
       <Handle type="target" position={Position.Top} className={`${c.handle} !w-3 !h-3`} />
 
-      <div className="flex items-center justify-between gap-2">
-        <span className={`text-[10px] ${c.text} font-semibold uppercase tracking-wider`}>
+      <div className="flex items-center justify-between gap-1.5">
+        <span className={`text-[10px] ${c.text} font-semibold uppercase tracking-wider truncate`}>
           {type.replace(/_/g, ' ')}
         </span>
-        {data.config?.stage && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${c.badge}`}>
-            {data.config.stage}
-          </span>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {statusStyle && (
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold tracking-wide ${statusStyle.pill}`}
+              title={`Execution status: ${statusStyle.label}${data.runDuration ? ` (${data.runDuration})` : ''}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+              <span>{statusStyle.label}</span>
+              {data.runDuration && (
+                <span className="font-mono font-normal opacity-80">{data.runDuration}</span>
+              )}
+            </span>
+          )}
+          {!statusStyle && data.config?.stage && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${c.badge}`}>
+              {data.config.stage}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Inline editable node title */}

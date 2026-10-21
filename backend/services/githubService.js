@@ -212,14 +212,73 @@ async function createPullRequest(token, owner, repo, { title, body, head, base }
 
 // ─── Actions / webhook support ────────────────────────────────────────────────
 
+const MAX_JOB_LOG_CHARS = 4000;
+
+function computeDurationSeconds(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return null;
+  const startMs = new Date(startedAt).getTime();
+  const endMs = new Date(completedAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return null;
+  }
+  return Math.round((endMs - startMs) / 1000);
+}
+
+async function listWorkflowRuns(token, owner, repo, { branch, perPage = 10 } = {}) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const params = { per_page: perPage };
+    if (branch) params.branch = branch;
+    const { data } = await client.get(`/repos/${owner}/${repo}/actions/runs`, { params });
+    const runs = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+    return runs.map((run) => ({
+      id: run.id,
+      runNumber: run.run_number,
+      name: run.name || run.display_title || `Run #${run.run_number || run.id}`,
+      status: run.status,
+      conclusion: run.conclusion,
+      branch: run.head_branch,
+      commitSha: run.head_sha,
+      event: run.event,
+      url: run.html_url,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+    }));
+  } catch (err) {
+    throw toApiError('list workflow runs', err);
+  }
+}
+
 async function getWorkflowRunStatus(token, owner, repo, runId) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.get(`/repos/${owner}/${repo}/actions/runs/${runId}`);
+    const [runRes, jobsRes] = await Promise.all([
+      client.get(`/repos/${owner}/${repo}/actions/runs/${runId}`),
+      client
+        .get(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, { params: { per_page: 100 } })
+        .catch(() => ({ data: { jobs: [] } })),
+    ]);
+
+    const data = runRes.data || {};
+    const rawJobs = Array.isArray(jobsRes?.data?.jobs) ? jobsRes.data.jobs : [];
+
+    const jobs = rawJobs.map((job) => ({
+      id: job.id,
+      name: job.name,
+      status: job.status,
+      conclusion: job.conclusion,
+      durationSeconds: computeDurationSeconds(job.started_at, job.completed_at),
+      startedAt: job.started_at || null,
+      completedAt: job.completed_at || null,
+      url: job.html_url || null,
+    }));
+
     return {
       id: data.id,
-      name: data.name,
+      runNumber: data.run_number,
+      name: data.name || data.display_title || `Run #${data.id}`,
       status: data.status,
       conclusion: data.conclusion,
       branch: data.head_branch,
@@ -227,6 +286,7 @@ async function getWorkflowRunStatus(token, owner, repo, runId) {
       url: data.html_url,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
+      jobs,
     };
   } catch (err) {
     throw toApiError('get workflow run status', err);
@@ -239,17 +299,51 @@ async function getWorkflowRunLogs(token, owner, repo, runId) {
   try {
     const { data: jobs } = await client.get(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`);
 
-    const failedJobs = (jobs.jobs || []).filter((j) => j.conclusion === 'failure');
+    const failedJobs = (jobs.jobs || []).filter(
+      (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out' || j.conclusion === 'startup_failure'
+    );
 
-    const logs = failedJobs.map((job) => ({
-      jobId: job.id,
-      jobName: job.name,
-      stage: job.name,
-      log: job.steps
-        .filter((s) => s.conclusion === 'failure')
-        .map((s) => `Step: ${s.name}\nConclusion: ${s.conclusion}`)
-        .join('\n'),
-    }));
+    const logs = await Promise.all(
+      failedJobs.map(async (job) => {
+        const stepSummary = (job.steps || [])
+          .filter((s) => s.conclusion === 'failure')
+          .map((s) => `Step: ${s.name}\nConclusion: ${s.conclusion}`)
+          .join('\n');
+
+        let rawLogText = '';
+        try {
+          const { data: logData } = await client.get(
+            `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
+            {
+              responseType: 'text',
+              transformResponse: [(d) => d],
+            }
+          );
+          if (typeof logData === 'string' && logData.trim()) {
+            rawLogText =
+              logData.length > MAX_JOB_LOG_CHARS
+                ? logData.slice(-MAX_JOB_LOG_CHARS)
+                : logData;
+          }
+        } catch {
+          // Gracefully fall back to step summary when raw log download fails
+          rawLogText = '';
+        }
+
+        const combinedLog = rawLogText
+          ? stepSummary
+            ? `${stepSummary}\n\n${rawLogText}`
+            : rawLogText
+          : stepSummary || `Job "${job.name}" failed with conclusion: ${job.conclusion}`;
+
+        return {
+          jobId: job.id,
+          jobName: job.name,
+          stage: job.name,
+          log: combinedLog,
+        };
+      })
+    );
 
     return { jobs: jobs.jobs || [], failedLogs: logs };
   } catch (err) {
@@ -272,11 +366,22 @@ async function triggerWorkflowDispatch(token, owner, repo, workflowId, ref = 'ma
   ensureToken(token);
   const client = makeClient(token);
   try {
-    await client.post(`/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`, {
+    let resolvedWorkflowId = workflowId;
+    if (!resolvedWorkflowId) {
+      const { data: wfData } = await client.get(`/repos/${owner}/${repo}/actions/workflows`);
+      const workflows = Array.isArray(wfData?.workflows) ? wfData.workflows : [];
+      const activeWf = workflows.find((w) => w.state === 'active') || workflows[0];
+      if (!activeWf) {
+        throw new Error('No GitHub Actions workflows found in repository');
+      }
+      resolvedWorkflowId = activeWf.id;
+    }
+
+    await client.post(`/repos/${owner}/${repo}/actions/workflows/${resolvedWorkflowId}/dispatches`, {
       ref,
       inputs,
     });
-    return { triggered: true, ref, workflowId };
+    return { triggered: true, ref, workflowId: resolvedWorkflowId };
   } catch (err) {
     throw toApiError('trigger workflow dispatch', err);
   }
@@ -292,6 +397,7 @@ module.exports = {
   pushFile,
   createBranch,
   createPullRequest,
+  listWorkflowRuns,
   getWorkflowRunStatus,
   getWorkflowRunLogs,
   postPRComment,
