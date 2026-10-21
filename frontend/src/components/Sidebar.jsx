@@ -55,7 +55,7 @@ const TONE_BG = {
   slate: 'bg-slate-500/15 text-slate-500',
 };
 
-const EXPANDED_KEY = 'flowforge.nodeLibrary.expanded.v1';
+const EXPANDED_KEY = 'flowforge.nodeLibrary.expanded.v2';
 const NODE_BY_TYPE = Object.fromEntries(NODE_TYPES.map((node) => [node.type, node]));
 
 function readStoredExpanded() {
@@ -71,7 +71,14 @@ function readStoredExpanded() {
 export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImport }) {
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(() => {
-    const base = Object.fromEntries(CATEGORIES.map((c) => [c.id, true]));
+    const base = {
+      triggers: true,
+      build: true,
+      quality: false,
+      package: false,
+      deploy: false,
+      flow: false,
+    };
     const stored = readStoredExpanded();
     return stored ? { ...base, ...stored } : base;
   });
@@ -251,12 +258,6 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
             Templates
           </h2>
           <NodeTemplates onLoadTemplate={onLoadTemplate} />
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-[var(--ff-card-border)]">
-          <p className="text-[11px] text-[var(--ff-muted)] leading-relaxed">
-            Drag nodes onto the canvas or press Enter to add them.
-          </p>
         </div>
       </div>
     </aside>

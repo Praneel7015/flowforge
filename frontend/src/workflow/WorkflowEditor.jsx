@@ -1288,8 +1288,8 @@ function WorkflowEditorInner({
         />
       </ReactFlow>
 
-      {/* Node count + live sync indicator + Share + Import YAML (top-right, unobtrusive) */}
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+      {/* Top-right overlay: compact node/edge count pill + Share button when nodes > 0 */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         {blueprintToast && (
           <div className="px-2.5 py-1 bg-emerald-500/15 backdrop-blur-sm border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-medium flex items-center gap-1.5 whitespace-nowrap ff-enter">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -1303,38 +1303,26 @@ function WorkflowEditorInner({
           onChange={handleImportYamlFile}
           className="hidden"
         />
-        <button
-          onClick={handleShareBlueprint}
-          disabled={nodes.length === 0}
-          className={`px-2.5 py-1 backdrop-blur-sm border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed ${
-            shareCopied
-              ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400 font-medium'
-              : 'bg-[var(--ff-node-counter-bg)] border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)]'
-          }`}
-          title="Copy zero-database shareable blueprint URL (#blueprint=...)"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6.5 9.5l3-3" />
-            <path d="M9 5l1.5-1.5a2.1 2.1 0 0 1 3 3L12 8" />
-            <path d="M7 11l-1.5 1.5a2.1 2.1 0 0 1-3-3L4 8" />
-          </svg>
-          <span>{shareCopied ? 'Copied Link!' : 'Share'}</span>
-        </button>
-        <button
-          onClick={() => importFileInputRef.current?.click()}
-          className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)] transition-colors whitespace-nowrap"
-          title="Upload a YAML or Jenkinsfile directly onto the canvas"
-        >
-          Import YAML
-        </button>
-        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap">
-          {nodes.length} nodes | {edges.length} connections
-        </div>
-        {autoSync && nodes.length > 0 && (
-          <div
-            className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs flex items-center gap-1.5 whitespace-nowrap"
-            title="Live YAML sync status"
+        {nodes.length > 0 && (
+          <button
+            onClick={handleShareBlueprint}
+            className={`px-2.5 py-1 backdrop-blur-sm border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              shareCopied
+                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400 font-medium'
+                : 'bg-[var(--ff-node-counter-bg)] border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)]'
+            }`}
+            title="Copy zero-database shareable blueprint URL (#blueprint=...)"
           >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6.5 9.5l3-3" />
+              <path d="M9 5l1.5-1.5a2.1 2.1 0 0 1 3 3L12 8" />
+              <path d="M7 11l-1.5 1.5a2.1 2.1 0 0 1-3-3L4 8" />
+            </svg>
+            <span>{shareCopied ? 'Copied!' : 'Share'}</span>
+          </button>
+        )}
+        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap flex items-center gap-1.5">
+          {autoSync && nodes.length > 0 && (
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 syncState === 'syncing'
@@ -1343,16 +1331,14 @@ function WorkflowEditorInner({
                     ? 'bg-red-400'
                     : 'bg-emerald-400'
               }`}
+              title={syncState === 'syncing' ? 'Syncing YAML' : syncState === 'error' ? 'Offline (local YAML)' : 'YAML synced'}
             />
-            <span className="text-[var(--ff-muted)]">
-              {syncState === 'syncing' ? 'Syncing' : syncState === 'error' ? 'Offline (local)' : 'Synced'}
-            </span>
-          </div>
-        )}
+          )}
+          <span>{nodes.length} nodes · {edges.length} edges</span>
+        </div>
       </div>
 
-      {/* Action toolbar — compact, contained pill anchored bottom-left so it
-          reads as chrome and stays clear of the minimap and canvas nodes. */}
+      {/* Bottom-left toolbar: Undo, Redo, Delete, Clear | Auto-sync, Export YAML */}
       <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-node-counter-bg)] backdrop-blur-sm p-1 max-w-[calc(100%-14rem)]">
         <button
           onClick={handleUndo}
@@ -1398,27 +1384,9 @@ function WorkflowEditorInner({
             <circle cx="8" cy="8" r="5.5" /><path d="M4.5 4.5l7 7" />
           </svg>
         </button>
-        <button
-          onClick={() => { if (nodes.length > 0) setShowSaveTemplate(true); }}
-          disabled={nodes.length === 0}
-          className="w-8 h-8 flex items-center justify-center rounded-lg ff-btn-secondary disabled:opacity-40 disabled:cursor-not-allowed"
-          title="Save current workflow as a reusable template"
-          aria-label="Save as template"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 2.5h8v11l-4-2.8-4 2.8z" />
-          </svg>
-        </button>
 
         <span className="w-px h-5 bg-[var(--ff-card-border-strong)] mx-0.5" />
 
-        <button
-          onClick={() => importFileInputRef.current?.click()}
-          className="px-2.5 h-8 rounded-lg text-xs font-medium ff-btn-secondary whitespace-nowrap"
-          title="Import YAML or Jenkinsfile directly onto the canvas"
-        >
-          Import YAML
-        </button>
         <button
           onClick={() => setAutoSync((prev) => !prev)}
           className={`px-2.5 h-8 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
@@ -1428,14 +1396,14 @@ function WorkflowEditorInner({
           }`}
           title="Automatically re-generate YAML as you edit the canvas"
         >
-          Auto-sync {autoSync ? 'On' : 'Off'}
+          Auto-sync
         </button>
         <button
           onClick={handleExport}
           className="px-3 h-8 rounded-lg text-xs font-semibold transition-opacity ff-btn-primary whitespace-nowrap"
-          title={autoSync ? 'YAML syncs automatically — click to regenerate now' : 'Generate YAML from the canvas'}
+          title="Export YAML from the canvas"
         >
-          {autoSync ? 'Sync Now' : 'Export YAML'}
+          Export YAML
         </button>
       </div>
 
@@ -1451,18 +1419,14 @@ function WorkflowEditorInner({
         />
       )}
 
-      {/* Empty state */}
+      {/* Subtle, lightweight empty-state prompt */}
       {nodes.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none p-4">
-          <div className="text-center max-w-md pointer-events-auto rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-modal-bg)]/90 backdrop-blur-xl p-6 shadow-2xl">
-            <div className="w-10 h-10 rounded-xl bg-[var(--ff-accent-soft)] border border-[var(--ff-border-strong)] flex items-center justify-center mx-auto mb-3">
-              <span className="text-[var(--ff-accent)] text-sm font-bold ff-code">DAG</span>
-            </div>
-            <p className="text-sm font-semibold text-[var(--ff-text)]">Start designing your CI/CD pipeline</p>
-            <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
-              Click or drag any node from the library, double-click any node on the canvas to edit its commands inline, or launch a starter blueprint below:
+          <div className="text-center max-w-sm pointer-events-auto">
+            <p className="text-xs font-medium text-[var(--ff-text-secondary)]">
+              Drag stages from the left or start with a template
             </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
               {BUILT_IN_TEMPLATES.map((tpl) => (
                 <button
                   key={tpl.id}
@@ -1473,22 +1437,12 @@ function WorkflowEditorInner({
                       edges: cloneWorkflow(tpl.edges),
                     });
                   }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium ff-btn-secondary hover:border-[var(--ff-accent)]"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--ff-surface)]/85 backdrop-blur-sm border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
                 >
                   + {tpl.name}
                 </button>
               ))}
             </div>
-            {onOpenImport && (
-              <div className="mt-3 pt-3 border-t border-[var(--ff-card-border)]">
-                <button
-                  onClick={onOpenImport}
-                  className="ff-btn-primary rounded-lg px-4 py-1.5 text-xs font-semibold"
-                >
-                  Import existing YAML / Jenkinsfile
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}

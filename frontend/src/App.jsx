@@ -25,7 +25,7 @@ const YAML_WIDTH_KEY = 'flowforge.yaml.width.v1';
 const YAML_COLLAPSED_KEY = 'flowforge.yaml.collapsed.v1';
 const YAML_MIN_WIDTH = 320;
 const YAML_MAX_WIDTH = 760;
-const YAML_DEFAULT_WIDTH = 400;
+const YAML_DEFAULT_WIDTH = 380;
 const clampYamlWidth = (value) => Math.max(YAML_MIN_WIDTH, Math.min(YAML_MAX_WIDTH, value));
 
 function readLocalStorage(key) {
@@ -62,45 +62,10 @@ const NAV_ITEMS = [
 ];
 
 const INSPECTOR_TABS = [
-  {
-    id: 'code',
-    label: 'Code',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5" />
-      </svg>
-    ),
-  },
-  {
-    id: 'health',
-    label: 'Health',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="8" cy="8" r="6" />
-        <path d="M5 8h2l1-2 2 4 1-2h2" />
-      </svg>
-    ),
-  },
-  {
-    id: 'copilot',
-    label: 'Copilot',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 3h10a1 1 0 011 1v6a1 1 0 01-1 1H6l-3 2v-2a1 1 0 01-1-1V4a1 1 0 011-1z" />
-        <path d="M5.5 7h5M5.5 5h3" />
-      </svg>
-    ),
-  },
-  {
-    id: 'runs',
-    label: 'Live Runs',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="8" cy="8" r="6" />
-        <path d="M6.5 5.5l4 2.5-4 2.5v-5z" />
-      </svg>
-    ),
-  },
+  { id: 'code', label: 'YAML' },
+  { id: 'health', label: 'Health' },
+  { id: 'copilot', label: 'Copilot' },
+  { id: 'runs', label: 'Runs' },
 ];
 
 const PANEL_META = {
@@ -298,7 +263,7 @@ export default function App({ onBackToLanding }) {
     () => readOnboardingStatus().status
   );
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
   // Resizable / collapsible YAML preview panel.
@@ -627,7 +592,7 @@ export default function App({ onBackToLanding }) {
           <div className="mx-auto h-full w-0.5 group-hover:bg-[var(--ff-accent)] transition-colors" />
         </div>
 
-        {/* Segmented Docked Studio Inspector Header: Code | Health | Copilot | Live Runs */}
+        {/* Segmented Docked Studio Inspector Header: YAML | Health | Copilot | Runs */}
         <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-[var(--ff-card-border)] bg-[var(--ff-surface-2)]">
           <div className="flex items-center gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)]">
             {INSPECTOR_TABS.map((tab) => {
@@ -637,14 +602,13 @@ export default function App({ onBackToLanding }) {
                   key={tab.id}
                   type="button"
                   onClick={() => setInspectorTab(tab.id)}
-                  className={`flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 rounded-md text-[11px] font-medium transition-colors truncate ${
+                  className={`flex-1 inline-flex items-center justify-center py-1 px-2 rounded-md text-xs font-medium transition-colors truncate ${
                     active
                       ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-sm'
                       : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
                   }`}
                   title={`Switch inspector to ${tab.label}`}
                 >
-                  <span className="flex-shrink-0">{tab.icon}</span>
                   <span className="truncate">{tab.label}</span>
                 </button>
               );
@@ -920,75 +884,64 @@ export default function App({ onBackToLanding }) {
     <div className="ff-app-shell">
       <OfflineBanner onBackendStatusChange={handleBackendStatus} />
       <div className="h-screen flex">
-        {/* ── Sidebar overlay (mobile only) ──── */}
+        {/* ── Sidebar overlay ────────────────── */}
         <div
-          className={`fixed inset-0 z-30 bg-[var(--ff-overlay)] lg:hidden transition-opacity duration-300 ${
+          className={`fixed inset-0 z-30 bg-[var(--ff-overlay)] transition-opacity duration-300 ${
             sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           onClick={() => setSidebarOpen(false)}
         />
 
-        {/* ── Sidebar ────────────────────────── */}
+        {/* ── Slide-over Navigation Drawer ───── */}
         <aside
           className={`fixed z-40 top-0 left-0 h-full w-60 flex flex-col border-r border-[var(--ff-card-border)] bg-[var(--ff-sidebar-bg)] backdrop-blur-xl transition-transform duration-300 ease-in-out ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="px-5 pt-5 pb-4">
-            <div className="flex items-center justify-between">
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-[var(--ff-card-border)]">
+            <div>
               <p className="text-[10px] uppercase tracking-[0.18em] font-semibold text-[var(--ff-accent)]">FlowForge</p>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
-                aria-label="Close sidebar"
-                title="Close sidebar"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
-              </button>
+              <h1 className="text-base font-bold tracking-tight text-[var(--ff-text)]">Pipeline Studio</h1>
             </div>
-            <h1 className="text-lg font-bold tracking-tight text-[var(--ff-text)] mt-0.5">Pipeline Studio</h1>
-            <p className="text-[11px] text-[var(--ff-muted)] mt-1 leading-relaxed">A cleaner workspace for generating, editing, and shipping CI/CD pipelines.</p>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--ff-muted)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+              aria-label="Close sidebar"
+              title="Close sidebar"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5"/></svg>
+            </button>
           </div>
 
-          <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
             {NAV_ITEMS.map((item) => renderNavigationButton(item))}
           </nav>
 
-          <div className="p-3 space-y-2 border-t border-[var(--ff-card-border)]">
+          <div className="p-3 border-t border-[var(--ff-card-border)]">
             <div className="rounded-xl bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)] p-3">
               <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--ff-muted)] font-semibold">Current Stack</p>
-              <p className="mt-1.5 text-sm font-semibold text-[var(--ff-text)]">{selectedAI?.displayName || 'No AI selected'}</p>
+              <p className="mt-1 text-xs font-semibold text-[var(--ff-text)]">{selectedAI?.displayName || 'No AI selected'}</p>
               <p className="text-xs text-[var(--ff-muted)]">{currentCICDPlatform.displayName}</p>
               {byomConfig.enabled && (
-                <span className="inline-flex items-center gap-1 mt-2 text-xs text-[var(--ff-accent)]">
+                <span className="inline-flex items-center gap-1 mt-1.5 text-xs text-[var(--ff-accent)]">
                   Custom key enabled
                 </span>
               )}
               {isOnboardingRequired && (
-                <p className="text-xs text-amber-400 mt-2 font-medium">Setup required</p>
+                <p className="text-xs text-amber-400 mt-1.5 font-medium">Setup required</p>
               )}
               {isLimitedMode && (
-                <p className="text-xs text-amber-400 mt-2 font-medium">Limited mode</p>
+                <p className="text-xs text-amber-400 mt-1.5 font-medium">Limited mode</p>
               )}
             </div>
-            <button
-              onClick={() => { setActivePanel('settings'); if (window.innerWidth < 1024) setSidebarOpen(false); }}
-              className="w-full ff-btn-secondary rounded-xl px-4 py-2.5 text-sm font-medium text-center"
-            >
-              Open Settings
-            </button>
           </div>
         </aside>
 
         {/* ── Main Area ──────────────────────── */}
-        <div
-          className={`flex-1 min-w-0 flex flex-col transition-[margin] duration-300 ease-in-out ${
-            sidebarOpen ? 'lg:ml-60' : 'ml-0'
-          }`}
-        >
+        <div className="flex-1 min-w-0 flex flex-col">
           {/* ── Top Bar (48px single-line studio toolbar) ── */}
           <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-3 md:px-4">
-            <div className="h-12 flex items-center justify-between gap-2">
+            <div className="h-12 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
@@ -1017,12 +970,61 @@ export default function App({ onBackToLanding }) {
                       FlowForge
                     </span>
                   )}
-                  <span className="text-[var(--ff-muted)] select-none">/</span>
-                  <h2 className="font-semibold tracking-tight text-[var(--ff-text)] truncate">
+                  <span className="lg:hidden text-[var(--ff-muted)] select-none">/</span>
+                  <h2 className="lg:hidden font-semibold tracking-tight text-[var(--ff-text)] truncate">
                     {currentPanelMeta.title}
                   </h2>
                 </div>
               </div>
+
+              {/* Compact Top-Bar Navigation Pill Bar (desktop) */}
+              <nav
+                className="hidden lg:flex items-center gap-0.5 p-0.5 rounded-lg border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)]"
+                aria-label="Workspace navigation"
+              >
+                {NAV_ITEMS.map((item) => {
+                  const isDockedHealthActive =
+                    activePanel === 'builder' && !yamlCollapsed && inspectorTab === 'health' && item.id === 'health';
+                  const isDockedCopilotActive =
+                    activePanel === 'builder' && !yamlCollapsed && inspectorTab === 'copilot' && item.id === 'chat';
+                  const isActive = activePanel === item.id || isDockedHealthActive || isDockedCopilotActive;
+                  const isLocked =
+                    (isOnboardingRequired && item.id !== 'settings') ||
+                    (isLimitedMode && !['builder', 'settings', 'repo'].includes(item.id));
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (isLocked) {
+                          setActivePanel('settings');
+                          return;
+                        }
+                        if ((item.id === 'health' || item.id === 'chat') && typeof window !== 'undefined' && window.innerWidth >= 1280) {
+                          const targetTab = item.id === 'health' ? 'health' : 'copilot';
+                          if (activePanel === 'builder' && !yamlCollapsed && inspectorTab === targetTab) {
+                            setActivePanel(item.id);
+                          } else {
+                            setActivePanel('builder');
+                            setYamlCollapsed(false);
+                            setInspectorTab(targetTab);
+                          }
+                          return;
+                        }
+                        setActivePanel(item.id);
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                        isActive
+                          ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-sm'
+                          : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
+                      } ${isLocked ? 'opacity-60' : ''}`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </nav>
 
               <div className="flex items-center gap-2 flex-shrink-0">
                 {(providers.ai?.length > 0 || providers.cicd?.length > 0) && (
@@ -1093,8 +1095,8 @@ export default function App({ onBackToLanding }) {
                 <div
                   className={`flex-1 min-h-0 grid gap-2.5 ${
                     showYamlPanel
-                      ? 'xl:grid-cols-[240px_minmax(0,1fr)_var(--yaml-col)]'
-                      : 'xl:grid-cols-[240px_minmax(0,1fr)]'
+                      ? 'xl:grid-cols-[220px_minmax(0,1fr)_var(--yaml-col)]'
+                      : 'xl:grid-cols-[220px_minmax(0,1fr)]'
                   } grid-cols-1`}
                   style={showYamlPanel ? { '--yaml-col': yamlColValue } : undefined}
                 >
