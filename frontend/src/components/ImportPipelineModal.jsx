@@ -42,6 +42,7 @@ export default function ImportPipelineModal({ open, onClose, onImported, cicdPla
     setError('');
     try {
       const { data } = await axios.post('/api/pipelines/import', {
+        configText: content,
         yaml: content,
         cicdPlatform: platform === 'auto' ? cicdPlatform || 'auto' : platform,
       });

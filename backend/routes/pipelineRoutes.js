@@ -22,8 +22,9 @@ function validateExport(req, res, next) {
 }
 
 function validateImport(req, res, next) {
-	if (typeof req.body?.yaml !== 'string' || !req.body.yaml.trim()) {
-		return badRequest(res, 'yaml must be a non-empty string');
+	const raw = req.body?.configText ?? req.body?.yaml;
+	if (typeof raw !== 'string' || !raw.trim()) {
+		return badRequest(res, 'configText must be a non-empty string');
 	}
 	next();
 }

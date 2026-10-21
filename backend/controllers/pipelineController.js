@@ -1,7 +1,6 @@
 const aiService = require('../services/aiService');
 const workflowService = require('../services/workflowService');
 const gitlabService = require('../services/gitlabService');
-const importService = require('../services/importService');
 const { buildAIOptions } = require('../utils/aiOptions');
 
 async function generatePipeline(req, res) {
@@ -40,13 +39,25 @@ async function exportYaml(req, res) {
 
 async function importPipeline(req, res) {
   try {
-    const { yaml, cicdPlatform } = req.body;
-    if (typeof yaml !== 'string' || !yaml.trim()) {
-      return res.status(400).json({ error: 'yaml must be a non-empty string' });
+    const { configText, yaml, cicdPlatform } = req.body || {};
+    const rawConfig =
+      typeof configText === 'string' && configText.trim()
+        ? configText
+        : typeof yaml === 'string' && yaml.trim()
+          ? yaml
+          : '';
+
+    if (!rawConfig) {
+      return res.status(400).json({ error: 'configText is required' });
     }
 
-    const result = importService.importPipeline(yaml, cicdPlatform || 'auto');
-    res.json(result);
+    const dag = aiService.parseConfigToDAG(rawConfig, cicdPlatform);
+    res.json({
+      nodes: dag.nodes,
+      edges: dag.edges,
+      yaml: rawConfig,
+      detectedPlatform: dag.detectedPlatform || cicdPlatform || 'gitlab',
+    });
   } catch (err) {
     const status = err.status || 500;
     console.error('importPipeline error:', err.message);

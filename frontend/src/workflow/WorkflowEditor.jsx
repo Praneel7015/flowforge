@@ -168,6 +168,7 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const [selectedEdgeIds, setSelectedEdgeIds] = useState(new Set());
   const [autoSync, setAutoSync] = useState(readAutoSyncPreference);
   const [syncState, setSyncState] = useState('idle'); // idle | syncing | synced | error
+  const importFileInputRef = useRef(null);
   const { nodes, edges } = editorState.present;
   const canUndo = editorState.past.length > 0;
   const canRedo = editorState.future.length > 0;
@@ -759,14 +760,71 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
   const handleExport = useCallback(async () => {
     setSyncState('syncing');
     try {
-      const yaml = await exportWorkflow();
-      onYamlExport(yaml);
+      const { data } = await axios.post('/api/pipelines/export', { nodes, edges, cicdPlatform });
+      onYamlExport(data.yaml);
       setSyncState('synced');
+
+      try {
+        const rawN8n = window.localStorage.getItem('flowforge.n8n.v1');
+        if (rawN8n) {
+          const { enabled, webhookUrl } = JSON.parse(rawN8n);
+          if (enabled && webhookUrl) {
+            axios
+              .post('/api/n8n/forward', {
+                webhookUrl,
+                payload: {
+                  event: 'pipeline_exported',
+                  cicdPlatform,
+                  yaml: data.yaml,
+                  nodes,
+                  edges,
+                  timestamp: new Date().toISOString(),
+                },
+              })
+              .catch(() => {});
+          }
+        }
+      } catch {
+        // Ignore localStorage or n8n forward errors
+      }
     } catch {
       onYamlExport(buildLocalYaml(nodes));
       setSyncState('error');
     }
-  }, [exportWorkflow, nodes, onYamlExport]);
+  }, [cicdPlatform, edges, nodes, onYamlExport]);
+
+  const handleImportYamlFile = useCallback(
+    (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = '';
+
+      const reader = new FileReader();
+      reader.onload = async (loadEvent) => {
+        const configText = typeof loadEvent.target?.result === 'string' ? loadEvent.target.result : '';
+        if (!configText.trim()) return;
+
+        try {
+          const { data } = await axios.post('/api/pipelines/import', {
+            configText,
+            cicdPlatform,
+          });
+          const importedNodes = Array.isArray(data?.nodes) ? data.nodes : [];
+          const importedEdges = Array.isArray(data?.edges) ? data.edges : [];
+          nodeId = Math.max(nodeId, getMaxNodeId(importedNodes));
+          applyTrackedWorkflowChange({ nodes: importedNodes, edges: importedEdges });
+          setSelectedNodeId(null);
+          setConfigNodeId(null);
+          onYamlExport?.(typeof data?.yaml === 'string' ? data.yaml : configText);
+        } catch {
+          // Fallback to modal if direct file import fails
+          onOpenImport?.();
+        }
+      };
+      reader.readAsText(file);
+    },
+    [applyTrackedWorkflowChange, cicdPlatform, onOpenImport, onYamlExport]
+  );
 
   // Persist the auto-sync preference.
   useEffect(() => {
@@ -905,8 +963,22 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
         />
       </ReactFlow>
 
-      {/* Node count + live sync indicator (top-right, unobtrusive) */}
+      {/* Node count + live sync indicator + Import YAML (top-right, unobtrusive) */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+        <input
+          ref={importFileInputRef}
+          type="file"
+          accept=".yml,.yaml,.jenkinsfile,.groovy"
+          onChange={handleImportYamlFile}
+          className="hidden"
+        />
+        <button
+          onClick={() => importFileInputRef.current?.click()}
+          className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)] transition-colors whitespace-nowrap"
+          title="Upload a YAML or Jenkinsfile directly onto the canvas"
+        >
+          Import YAML
+        </button>
         <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap">
           {nodes.length} nodes | {edges.length} connections
         </div>
@@ -992,6 +1064,13 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
         <span className="w-px h-5 bg-[var(--ff-card-border-strong)] mx-0.5" />
 
+        <button
+          onClick={() => importFileInputRef.current?.click()}
+          className="px-2.5 h-8 rounded-lg text-xs font-medium ff-btn-secondary whitespace-nowrap"
+          title="Import YAML or Jenkinsfile directly onto the canvas"
+        >
+          Import YAML
+        </button>
         <button
           onClick={() => setAutoSync((prev) => !prev)}
           className={`px-2.5 h-8 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
