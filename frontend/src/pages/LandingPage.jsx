@@ -202,8 +202,8 @@ const STEPS = [
 ];
 
 /* ── AI Provider badges ── */
-const AI_PROVIDERS = ['Claude', 'GPT-4', 'Gemini', 'Featherless', 'Ollama'];
-const CICD_PLATFORMS = ['GitLab CI', 'GitHub Actions', 'Jenkins', 'CircleCI'];
+const AI_PROVIDERS = ['Groq (Llama 3.3)', 'Claude 4.5', 'GPT-4o', 'Gemini 2.5', 'Featherless', 'Ollama'];
+const CICD_PLATFORMS = ['GitLab CI', 'GitHub Actions', 'Jenkins', 'CircleCI', 'Bitbucket Pipelines'];
 
 /* ── A single animated counter ── */
 function Stat({ value, label }) {
@@ -492,10 +492,10 @@ export default function LandingPage({ onEnterApp }) {
     },
     statsRow: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, 1fr)',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
       justifyItems: 'center',
       gap: 24,
-      padding: '2.5rem 1.5rem',
+      padding: '2.25rem 1.5rem',
       background: 'var(--ff-card-bg)',
       border: '1px solid var(--ff-card-border)',
       borderRadius: 16,
@@ -636,10 +636,10 @@ export default function LandingPage({ onEnterApp }) {
       {/* ── Stats bar ── */}
       <div style={{ padding: '0 clamp(1.5rem, 5vw, 4rem)', maxWidth: 1100, margin: '0 auto' }}>
         <div style={s.statsRow}>
-          <Stat value="5+" label="AI Providers" />
-          <Stat value="4+" label="CI/CD Platforms" />
-          <Stat value="20" label="Node Types" />
-          <Stat value="∞" label="Pipelines" />
+          <Stat value="6+" label="AI Providers" />
+          <Stat value="5" label="CI/CD Platforms" />
+          <Stat value="20" label="Stage Nodes" />
+          <Stat value="2-Way" label="YAML ⇄ DAG Sync" />
         </div>
       </div>
 

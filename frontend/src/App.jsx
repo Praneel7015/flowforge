@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from
 import axios from 'axios';
 import Sidebar from './components/Sidebar';
 import YamlPreview from './components/YamlPreview';
+import ProviderSelector from './components/ProviderSelector';
 import ErrorBoundary from './components/ErrorBoundary';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import OfflineBanner from './components/OfflineBanner';
@@ -148,10 +149,10 @@ function readOnboardingStatus() {
       return { status: ONBOARDING_STATUS.completed };
     }
   } catch {
-    // Ignore malformed local data and fall back to first-run onboarding.
+    // Ignore malformed local data and fall back to completed so builder is unlocked by default.
   }
 
-  return { status: ONBOARDING_STATUS.required };
+  return { status: ONBOARDING_STATUS.completed };
 }
 
 function canUseProvider(providerList, name) {
@@ -280,6 +281,7 @@ export default function App({ onBackToLanding }) {
   }, [yamlCollapsed]);
 
   // Global ? key listener for shortcuts overlay
+  const [mobileBuilderTab, setMobileBuilderTab] = useState('canvas'); // 'library' | 'canvas' | 'yaml'
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
@@ -790,6 +792,14 @@ export default function App({ onBackToLanding }) {
           <header className="border-b border-[var(--ff-card-border)] bg-[var(--ff-header-bg)] backdrop-blur-xl px-4 md:px-6 py-3.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSidebarOpen((v) => !v)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
+                  aria-label="Toggle navigation sidebar"
+                  title="Toggle navigation sidebar"
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h12M3 9h12M3 13h12"/></svg>
+                </button>
                 {onBackToLanding && (
                   <button
                     onClick={onBackToLanding}
@@ -800,41 +810,34 @@ export default function App({ onBackToLanding }) {
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l6-6 6 6"/><path d="M5 7.5V15h3v-4h2v4h3V7.5"/></svg>
                   </button>
                 )}
-                {!sidebarOpen && (
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors"
-                    aria-label="Open sidebar"
-                    title="Open sidebar"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 5h12M3 9h12M3 13h12"/></svg>
-                  </button>
-                )}
                 <div>
-                  <h2 className="text-lg md:text-xl font-semibold tracking-tight text-[var(--ff-text)]">
+                  <h2 className="text-base md:text-lg font-semibold tracking-tight text-[var(--ff-text)]">
                     {currentPanelMeta.title}
                   </h2>
-                  <p className="text-sm text-[var(--ff-muted)] mt-0.5">{currentPanelMeta.subtitle}</p>
+                  <p className="hidden sm:block text-xs text-[var(--ff-muted)] mt-0.5">{currentPanelMeta.subtitle}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {isOnboardingRequired && (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-400">
-                    Setup required
-                  </span>
+                {providers.ai?.length > 0 && (
+                  <ProviderSelector
+                    type="ai"
+                    providers={providers.ai}
+                    selected={selectedProviders.ai}
+                    onChange={(val) => handleProviderChange('ai', val)}
+                    compact
+                    allowDisabled
+                  />
                 )}
-                {isLimitedMode && (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-amber-500/30 bg-amber-500/10 text-amber-400">
-                    Limited
-                  </span>
+                {providers.cicd?.length > 0 && (
+                  <ProviderSelector
+                    type="cicd"
+                    providers={providers.cicd}
+                    selected={selectedProviders.cicd}
+                    onChange={(val) => handleProviderChange('cicd', val)}
+                    compact
+                  />
                 )}
-                <span className="px-2.5 py-1 rounded-lg text-xs font-medium border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)]">
-                  {selectedAI?.displayName || 'No provider'}
-                </span>
-                <span className="px-2.5 py-1 rounded-lg text-xs font-medium border border-[var(--ff-card-border)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)]">
-                  {currentCICDPlatform.displayName}
-                </span>
                 <ThemeToggleButton />
                 <button
                   onClick={() => setActivePanel('settings')}
@@ -855,27 +858,78 @@ export default function App({ onBackToLanding }) {
             {!providersLoaded && loadingView}
 
             {providersLoaded && activePanel === 'builder' && (
-              <div
-                className={`h-full grid gap-2.5 ${
-                  showYamlPanel
-                    ? 'xl:grid-cols-[240px_minmax(0,1fr)_var(--yaml-col)]'
-                    : 'xl:grid-cols-[240px_minmax(0,1fr)]'
-                } grid-cols-1`}
-                style={showYamlPanel ? { '--yaml-col': yamlColValue } : undefined}
-              >
-                {showSidebar && (
-                  <Sidebar
-                    featureFlags={featureFlags}
-                    onAddNode={addNodeToCanvas}
-                    onImport={() => setShowImport(true)}
-                    onLoadTemplate={(template) => {
-                      setImportedWorkflow({ nodes: template.nodes, edges: template.edges });
-                      setYamlOutput('');
-                    }}
-                  />
-                )}
-                <section className="ff-surface h-full overflow-hidden ff-enter">{panelContent}</section>
-                {renderYamlRegion()}
+              <div className="h-full flex flex-col gap-2">
+                {/* Mobile / Tablet segmented view switcher (<1280px) */}
+                <div className="xl:hidden flex items-center justify-between gap-1 p-1 rounded-xl border border-[var(--ff-card-border)] bg-[var(--ff-surface)]">
+                  {[
+                    { id: 'library', label: '+ Add Nodes & Templates' },
+                    { id: 'canvas', label: 'Visual Canvas' },
+                    { id: 'yaml', label: `YAML (${currentCICDPlatform.fileName.split('/').pop()})` },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setMobileBuilderTab(tab.id)}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
+                        mobileBuilderTab === tab.id
+                          ? 'bg-[var(--ff-accent)] text-white font-semibold'
+                          : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Desktop 3-column layout + Mobile active tab view */}
+                <div
+                  className={`flex-1 min-h-0 grid gap-2.5 ${
+                    showYamlPanel
+                      ? 'xl:grid-cols-[240px_minmax(0,1fr)_var(--yaml-col)]'
+                      : 'xl:grid-cols-[240px_minmax(0,1fr)]'
+                  } grid-cols-1`}
+                  style={showYamlPanel ? { '--yaml-col': yamlColValue } : undefined}
+                >
+                  {showSidebar && (
+                    <div className={`${mobileBuilderTab === 'library' ? 'block' : 'hidden'} xl:block h-full overflow-hidden rounded-xl`}>
+                      <Sidebar
+                        featureFlags={featureFlags}
+                        onAddNode={(type, label) => {
+                          addNodeToCanvas?.(type, label);
+                          setMobileBuilderTab('canvas');
+                        }}
+                        onImport={() => setShowImport(true)}
+                        onLoadTemplate={(template) => {
+                          setImportedWorkflow({ nodes: template.nodes, edges: template.edges });
+                          setYamlOutput('');
+                          setMobileBuilderTab('canvas');
+                        }}
+                      />
+                    </div>
+                  )}
+                  <section
+                    className={`ff-surface h-full overflow-hidden ff-enter ${
+                      mobileBuilderTab === 'canvas' ? 'block' : 'hidden'
+                    } xl:block`}
+                  >
+                    {panelContent}
+                  </section>
+                  <div
+                    className={`${
+                      mobileBuilderTab === 'yaml' ? 'block' : 'hidden'
+                    } xl:block h-full overflow-hidden`}
+                  >
+                    {mobileBuilderTab === 'yaml' && !showYamlPanel ? (
+                      <YamlPreview
+                        yaml={yamlOutput}
+                        onClose={() => setMobileBuilderTab('canvas')}
+                        platform={currentCICDPlatform}
+                        onSyncToCanvas={handlePipelineImported}
+                      />
+                    ) : (
+                      renderYamlRegion()
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

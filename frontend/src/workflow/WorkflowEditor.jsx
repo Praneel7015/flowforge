@@ -15,7 +15,7 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
-import { saveCurrentAsTemplate } from '../components/NodeTemplates';
+import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/NodeTemplates';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -1324,22 +1324,41 @@ function WorkflowEditorInner({ onYamlExport, importedWorkflow, onImportedWorkflo
 
       {/* Empty state */}
       {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none">
-          <div className="text-center max-w-xs pointer-events-auto">
-            <div className="w-10 h-10 rounded-lg bg-[var(--ff-accent-soft)] flex items-center justify-center mx-auto mb-3">
-              <span className="text-[var(--ff-accent)] text-sm font-bold">FF</span>
+        <div className="absolute inset-0 flex items-center justify-center z-[5] pointer-events-none p-4">
+          <div className="text-center max-w-md pointer-events-auto rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-modal-bg)]/90 backdrop-blur-xl p-6 shadow-2xl">
+            <div className="w-10 h-10 rounded-xl bg-[var(--ff-accent-soft)] border border-[var(--ff-border-strong)] flex items-center justify-center mx-auto mb-3">
+              <span className="text-[var(--ff-accent)] text-sm font-bold ff-code">DAG</span>
             </div>
-            <p className="text-sm font-semibold text-[var(--ff-text-secondary)]">No nodes yet</p>
+            <p className="text-sm font-semibold text-[var(--ff-text)]">Start designing your CI/CD pipeline</p>
             <p className="text-xs text-[var(--ff-muted)] mt-1.5 leading-relaxed">
-              Drag nodes from the sidebar or press Enter on a node to add it. Use Generate or Migrate to auto-build a pipeline.
+              Click or drag any node from the library, double-click any node on the canvas to edit its commands inline, or launch a starter blueprint below:
             </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {BUILT_IN_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  onClick={() => {
+                    nodeId = Math.max(nodeId, getMaxNodeId(tpl.nodes));
+                    applyTrackedWorkflowChange({
+                      nodes: cloneWorkflow(tpl.nodes),
+                      edges: cloneWorkflow(tpl.edges),
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium ff-btn-secondary hover:border-[var(--ff-accent)]"
+                >
+                  + {tpl.name}
+                </button>
+              ))}
+            </div>
             {onOpenImport && (
-              <button
-                onClick={onOpenImport}
-                className="mt-4 ff-btn-secondary rounded-lg px-4 py-2 text-xs font-medium"
-              >
-                Import existing pipeline
-              </button>
+              <div className="mt-3 pt-3 border-t border-[var(--ff-card-border)]">
+                <button
+                  onClick={onOpenImport}
+                  className="ff-btn-primary rounded-lg px-4 py-1.5 text-xs font-semibold"
+                >
+                  Import existing YAML / Jenkinsfile
+                </button>
+              </div>
             )}
           </div>
         </div>

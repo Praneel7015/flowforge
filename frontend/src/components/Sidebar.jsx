@@ -133,8 +133,9 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
       aria-label={`Add ${node.label} node to canvas`}
       draggable
       onDragStart={(e) => onDragStart(e, node.type, node.label)}
+      onClick={() => onAddNode?.(node.type, node.label)}
       onKeyDown={(e) => handleKeyDown(e, node.type, node.label)}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-grab active:cursor-grabbing
+      className="group flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer lg:cursor-grab active:cursor-grabbing
         bg-[var(--ff-card-bg)] hover:bg-[var(--ff-card-bg-hover)] border border-[var(--ff-card-border)] hover:border-[var(--ff-card-border-hover)]
         focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] focus-visible:ring-offset-1
         transition-all text-sm"
@@ -142,7 +143,12 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
       <span className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${TONE_BG[node.tone] || TONE_BG.slate}`}>
         {node.icon}
       </span>
-      <span className="text-[var(--ff-text-secondary)] font-medium text-[13px]">{node.label}</span>
+      <span className="text-[var(--ff-text-secondary)] group-hover:text-[var(--ff-text)] font-medium text-[13px] truncate flex-1">
+        {node.label}
+      </span>
+      <span className="text-[11px] text-[var(--ff-muted)] opacity-0 group-hover:opacity-100 transition-opacity font-mono">
+        +
+      </span>
     </div>
   );
 
