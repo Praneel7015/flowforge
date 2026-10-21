@@ -26,14 +26,14 @@ function validateGitHubSignature(req, res, next) {
   const body = JSON.stringify(req.body);
   const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex');
 
-  const signatureBuf = Buffer.from(signature);
-  const expectedBuf = Buffer.from(expected);
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
 
   // timingSafeEqual throws on length mismatch — compare lengths first so a
   // malformed/forged signature yields a clean 401 instead of a 500.
   if (
-    signatureBuf.length !== expectedBuf.length ||
-    !crypto.timingSafeEqual(signatureBuf, expectedBuf)
+    sigBuf.length !== expBuf.length ||
+    !crypto.timingSafeEqual(sigBuf, expBuf)
   ) {
     return res.status(401).json({ error: 'Invalid GitHub webhook signature' });
   }

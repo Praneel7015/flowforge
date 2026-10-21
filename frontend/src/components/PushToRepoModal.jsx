@@ -70,11 +70,13 @@ export default function PushToRepoModal({
   const resolvedFilePath =
     PLATFORM_FILE_PATHS[cicdPlatform] || PLATFORM_FILE_PATHS[platform] || '.github/workflows/ci.yml';
 
-  const handleRepoSelect = (name, meta) => {
+  const handleRepoSelect = (name, ownerFromRepo, meta) => {
     setRepo(name);
+    const repoMeta = meta || (typeof ownerFromRepo === 'object' ? ownerFromRepo : null);
+    const resolvedOwner = typeof ownerFromRepo === 'string' ? ownerFromRepo : repoMeta?.owner;
     // GitLab addresses projects by numeric id; GitHub/Bitbucket by name.
-    setRepoId(platform === 'gitlab' ? meta?.id || name : name);
-    setOwner(meta?.owner || credentials.username || credentials.workspace || '');
+    setRepoId(platform === 'gitlab' ? repoMeta?.id || name : name);
+    setOwner(resolvedOwner || credentials.username || credentials.workspace || '');
     setBranch('');
     setSecretFindings(null);
     setAllowSecrets(false);

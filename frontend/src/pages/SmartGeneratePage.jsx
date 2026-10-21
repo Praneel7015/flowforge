@@ -104,7 +104,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
 
   // ── Step 0: Platform + Repo selection ────────────────────────────────────────
 
-  const handleRepoSelect = useCallback((repoName, repoMeta) => {
+  const handleRepoSelect = useCallback((repoName, ownerFromRepo) => {
     setSelectedRepo(repoName);
     setSelectedBranch('');
     setTree([]);
@@ -112,10 +112,10 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
     setGeneratedYaml('');
     setPushResult(null);
 
-    // Prefer the owner from the selected repo record (GitHub needs it); fall
-    // back to stored credentials (e.g. Bitbucket username) when absent.
+    const resolvedOwner =
+      typeof ownerFromRepo === 'string' ? ownerFromRepo : ownerFromRepo?.owner;
     const platformCreds = allCreds[platform] || {};
-    setRepoOwner(repoMeta?.owner || platformCreds.username || platformCreds.workspace || '');
+    setRepoOwner(resolvedOwner || platformCreds.username || platformCreds.workspace || '');
   }, [platform, allCreds]);
 
   const handleBranchSelect = useCallback((branch) => {

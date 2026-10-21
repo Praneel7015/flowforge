@@ -176,7 +176,19 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      const { data } = await axios.post('/api/advisor/chat', {
+
+      let n8nConfig = null;
+      try {
+        const rawN8n = window.localStorage.getItem('flowforge.n8n.v1');
+        if (rawN8n) n8nConfig = JSON.parse(rawN8n);
+      } catch {
+        n8nConfig = null;
+      }
+
+      const useN8nChat = Boolean(n8nConfig?.enabled && n8nConfig?.chatWebhookUrl?.trim());
+      const endpoint = useN8nChat ? '/api/n8n/chat' : '/api/advisor/chat';
+      const payload = {
+        ...(useN8nChat ? { chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() } : {}),
         messages: apiMessages,
         currentYaml,
         aiProvider,
@@ -188,7 +200,9 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
           chatId: conversationId,
           conversationId,
         },
-      }, { signal: controller.signal });
+      };
+
+      const { data } = await axios.post(endpoint, payload, { signal: controller.signal });
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply, timestamp: new Date() }]);
     } catch (err) {
       if (axios.isCancel(err)) return;
