@@ -228,10 +228,13 @@ function ScoreBar({ score, label }) {
   );
 }
 
-export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, aiOptions }) {
+export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, aiOptions, onLoadToBuilder }) {
   const [yamlInput, setYamlInput] = useState(currentYaml || '');
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [remediating, setRemediating] = useState(false);
+  const [changeLog, setChangeLog] = useState([]);
+  const [commitMessage, setCommitMessage] = useState('');
   const [error, setError] = useState('');
   const abortRef = useRef(null);
   const normalizedReport = useMemo(() => normalizeReport(report), [report]);
@@ -304,11 +307,76 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
       }, { signal: controller.signal });
 
       setReport(data);
+      setChangeLog([]);
+      setCommitMessage('');
     } catch (err) {
       if (axios.isCancel(err)) return;
       setError(err.response?.data?.error || 'Analysis failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAutoRemediate = async () => {
+    if (!yamlInput?.trim() || !normalizedReport) return;
+
+    setRemediating(true);
+    setError('');
+    try {
+      const allIssues = DIMENSIONS.flatMap((dim) =>
+        (normalizedReport.breakdown?.[dim]?.issues || []).map((issue) => `[${dim}] ${issue}`)
+      );
+      const failureAnalysis = {
+        summary: `Pipeline Health Score: ${normalizedReport.overallScore}/100 (Grade ${normalizedReport.grade})`,
+        overallScore: normalizedReport.overallScore,
+        grade: normalizedReport.grade,
+        issues: allIssues,
+        breakdown: normalizedReport.breakdown,
+        topRecommendations: normalizedReport.topRecommendations || [],
+      };
+
+      const { data } = await axios.post('/api/advisor/remediate', {
+        yaml: normalizeConfigText(yamlInput),
+        failureAnalysis,
+        aiProvider,
+        cicdPlatform,
+        aiOptions,
+      });
+
+      if (typeof data?.patchedYaml === 'string' && data.patchedYaml.trim()) {
+        setYamlInput(normalizeConfigText(data.patchedYaml));
+      }
+      setChangeLog(Array.isArray(data?.changeLog) ? data.changeLog : []);
+      setCommitMessage(typeof data?.commitMessage === 'string' ? data.commitMessage : '');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Auto-remediation failed');
+    } finally {
+      setRemediating(false);
+    }
+  };
+
+  const handleLoadIntoVisualBuilder = async () => {
+    if (!onLoadToBuilder || !yamlInput?.trim()) return;
+    try {
+      const normalized = normalizeConfigText(yamlInput);
+      const { data } = await axios.post('/api/pipelines/import', {
+        configText: normalized,
+        yaml: normalized,
+        cicdPlatform,
+      });
+      onLoadToBuilder({
+        yaml: normalized,
+        nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+        edges: Array.isArray(data?.edges) ? data.edges : [],
+        targetPlatform: data?.detectedPlatform || cicdPlatform,
+      });
+    } catch {
+      onLoadToBuilder({
+        yaml: normalizeConfigText(yamlInput),
+        nodes: [],
+        edges: [],
+        targetPlatform: cicdPlatform,
+      });
     }
   };
 
@@ -492,6 +560,51 @@ export default function HealthAdvisor({ currentYaml, aiProvider, cicdPlatform, a
                     </li>
                   ))}
                 </ol>
+              </div>
+            )}
+
+            {/* 1-Click Auto-Fix & Load into Visual Builder */}
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleAutoRemediate}
+                disabled={remediating || !yamlInput.trim()}
+                className="flex-1 py-2.5 px-4 rounded-xl font-semibold text-sm disabled:opacity-50 transition-opacity ff-btn-primary"
+              >
+                {remediating ? 'Auto-Fixing Health Issues...' : 'Auto-Fix Identified Health Issues'}
+              </button>
+              {onLoadToBuilder && (
+                <button
+                  onClick={handleLoadIntoVisualBuilder}
+                  disabled={!yamlInput.trim()}
+                  className="py-2.5 px-4 rounded-xl font-semibold text-sm disabled:opacity-50 transition-colors ff-btn-secondary"
+                >
+                  Load into Visual Builder
+                </button>
+              )}
+            </div>
+
+            {changeLog.length > 0 && (
+              <div className="ff-surface-soft p-4 space-y-3 border border-emerald-500/30">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="text-sm font-semibold text-emerald-400">
+                    Auto-Fix Change Log ({changeLog.length} fix{changeLog.length === 1 ? '' : 'es'} applied)
+                  </div>
+                  {commitMessage && (
+                    <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)] text-[var(--ff-text-secondary)]">
+                      {commitMessage}
+                    </span>
+                  )}
+                </div>
+                <ul className="space-y-2">
+                  {changeLog.map((item, idx) => (
+                    <li key={idx} className="text-xs text-[var(--ff-text-secondary)] flex items-start gap-2">
+                      <span className="font-mono font-semibold text-emerald-400 flex-shrink-0">
+                        [{item?.job || 'pipeline'}]
+                      </span>
+                      <span>{item?.change || String(item)}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
