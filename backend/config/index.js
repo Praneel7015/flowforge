@@ -2,6 +2,11 @@
  * Central configuration loader for all providers.
  * Reads from environment variables and tracks which providers are enabled.
  */
+const { resolveGroqModel } = require('../providers/ai/GroqProvider');
+
+// Label the Groq option with the model actually used (after retired-model
+// remapping) so the UI never advertises a model the server isn't calling.
+const GROQ_MODEL = resolveGroqModel(process.env.GROQ_MODEL);
 
 function readFeatureFlag(name, defaultValue = true) {
   const value = process.env[name];
@@ -18,11 +23,11 @@ const config = {
   ai: {
     groq: {
       name: 'groq',
-      displayName: 'Groq (GPT-OSS 120B)',
+      displayName: `Groq (${GROQ_MODEL})`,
       enabled: !!process.env.GROQ_API_KEY,
       apiKey: process.env.GROQ_API_KEY,
       baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
-      model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+      model: GROQ_MODEL,
     },
     anthropic: {
       name: 'anthropic',

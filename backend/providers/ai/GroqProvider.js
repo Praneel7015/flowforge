@@ -112,3 +112,4 @@ class GroqProvider extends AIProvider {
 }
 
 module.exports = GroqProvider;
+module.exports.resolveGroqModel = resolveGroqModel;
