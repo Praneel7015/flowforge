@@ -58,7 +58,7 @@ async function handleWebhook(req, res) {
     await runHandler();
   } catch (err) {
     console.error('Webhook processing error (retrying once): %s', logSafe(err.message));
-    await new Promise((resolve) => setTimeout(resolve, WEBHOOK_RETRY_DELAY_MS).unref?.());
+    await new Promise((resolve) => setTimeout(resolve, WEBHOOK_RETRY_DELAY_MS));
     try {
       await runHandler();
     } catch (retryErr) {
