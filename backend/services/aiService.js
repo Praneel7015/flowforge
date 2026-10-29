@@ -7,6 +7,7 @@ const { getCICDGenerator } = require('../providers/cicd');
 const { scanForSecrets } = require('../utils/secretScanner');
 const crypto = require('crypto');
 const { logSafe } = require('../utils/logSafe');
+const { normalizeCommand, toScriptConfig } = require('../utils/scriptCommands');
 const axios = require('axios');
 const yaml = require('js-yaml');
 
@@ -617,14 +618,11 @@ function normalizeDepList(value) {
     .filter(Boolean);
 }
 
+// Each `script:` entry (or `run:` step) is one command, so a multi-line block
+// such as `if ...; then ... fi` stays whole instead of being split into lines.
 function joinCommands(value) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter(Boolean)
-      .join('\n');
-  }
-  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return toScriptConfig(value.filter((item) => typeof item === 'string'));
+  if (typeof value === 'string') return toScriptConfig([value]);
   return '';
 }
 
@@ -654,6 +652,23 @@ function readGroovyString(src, i) {
     j += 1;
   }
   return null;
+}
+
+const GROOVY_UNESCAPES = { b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', '\n': '' };
+
+/** Applies Groovy's backslash escapes to a string literal's body in one pass. */
+function unescapeGroovy(raw) {
+  let out = '';
+  for (let i = 0; i < raw.length; i += 1) {
+    if (raw[i] !== '\\' || i + 1 >= raw.length) {
+      out += raw[i];
+      continue;
+    }
+    const next = raw[i + 1];
+    out += Object.hasOwn(GROOVY_UNESCAPES, next) ? GROOVY_UNESCAPES[next] : next;
+    i += 1;
+  }
+  return out;
 }
 
 const skipSpaces = (src, j) => {
@@ -718,10 +733,9 @@ function extractJenkinsShScripts(stageBody) {
     if (src.startsWith('sh', i) && !isIdentChar(src[i - 1]) && !isIdentChar(src[i + 2])) {
       const call = readShCall(src, i + 2);
       if (call) {
-        for (const line of call.script.split('\n')) {
-          const command = line.trim();
-          if (command) commands.push(command);
-        }
+        // One sh step is one shell script, however many lines it spans.
+        const command = normalizeCommand(unescapeGroovy(call.script));
+        if (command) commands.push(command);
         i = call.end;
         continue;
       }
@@ -760,7 +774,7 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
       const scripts = extractJenkinsShScripts(body);
 
       const config = { stage: stageName };
-      if (scripts.length > 0) config.script = scripts.join('\n');
+      if (scripts.length > 0) config.script = toScriptConfig(scripts);
 
       rawJobs.push({
         key,
@@ -806,10 +820,9 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
         for (const [jobKey, job] of Object.entries(jobsObj)) {
           if (!job || typeof job !== 'object') continue;
           const steps = Array.isArray(job.steps) ? job.steps : [];
-          const runCommands = steps
-            .map((step) => (step && typeof step.run === 'string' ? step.run.trim() : ''))
-            .filter(Boolean)
-            .join('\n');
+          const runCommands = joinCommands(
+            steps.map((step) => (step && typeof step.run === 'string' ? step.run : ''))
+          );
 
           const config = {};
           if (job['runs-on']) {
@@ -868,15 +881,14 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
           if (!job || typeof job !== 'object') continue;
 
           const steps = Array.isArray(job.steps) ? job.steps : [];
-          const runCommands = steps
-            .map((step) => {
+          const runCommands = joinCommands(
+            steps.map((step) => {
               if (!step || typeof step !== 'object') return '';
-              if (typeof step.run === 'string') return step.run.trim();
-              if (step.run && typeof step.run.command === 'string') return step.run.command.trim();
+              if (typeof step.run === 'string') return step.run;
+              if (step.run && typeof step.run.command === 'string') return step.run.command;
               return '';
             })
-            .filter(Boolean)
-            .join('\n');
+          );
 
           const config = {};
           if (job.docker?.[0]?.image) config.image = job.docker[0].image;
