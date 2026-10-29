@@ -1636,7 +1636,16 @@ async function autoRemediatePipeline(yaml, failureAnalysis, options = {}) {
 You are given a broken ${metadata.displayName} configuration and an AI failure analysis.
 Fix all identified issues. Rules:
   - Preserve existing jobs unless they are the direct cause of the failure.
-  - Add missing deps, fix scripts, pin unstable images, add retry where appropriate.
+  - Each CI job runs in a fresh container: a job that runs project tooling
+    (npm test, npm run <script>, npx, pytest, ...) must install dependencies
+    itself (e.g. npm ci, pip install -r requirements.txt) before running them.
+    A cache only speeds the install up; it does not replace it.
+  - Add missing deps, fix scripts, add retry where appropriate.
+  - NEVER downgrade a runtime or image version (node:20 must not become
+    node:18). Pinning is only allowed to the same or a newer version.
+  - Do not remove existing commands unless they are the direct cause of the failure.
+  - Every changeLog entry must describe a change that is actually present in
+    patchedYaml; do not list changes you did not make.
   - Annotate every changed line with: # FlowForge-fix: <reason>
 
 Target platform: ${metadata.displayName}
@@ -1657,15 +1666,17 @@ Return ONLY raw JSON — no markdown fences:
     maxTokens: 4096,
   });
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {
-      patchedYaml: yaml,
-      changeLog: [],
-      commitMessage: 'fix: auto-remediation by FlowForge',
-    };
+  // Models often wrap JSON in fences or prose; a bare JSON.parse would drop a
+  // valid fix and silently return the original YAML.
+  const parsed = parseJsonObjectFromText(text);
+  if (parsed && typeof parsed.patchedYaml === 'string' && parsed.patchedYaml.trim()) {
+    return parsed;
   }
+  return {
+    patchedYaml: yaml,
+    changeLog: [],
+    commitMessage: 'fix: auto-remediation by FlowForge',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

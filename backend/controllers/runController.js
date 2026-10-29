@@ -690,9 +690,13 @@ async function diagnoseAndFix(req, res) {
       yaml: providedYaml,
       configText,
       aiProvider,
+      cicdPlatform,
       aiOptions,
     } = req.body || {};
     const resolvedProjectId = projectId || projectSlug;
+    // The YAML being fixed is in the canvas format, which can differ from the
+    // CI provider the run came from (e.g. a Jenkinsfile checked via GitHub).
+    const configPlatform = cicdPlatform || platform;
 
     let failedJobs = [];
     const inputLogs = Array.isArray(providedFailedLogs)
@@ -828,7 +832,7 @@ async function diagnoseAndFix(req, res) {
       try {
         const remResult = await aiService.autoRemediatePipeline(rawYaml, explanation, {
           aiProvider,
-          cicdPlatform: platform,
+          cicdPlatform: configPlatform,
           aiOptions: parsedAIOptions,
         });
         remediation = {
