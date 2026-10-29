@@ -28,6 +28,9 @@ class OpenAIProvider extends AIProvider {
       this.client = new OpenAI({
         apiKey: this.config.apiKey,
         baseURL: this.config.baseUrl,
+        // Base URLs can be user-supplied; a redirect must not steer the
+        // server to a host the SSRF guard never checked.
+        fetchOptions: { redirect: 'error' },
       });
     }
     return this.client;

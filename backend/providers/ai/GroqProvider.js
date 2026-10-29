@@ -51,6 +51,7 @@ class GroqProvider extends AIProvider {
       this.client = new OpenAI({
         apiKey: this.config.apiKey,
         baseURL: this.config.baseUrl || DEFAULT_GROQ_BASE_URL,
+        fetchOptions: { redirect: 'error' },
       });
     }
     return this.client;

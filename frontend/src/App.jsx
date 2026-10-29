@@ -452,8 +452,13 @@ export default function App({ onBackToLanding }) {
     setSelectedProviders((prev) => ({ ...prev, [type]: value }));
     if (type === 'ai') {
       setLlmType(inferLlmType(value));
+      // Key, model and base URL are shared across providers in the form; an
+      // OpenAI key or model must not be sent to Groq after switching.
+      if (value !== selectedProviders.ai) {
+        setByomConfig((prev) => ({ ...prev, apiKey: '', model: '', baseUrl: '' }));
+      }
     }
-  }, []);
+  }, [selectedProviders.ai]);
 
   const handleLlmTypeChange = useCallback(
     (nextType) => {

@@ -347,6 +347,8 @@ export default function LiveRunsPanel({
         changeLog: Array.isArray(changeLog) ? changeLog : [],
         review: reviewFix(currentYaml, patchedYaml),
       });
+      const warning = toText(data?.warning || data?.remediation?.warning);
+      if (warning) setNotice(`${warning}. The diagnosis is shown, but no fix was generated.`);
     } catch (err) {
       setError(err.response?.data?.error || 'AI diagnosis failed. Check the AI provider in Settings and retry.');
     } finally {

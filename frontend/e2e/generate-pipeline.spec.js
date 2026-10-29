@@ -26,6 +26,8 @@ test.describe('AI Generator', () => {
   });
 
   test('generating without an AI key still returns an editable pipeline', async ({ page }) => {
+    // The 45s wait below must fit inside the test timeout (default 30s).
+    test.setTimeout(75000);
     // CI has no provider keys, so this exercises the deterministic fallback.
     await page.locator('textarea').first().fill('Node.js service with lint, unit tests and a deploy to production');
     await page.getByRole('button', { name: /Generate GitHub Actions Pipeline/ }).click();

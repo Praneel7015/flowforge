@@ -3,6 +3,9 @@
  * Communicates with a local Ollama server via HTTP.
  */
 const axios = require('axios');
+
+// The Ollama base URL can be user-supplied; never follow redirects off it.
+const http = axios.create({ maxRedirects: 0 });
 const AIProvider = require('./AIProvider');
 
 class OllamaProvider extends AIProvider {
@@ -25,7 +28,7 @@ class OllamaProvider extends AIProvider {
   async validateConfig() {
     try {
       // Check if Ollama server is running
-      const response = await axios.get(`${this.baseUrl}/api/tags`, {
+      const response = await http.get(`${this.baseUrl}/api/tags`, {
         timeout: 5000,
       });
       const models = response.data.models || [];
@@ -46,7 +49,7 @@ class OllamaProvider extends AIProvider {
   }
 
   async complete(systemPrompt, userMessage, options = {}) {
-    const response = await axios.post(`${this.baseUrl}/api/generate`, {
+    const response = await http.post(`${this.baseUrl}/api/generate`, {
       model: this.model,
       prompt: userMessage,
       system: systemPrompt,
@@ -70,7 +73,7 @@ class OllamaProvider extends AIProvider {
       })),
     ];
 
-    const response = await axios.post(`${this.baseUrl}/api/chat`, {
+    const response = await http.post(`${this.baseUrl}/api/chat`, {
       model: this.model,
       messages: ollamaMessages,
       stream: false,

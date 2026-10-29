@@ -2,8 +2,13 @@ import { test, expect } from '@playwright/test';
 import { openStudio, waitForBuilder, openPanel } from './helpers';
 
 test.describe('First visit', () => {
-  test('a new visitor lands straight in the studio (no forced setup)', async ({ page }) => {
-    await openStudio(page, { onboarding: null });
+  test('a brand-new visitor goes landing page → studio with no forced setup', async ({ page }) => {
+    // Truly empty storage: no hasVisited flag, onboarding state or saved preferences.
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await page.getByRole('button', { name: 'Open Studio' }).first().click();
     await waitForBuilder(page);
     await expect(page.getByText('First-Run Setup')).toHaveCount(0);
   });
@@ -31,6 +36,15 @@ test.describe('Provider settings', () => {
     await providerSelect(page).selectOption('vertex');
     await expect(page.getByText('GCP project ID')).toBeVisible();
     await expect(page.getByText(/Service account JSON key/)).toBeVisible();
+  });
+
+  test('switching provider clears the previous model and base URL', async ({ page }) => {
+    const model = page.getByPlaceholder('openai/gpt-oss-120b');
+    await model.fill('openai/gpt-oss-20b');
+    await page.getByPlaceholder('https://api.groq.com/openai/v1').fill('https://api.groq.com/openai/v1');
+    await providerSelect(page).selectOption('openai_compatible');
+    await expect(page.getByPlaceholder(/deepseek/)).toHaveValue('');
+    await expect(page.getByPlaceholder(/openrouter/)).toHaveValue('');
   });
 
   test('OpenAI-compatible requires a base URL', async ({ page }) => {

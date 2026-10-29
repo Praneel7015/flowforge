@@ -1703,34 +1703,30 @@ function extractLatestMessageText(messages, preferredRole = 'user') {
   return preferredRole ? extractLatestMessageText(messages, '') : '';
 }
 
+const N8N_SAFE_AI_OPTION_KEYS = ['model', 'region', 'location', 'projectId'];
+
 function sanitizeN8NAIOptions(aiOptions) {
   if (!aiOptions || typeof aiOptions !== 'object' || Array.isArray(aiOptions)) {
     return null;
   }
 
-  const blockedKeys = new Set([
-    'apikey',
-    'api_key',
-    'token',
-    'auth',
-    'authorization',
-    'authtoken',
-    'access_token',
-  ]);
-
+  // Allowlist, not a blocklist: new credential fields (AWS keys, service
+  // account JSON, ...) must never reach the webhook just because nobody
+  // remembered to block their names.
   const sanitized = {};
 
-  for (const [key, rawValue] of Object.entries(aiOptions)) {
-    if (blockedKeys.has(String(key || '').toLowerCase())) continue;
+  for (const key of N8N_SAFE_AI_OPTION_KEYS) {
+    const rawValue = aiOptions[key];
+    if (typeof rawValue !== 'string' || !rawValue.trim()) continue;
+    sanitized[key] = rawValue.trim().slice(0, 200);
+  }
 
-    if (typeof rawValue === 'string') {
-      const value = rawValue.trim();
-      if (value) sanitized[key] = value.slice(0, 500);
-      continue;
-    }
-
-    if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-      sanitized[key] = rawValue;
+  // Base URLs can carry secrets in userinfo or the query string; keep the origin only.
+  if (typeof aiOptions.baseUrl === 'string' && aiOptions.baseUrl.trim()) {
+    try {
+      sanitized.baseUrl = new URL(aiOptions.baseUrl.trim()).origin;
+    } catch {
+      // Malformed URLs are dropped.
     }
   }
 
@@ -1943,4 +1939,7 @@ module.exports = {
   autoRemediatePipeline,
   pipelineChat,
   parseConfigToDAG,
+  // Exported for tests.
+  sanitizeN8NAIOptions,
+  buildN8NChatPayload,
 };

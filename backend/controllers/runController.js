@@ -5,6 +5,7 @@ const bitbucketService = require('../services/bitbucketService');
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
 const { isSafePublicUrl } = require('../utils/ssrf');
+const { getAvailablePlatforms } = require('../providers/cicd');
 
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'circleci'];
 const CIRCLECI_API = 'https://circleci.com/api/v2';
@@ -697,6 +698,11 @@ async function diagnoseAndFix(req, res) {
     // The YAML being fixed is in the canvas format, which can differ from the
     // CI provider the run came from (e.g. a Jenkinsfile checked via GitHub).
     const configPlatform = cicdPlatform || platform;
+    if (!getAvailablePlatforms().includes(configPlatform)) {
+      return res.status(400).json({
+        error: `cicdPlatform must be one of: ${getAvailablePlatforms().join(', ')}`,
+      });
+    }
 
     let failedJobs = [];
     const inputLogs = Array.isArray(providedFailedLogs)
@@ -840,16 +846,14 @@ async function diagnoseAndFix(req, res) {
           changeLog: Array.isArray(remResult?.changeLog) ? remResult.changeLog : [],
           commitMessage: remResult?.commitMessage || 'fix: auto-remediation by FlowForge',
         };
-      } catch {
+      } catch (err) {
+        // Report that no fix was produced instead of returning an annotated
+        // copy of the original YAML that looks like a change.
         remediation = {
-          patchedYaml: `# FlowForge-fix: Reviewed failure in ${failedJobs[0]?.jobName || 'pipeline'}\n${rawYaml}`,
-          changeLog: [
-            {
-              job: failedJobs[0]?.jobName || 'pipeline',
-              change: explanation.suggestedFixes?.[0] || 'Added FlowForge remediation annotation',
-            },
-          ],
-          commitMessage: `fix(ci): remediate ${failedJobs[0]?.jobName || 'pipeline'} failure`,
+          patchedYaml: rawYaml,
+          changeLog: [],
+          commitMessage: 'fix: auto-remediation by FlowForge',
+          warning: `AI remediation unavailable: ${err.message}`,
         };
       }
     }
@@ -864,6 +868,7 @@ async function diagnoseAndFix(req, res) {
       patchedYaml: remediation.patchedYaml,
       changeLog: remediation.changeLog,
       commitMessage: remediation.commitMessage,
+      warning: remediation.warning,
     });
   } catch (err) {
     const status = err.status || 500;

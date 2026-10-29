@@ -27,6 +27,10 @@ reviews:
         localStorage, sessionStorage or cookies (keys must stay in memory).
     - path: "backend/test/**"
       instructions: Prefer focused node:test cases that cover error paths and security guards.
+  pre_merge_checks:
+    # The 80% docstring target is CodeRabbit's default, not a repo rule.
+    docstrings:
+      mode: "off"
   auto_review:
     enabled: true
     drafts: false
