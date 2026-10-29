@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { BUILT_IN_TEMPLATES } from './NodeTemplates';
+import { simulatePipeline, reviewFix } from '../utils/pipelineChecks';
 
 const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const RUN_PLATFORMS = [
@@ -97,6 +98,9 @@ export default function LiveRunsPanel({
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosis, setDiagnosis] = useState(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [warningsAcknowledged, setWarningsAcknowledged] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [autoPoll, setAutoPoll] = useState(false);
   const simTimersRef = useRef([]);
@@ -212,13 +216,18 @@ export default function LiveRunsPanel({
     }
   };
 
-  const handleSimulateLiveRun = useCallback(() => {
+  // Animates a simulated run whose outcome comes from checking the actual
+  // pipeline (see utils/pipelineChecks), so applying a correct fix and
+  // re-running really turns the canvas green.
+  const runSimulation = useCallback((graph) => {
     clearSimTimers();
     setError('');
+    setNotice('');
     setDiagnosis(null);
     setSimulating(true);
 
-    let activeNodes = canvasGraph?.nodes || [];
+    let activeNodes = graph?.nodes || [];
+    let activeEdges = graph?.edges || [];
     if (activeNodes.length === 0 && BUILT_IN_TEMPLATES.length > 0) {
       const starter = BUILT_IN_TEMPLATES[0];
       onApplyFixedPipeline?.({
@@ -227,30 +236,12 @@ export default function LiveRunsPanel({
         yaml: currentYaml,
       });
       activeNodes = starter.nodes;
+      activeEdges = starter.edges;
     }
 
-    const stageNodes = activeNodes.filter(
-      (n) => !n.type?.startsWith('trigger_') && n.type !== 'conditional'
-    );
-
-    const simNodes =
-      stageNodes.length > 0
-        ? stageNodes
-        : [
-            { id: 'node_1', type: 'build', data: { label: 'Install & Build', config: { stage: 'build' } } },
-            { id: 'node_2', type: 'lint', data: { label: 'ESLint & Typecheck', config: { stage: 'test' } } },
-            { id: 'node_3', type: 'test', data: { label: 'Unit & Integration Tests', config: { stage: 'test' } } },
-            { id: 'node_4', type: 'security_scan', data: { label: 'Container & Dependency Scan', config: { stage: 'test' } } },
-            { id: 'node_5', type: 'deploy', data: { label: 'Production Rollout', config: { stage: 'deploy' } } },
-          ];
-
-    // Pick a node to fail during simulation (prefer security_scan / test / last-1 node)
-    const failIndex = Math.max(
-      0,
-      simNodes.findIndex((n) => n.type === 'security_scan' || n.type === 'test' || n.type === 'integration_test') !== -1
-        ? simNodes.findIndex((n) => n.type === 'security_scan' || n.type === 'test' || n.type === 'integration_test')
-        : Math.min(simNodes.length - 1, 2)
-    );
+    const results = simulatePipeline(activeNodes, activeEdges);
+    const simNodes = results.map((r) => r.node);
+    const runFailed = results.some((r) => r.status === 'failed');
 
     const simRunId = `sim_${Date.now().toString(36)}`;
     const initialRun = {
@@ -259,13 +250,12 @@ export default function LiveRunsPanel({
       status: 'running',
       branch: branch || 'main',
       commitSha: 'a8f4d2c',
-      commitMessage: 'feat(ci): harden build & container verification',
+      commitMessage: 'Simulated run of the current canvas',
       startedAt: new Date().toISOString(),
     };
     setRuns((prev) => [initialRun, ...prev.filter((r) => !String(r.id).startsWith('sim_'))]);
     setSelectedRun(initialRun);
 
-    // Initialize all nodes as pending
     const initialJobs = simNodes.map((node) => ({
       id: node.id,
       nodeId: node.id,
@@ -278,13 +268,18 @@ export default function LiveRunsPanel({
     setJobs(initialJobs);
     onUpdateNodeStatuses?.(buildOverlayMapFromJobs(initialJobs, simNodes));
 
-    // Step through each node sequentially
-    simNodes.forEach((node, idx) => {
-      // Transition node to running
+    if (results.length === 0) {
+      setSimulating(false);
+      return;
+    }
+
+    results.forEach((result, idx) => {
       const startTimer = setTimeout(() => {
         setJobs((prev) => {
           const next = prev.map((j, jIdx) =>
-            jIdx === idx ? { ...j, status: 'running', duration: 'running...' } : j
+            jIdx === idx && result.status !== 'skipped'
+              ? { ...j, status: 'running', duration: 'running...' }
+              : j
           );
           onUpdateNodeStatuses?.(buildOverlayMapFromJobs(next, simNodes));
           return next;
@@ -292,139 +287,114 @@ export default function LiveRunsPanel({
       }, idx * 950 + 150);
       simTimersRef.current.push(startTimer);
 
-      // Transition node to passed or failed
       const finishTimer = setTimeout(() => {
-        const isFailedNode = idx === failIndex;
-        const isAfterFailed = idx > failIndex;
-        const nextStatus = isFailedNode ? 'failed' : isAfterFailed ? 'skipped' : 'passed';
-        const durationStr = isFailedNode ? '19s' : isAfterFailed ? '0s' : `${12 + idx * 9}s`;
-
+        const durationStr =
+          result.status === 'skipped' ? '0s' : result.status === 'failed' ? `${4 + idx}s` : `${12 + idx * 9}s`;
         setJobs((prev) => {
-          const next = prev.map((j, jIdx) => {
-            if (jIdx === idx) {
-              return {
-                ...j,
-                status: nextStatus,
-                duration: durationStr,
-                logs: isFailedNode
-                  ? `ERROR: Job "${node.data?.label || node.type}" exited with code 1.\nnpm ERR! code EUSAGE\nLockfile dependency mismatch or unpinned container image vulnerability detected during ${node.type}.\nSee full stack trace at step 3.`
-                  : `Step completed with exit code 0 (${durationStr}).`,
-              };
-            }
-            if (isFailedNode && jIdx > idx) {
-              return { ...j, status: 'skipped', duration: '0s' };
-            }
-            return j;
-          });
+          const next = prev.map((j, jIdx) =>
+            jIdx === idx ? { ...j, status: result.status, duration: durationStr, logs: result.log } : j
+          );
           onUpdateNodeStatuses?.(buildOverlayMapFromJobs(next, simNodes));
           return next;
         });
 
-        if (isFailedNode || idx === simNodes.length - 1) {
-          setSelectedRun((prev) =>
-            prev ? { ...prev, status: isFailedNode ? 'failed' : 'passed' } : prev
-          );
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === simRunId ? { ...r, status: isFailedNode ? 'failed' : 'passed' } : r
-            )
-          );
+        if (idx === results.length - 1) {
+          const finalStatus = runFailed ? 'failed' : 'passed';
+          setSelectedRun((prev) => (prev ? { ...prev, status: finalStatus } : prev));
+          setRuns((prev) => prev.map((r) => (r.id === simRunId ? { ...r, status: finalStatus } : r)));
           setSimulating(false);
         }
       }, idx * 950 + 900);
       simTimersRef.current.push(finishTimer);
     });
-  }, [clearSimTimers, canvasGraph?.nodes, onApplyFixedPipeline, currentYaml, branch, onUpdateNodeStatuses]);
+  }, [clearSimTimers, onApplyFixedPipeline, currentYaml, branch, onUpdateNodeStatuses]);
+
+  const handleSimulateLiveRun = useCallback(() => {
+    runSimulation(canvasGraph);
+  }, [runSimulation, canvasGraph]);
 
   const handleDiagnoseAndFix = async () => {
-    const failedJob = jobs.find((j) => normalizeStatus(j.status, j.conclusion) === 'failed') || jobs[0];
+    const failedJobs = jobs.filter((j) => normalizeStatus(j.status, j.conclusion) === 'failed');
+    const targets = failedJobs.length > 0 ? failedJobs : jobs.slice(0, 1);
     setDiagnosing(true);
     setError('');
+    setNotice('');
+    setWarningsAcknowledged(false);
     try {
       const { data } = await axios.post('/api/runs/diagnose-and-fix', {
         platform,
         yaml: currentYaml,
-        jobName: failedJob?.name || 'pipeline-job',
-        errorLogs:
-          failedJob?.logs ||
-          `Job "${failedJob?.name || 'test'}" failed with exit code 1 during CI execution.`,
+        // Send every failed job so one fix covers all of them, not just the first.
+        failedLogs: targets.map((j) => ({
+          jobName: j.name,
+          stage: j.stage,
+          log: j.logs || `Job "${j.name}" failed with exit code 1 during CI execution.`,
+        })),
         aiProvider,
         cicdPlatform,
         aiOptions,
       });
 
+      const patchedYaml =
+        data?.patchedYaml || data?.remediation?.patchedYaml || data?.fixedYaml || currentYaml;
       const changeLog = data?.changeLog ?? data?.remediation?.changeLog;
       setDiagnosis({
         rootCause:
-          toText(data?.rootCause) ||
-          toText(data?.diagnosis?.rootCause) ||
-          toText(data?.summary) ||
-          `Stage "${failedJob?.name || 'test'}" failed due to unpinned environment/cache state and missing retry guard.`,
-        explanation:
-          toText(data?.explanation) ||
-          toText(data?.diagnosis?.explanation) ||
-          'Added deterministic dependency caching, pinned runtime flags, and non-blocking audit/retry guards.',
-        patchedYaml:
-          data?.patchedYaml || data?.remediation?.patchedYaml || data?.fixedYaml || currentYaml,
-        changeLog: Array.isArray(changeLog) && changeLog.length > 0
-          ? changeLog
-          : [
-              {
-                job: failedJob?.name || 'test',
-                change: 'Added deterministic cache key + retry resilience and fixed script exit handling',
-              },
-            ],
+          toText(data?.rootCause) || toText(data?.diagnosis?.rootCause) || toText(data?.summary),
+        explanation: toText(data?.explanation) || toText(data?.diagnosis?.explanation),
+        patchedYaml,
+        changeLog: Array.isArray(changeLog) ? changeLog : [],
+        review: reviewFix(currentYaml, patchedYaml),
       });
-    } catch {
-      // Fallback local AI root-cause diagnosis if backend endpoint is offline or unconfigured
-      setDiagnosis({
-        rootCause: `Job "${failedJob?.name || 'Stage'}" exited with code 1: lockfile / dependency audit failed without deterministic cache or retry policy.`,
-        explanation:
-          'FlowForge synthesized a remediated pipeline configuration with pinned Node/container settings, dependency cache restoration, and resilient test flags.',
-        patchedYaml: currentYaml,
-        changeLog: [
-          {
-            job: failedJob?.name || 'pipeline',
-            change: 'Added cache policy, pinned image tag, and hardened failure exit handling',
-          },
-        ],
-      });
+    } catch (err) {
+      setError(err.response?.data?.error || 'AI diagnosis failed. Check the AI provider in Settings and retry.');
     } finally {
       setDiagnosing(false);
     }
   };
 
+  const isSimulatedRun = String(selectedRun?.id || '').startsWith('sim_');
+
+  // Applies the patched YAML to the canvas, then verifies it for real: a
+  // simulated run is re-run against the new graph; a real CI run is left
+  // pending until the fix is pushed and a new run is triggered.
   const handleApplyFixToCanvas = async () => {
     if (!diagnosis) return;
+    if (!diagnosis.review?.changed) {
+      setNotice('The AI did not change the pipeline, so there is nothing to apply. Try diagnosing again.');
+      return;
+    }
 
-    // Mark all jobs as passed on the canvas so the user sees the remediated green DAG
-    const greenJobs = jobs.map((j, idx) => ({
-      ...j,
-      status: 'passed',
-      duration: j.duration === '0s' || j.duration === '—' ? `${14 + idx * 6}s` : j.duration,
-    }));
-    setJobs(greenJobs);
-    onUpdateNodeStatuses?.(buildOverlayMapFromJobs(greenJobs, canvasGraph?.nodes || []));
-    setSelectedRun((prev) => (prev ? { ...prev, status: 'passed' } : prev));
-    setRuns((prev) =>
-      prev.map((r) => (r.id === selectedRun?.id ? { ...r, status: 'passed' } : r))
-    );
+    setApplying(true);
+    setError('');
+    try {
+      const { data } = await axios.post('/api/pipelines/import', {
+        configText: diagnosis.patchedYaml,
+        cicdPlatform,
+      });
+      const nodes = data?.nodes || [];
+      const edges = data?.edges || [];
+      onApplyFixedPipeline?.({
+        yaml: diagnosis.patchedYaml,
+        nodes,
+        edges,
+        detectedPlatform: data?.detectedPlatform || cicdPlatform,
+      });
 
-    if (diagnosis.patchedYaml && diagnosis.patchedYaml !== currentYaml) {
-      try {
-        const { data } = await axios.post('/api/pipelines/import', {
-          configText: diagnosis.patchedYaml,
-          cicdPlatform,
-        });
-        onApplyFixedPipeline?.({
-          yaml: diagnosis.patchedYaml,
-          nodes: data?.nodes || canvasGraph?.nodes || [],
-          edges: data?.edges || canvasGraph?.edges || [],
-          detectedPlatform: data?.detectedPlatform || cicdPlatform,
-        });
-      } catch {
-        // Keep current canvas nodes with green statuses
+      if (isSimulatedRun) {
+        runSimulation({ nodes, edges });
+        setNotice('Fix applied. Re-running the pipeline to verify it.');
+      } else {
+        const pendingJobs = jobs.map((j) => ({ ...j, status: 'pending', duration: '—' }));
+        setJobs(pendingJobs);
+        onUpdateNodeStatuses?.(buildOverlayMapFromJobs(pendingJobs, nodes));
+        setDiagnosis(null);
+        setNotice('Fix applied to the canvas. Push it to the repo, then use Trigger Run to verify it on CI.');
       }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not apply the fix: the patched config failed to parse.');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -433,6 +403,7 @@ export default function LiveRunsPanel({
     setSimulating(false);
     setJobs([]);
     setDiagnosis(null);
+    setNotice('');
     onUpdateNodeStatuses?.({});
   };
 
@@ -550,6 +521,11 @@ export default function LiveRunsPanel({
             {error}
           </div>
         )}
+        {notice && (
+          <div className="px-2.5 py-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-[11px] text-sky-300">
+            {notice}
+          </div>
+        )}
       </div>
 
       {/* Active Run & Stage Status Overlay List */}
@@ -588,8 +564,8 @@ export default function LiveRunsPanel({
             {jobs.map((job) => {
               const st = normalizeStatus(job.status, job.conclusion);
               return (
+                <div key={job.id || job.name}>
                 <div
-                  key={job.id || job.name}
                   className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-[var(--ff-card-border)] bg-[var(--ff-surface-inset)] text-xs"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -625,6 +601,15 @@ export default function LiveRunsPanel({
                     </span>
                   </div>
                 </div>
+                {st === 'failed' && job.logs && (
+                  <details className="mt-1 ml-1">
+                    <summary className="text-[11px] text-rose-300 cursor-pointer">View failure log</summary>
+                    <pre className="mt-1 p-2 rounded-lg bg-[var(--ff-surface-inset)] text-[10px] text-[var(--ff-text-secondary)] whitespace-pre-wrap ff-code">
+                      {job.logs}
+                    </pre>
+                  </details>
+                )}
+                </div>
               );
             })}
           </div>
@@ -654,15 +639,19 @@ export default function LiveRunsPanel({
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-emerald-400">AI Root-Cause Diagnosis</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono">
-              Ready to patch
+              {diagnosis.review?.changed ? 'Ready to patch' : 'No changes'}
             </span>
           </div>
-          <p className="text-xs text-[var(--ff-text)] font-medium leading-relaxed">
-            {diagnosis.rootCause}
-          </p>
-          <p className="text-[11px] text-[var(--ff-text-secondary)] leading-relaxed">
-            {diagnosis.explanation}
-          </p>
+          {diagnosis.rootCause && (
+            <p className="text-xs text-[var(--ff-text)] font-medium leading-relaxed">
+              {diagnosis.rootCause}
+            </p>
+          )}
+          {diagnosis.explanation && (
+            <p className="text-[11px] text-[var(--ff-text-secondary)] leading-relaxed">
+              {diagnosis.explanation}
+            </p>
+          )}
           {diagnosis.changeLog?.length > 0 && (
             <ul className="space-y-1 pt-1">
               {diagnosis.changeLog.map((item, i) => (
@@ -673,11 +662,60 @@ export default function LiveRunsPanel({
               ))}
             </ul>
           )}
+          {diagnosis.review?.changed && (
+            <details className="pt-1">
+              <summary className="text-[11px] text-[var(--ff-text-secondary)] cursor-pointer">
+                Review YAML changes (
+                {diagnosis.review.diff.filter((d) => d.type === 'add').length} added,{' '}
+                {diagnosis.review.diff.filter((d) => d.type === 'del').length} removed)
+              </summary>
+              <pre className="mt-1 max-h-64 overflow-auto p-2 rounded-lg bg-[var(--ff-surface-inset)] text-[10px] leading-relaxed ff-code">
+                {diagnosis.review.diff
+                  .filter((d) => d.type !== 'same')
+                  .map((d, i) => (
+                    <div
+                      key={i}
+                      className={d.type === 'add' ? 'text-emerald-400' : 'text-rose-400'}
+                    >
+                      {d.type === 'add' ? '+ ' : '- '}
+                      {d.text}
+                    </div>
+                  ))}
+              </pre>
+            </details>
+          )}
+          {diagnosis.review?.warnings?.length > 0 && (
+            <div className="px-2.5 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 space-y-1">
+              <p className="text-[11px] font-semibold text-amber-300">Check before applying</p>
+              <ul className="space-y-0.5">
+                {diagnosis.review.warnings.map((w) => (
+                  <li key={w} className="text-[11px] text-amber-200">• {w}</li>
+                ))}
+              </ul>
+              <label className="flex items-center gap-1.5 pt-1 text-[11px] text-[var(--ff-text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={warningsAcknowledged}
+                  onChange={(e) => setWarningsAcknowledged(e.target.checked)}
+                />
+                I reviewed these changes and still want to apply them
+              </label>
+            </div>
+          )}
           <button
             onClick={handleApplyFixToCanvas}
-            className="w-full py-2 px-3 rounded-lg text-xs font-semibold ff-btn-primary"
+            disabled={
+              applying ||
+              !diagnosis.review?.changed ||
+              (diagnosis.review.warnings.length > 0 && !warningsAcknowledged)
+            }
+            className="w-full py-2 px-3 rounded-lg text-xs font-semibold ff-btn-primary disabled:opacity-50"
           >
-            1-Click Apply Fix & Re-Verify Canvas
+            {applying
+              ? 'Applying fix...'
+              : isSimulatedRun
+                ? 'Apply Fix & Re-run Pipeline'
+                : 'Apply Fix to Canvas'}
           </button>
         </div>
       )}
