@@ -119,8 +119,20 @@ function resolveCredentials(platform, credentials = {}) {
   if (customUrl && !isSafePublicUrl(customUrl)) {
     const err = new Error('Invalid credentials URL: must be a safe public HTTP(S) URL');
     err.status = 400;
+    err.expose = true;
     throw err;
   }
+  // Tokens are sent to this host, so a custom one must use TLS.
+  if (customUrl && !/^https:\/\//i.test(String(customUrl).trim())) {
+    const err = new Error('Invalid credentials URL: custom hosts must use https://');
+    err.status = 400;
+    err.expose = true;
+    throw err;
+  }
+  // Server tokens (GITLAB_TOKEN, CIRCLECI_TOKEN) belong to the server's own
+  // configured host. A request that picks its own host must bring its own
+  // token, or the server's token would be sent to a host the caller chose.
+  const serverToken = (name) => (customUrl ? undefined : process.env[name]);
 
   if (platform === 'github') {
     const token = creds.token || process.env.GITHUB_TOKEN;
@@ -133,10 +145,14 @@ function resolveCredentials(platform, credentials = {}) {
   }
 
   if (platform === 'gitlab') {
-    const token = creds.token || process.env.GITLAB_TOKEN;
+    const token = creds.token || serverToken('GITLAB_TOKEN');
     const instanceUrl = creds.url || creds.instanceUrl || process.env.GITLAB_URL || 'https://gitlab.com';
     if (!token) {
-      const err = new Error('GitLab token is required (in credentials.token or GITLAB_TOKEN)');
+      const err = new Error(
+        customUrl
+          ? 'A custom GitLab URL needs your own token (credentials.token)'
+          : 'GitLab token is required (in credentials.token or GITLAB_TOKEN)'
+      );
       err.status = 400;
       throw err;
     }
@@ -156,10 +172,14 @@ function resolveCredentials(platform, credentials = {}) {
   }
 
   if (platform === 'circleci') {
-    const token = creds.token || process.env.CIRCLECI_TOKEN;
+    const token = creds.token || serverToken('CIRCLECI_TOKEN');
     const baseUrl = trimTrailingSlashes(creds.url || CIRCLECI_API);
     if (!token) {
-      const err = new Error('CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)');
+      const err = new Error(
+        customUrl
+          ? 'A custom CircleCI URL needs your own token (credentials.token)'
+          : 'CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)'
+      );
       err.status = 400;
       throw err;
     }
@@ -911,4 +931,6 @@ module.exports = {
   getRunStatus,
   triggerRun,
   diagnoseAndFix,
+  // Exported for tests.
+  resolveCredentials,
 };

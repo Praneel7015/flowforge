@@ -113,7 +113,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
 
   const loadTree = useCallback(async () => {
     if (!selectedRepo || !selectedBranch) return;
-    const creds = allCreds[repoPlatform] || {};
+    const creds = readStoredCredentials()[repoPlatform] || {};
     setLoadingTree(true);
     setTreeError('');
     try {
@@ -130,7 +130,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
     } finally {
       setLoadingTree(false);
     }
-  }, [selectedRepo, selectedBranch, repoPlatform, repoOwner, allCreds]);
+  }, [selectedRepo, selectedBranch, repoPlatform, repoOwner]);
 
   useEffect(() => {
     if (repoContextOpen && selectedRepo && selectedBranch) loadTree();
@@ -141,7 +141,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
       setRepoContext([]);
       return [];
     }
-    const creds = allCreds[repoPlatform] || {};
+    const creds = readStoredCredentials()[repoPlatform] || {};
     try {
       const { data } = await axios.post('/api/repo/file-contents', {
         platform: repoPlatform,
@@ -158,7 +158,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
       setRepoContext([]);
       return [];
     }
-  }, [selectedPaths, repoPlatform, repoOwner, allCreds, selectedRepo, selectedBranch]);
+  }, [selectedPaths, repoPlatform, repoOwner, selectedRepo, selectedBranch]);
 
   const platformNames = {
     gitlab: 'GitLab CI',

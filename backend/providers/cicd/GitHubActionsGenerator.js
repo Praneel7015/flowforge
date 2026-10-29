@@ -125,7 +125,7 @@ class GitHubActionsGenerator extends CICDGenerator {
         job.environment = environment;
         if (!node.data?.config?.script) {
           const text = approver
-            ? `echo "Approval required from ${approver}. Configure environment reviewers in GitHub."`
+            ? `echo 'Approval required from ${this._shellText(approver)}. Configure environment reviewers in GitHub.'`
             : 'echo "Approval gate enabled. Configure environment reviewers in GitHub."';
           job.steps.push({ name: 'Approval gate', run: text });
         }
@@ -138,7 +138,7 @@ class GitHubActionsGenerator extends CICDGenerator {
         if (!node.data?.config?.script) {
           job.steps.push({
             name: 'Canary rollout',
-            run: `echo "Deploying canary with ${trafficPercent}% traffic"`,
+            run: `echo 'Deploying canary with ${this._shellText(trafficPercent)}% traffic'`,
           });
         }
       }
@@ -150,7 +150,7 @@ class GitHubActionsGenerator extends CICDGenerator {
         if (!node.data?.config?.script) {
           job.steps.push({
             name: 'Blue/Green switch',
-            run: `echo "Switching active stack to ${activeColor}"`,
+            run: `echo 'Switching active stack to ${this._shellText(activeColor)}'`,
           });
         }
       }
@@ -158,11 +158,11 @@ class GitHubActionsGenerator extends CICDGenerator {
       // Add main step
       const scripts = this._normalizeScripts(
         node.data?.config?.script,
-        `echo "Running ${node.data?.label || node.type}..."`
+        this._echoLabel(node.data?.label || node.type)
       );
       for (const script of scripts) {
         job.steps.push({
-          name: node.data?.label || node.type,
+          name: this._shellText(node.data?.label) || node.type,
           run: script,
         });
       }

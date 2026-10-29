@@ -44,7 +44,7 @@ class BitbucketPipelinesGenerator extends CICDGenerator {
       const name = jobNameMap[node.id] || this._getJobName(node);
       const scripts = this._normalizeScripts(
         node.data?.config?.script,
-        `echo "Running ${node.data?.label || name}"`
+        this._echoLabel(node.data?.label || name)
       );
 
       const step = { name, script: scripts };

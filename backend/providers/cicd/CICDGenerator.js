@@ -264,6 +264,33 @@ class CICDGenerator {
   }
 
   /**
+   * Default command for a step without a script: prints the label. The label
+   * is user text (and arrives via shared blueprint links), and the job may run
+   * under sh, PowerShell or cmd, where quoting rules differ. GitHub Actions also
+   * expands ${{ }} before any shell sees the line. So only letters, digits,
+   * spaces and a few inert punctuation marks are kept; the rest is dropped.
+   * @param {string} label
+   * @returns {string}
+   */
+  _echoLabel(label) {
+    return `echo 'Running ${this._shellText(label) || 'job'}...'`;
+  }
+
+  /**
+   * User text reduced to characters that are inert in sh, PowerShell, cmd and
+   * GitHub expressions, for use inside a single-quoted echo.
+   * @param {unknown} value
+   * @returns {string}
+   */
+  _shellText(value) {
+    return String(value ?? '')
+      .replace(/[^\p{L}\p{N} _.,:/+=%-]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+  }
+
+  /**
    * Normalize script config to an array of commands. A multi-line array entry
    * stays one command; a legacy string is one command per line.
    * @param {string|string[]|undefined} input

@@ -143,8 +143,6 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
   const abortRef = useRef(null);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const creds = allCreds[platform] || {};
-
   const examplePrompts = [
     `Create a production-ready ${targetPlatformLabel} pipeline for a Node.js service that uses cache restore/save, matrix builds, lint, unit/integration/smoke tests, security scanning, packaging, release, approval gate, canary deployment, blue/green cutover, rollback, and notifications.`,
     `Design a ${targetPlatformLabel} monorepo pipeline (frontend + backend) with branch-aware conditional deployment, artifact packaging, parallel test strategy, and environment-specific deployment controls with rollback.`,
@@ -163,10 +161,10 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
 
       const resolvedOwner =
         typeof ownerFromRepo === 'string' ? ownerFromRepo : ownerFromRepo?.owner;
-      const platformCreds = allCreds[platform] || {};
+      const platformCreds = readStoredCredentials()[platform] || {};
       setRepoOwner(resolvedOwner || platformCreds.username || platformCreds.workspace || '');
     },
-    [platform, allCreds]
+    [platform]
   );
 
   const handleBranchSelect = useCallback((branch) => {
@@ -179,6 +177,9 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
 
   const loadTree = useCallback(async () => {
     if (!canProceedToFiles) return;
+    // Read credentials at call time so this callback (and the effect that
+    // calls it) only changes when the repo selection does.
+    const creds = readStoredCredentials()[platform] || {};
     setLoadingTree(true);
     setTreeError('');
     setTree([]);
@@ -217,7 +218,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
     } finally {
       setLoadingTree(false);
     }
-  }, [canProceedToFiles, platform, creds, repoOwner, selectedRepo, selectedBranch]);
+  }, [canProceedToFiles, platform, repoOwner, selectedRepo, selectedBranch]);
 
   useEffect(() => {
     if (repoContextOpen && canProceedToFiles) {
@@ -240,6 +241,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
         let repoContext = [];
         if (repoContextOpen && selectedRepo && selectedBranch && selectedPaths.length > 0) {
           try {
+            const creds = readStoredCredentials()[platform] || {};
             const { data: filesData } = await axios.post('/api/repo/file-contents', {
               platform,
               credentials: creds,
@@ -293,7 +295,6 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
       selectedRepo,
       selectedBranch,
       platform,
-      creds,
       repoOwner,
       targetPlatformLabel,
       aiProvider,

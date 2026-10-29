@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
-const { isSafePublicUrl } = require('../utils/ssrf');
+const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 const { trimTrailingSlashes } = require('../utils/url');
 const GITHUB_VALIDATE_TIMEOUT_MS = Number(process.env.GITHUB_VALIDATE_TIMEOUT_MS || 30000);
 const GITLAB_VALIDATE_TIMEOUT_MS = Number(process.env.GITLAB_VALIDATE_TIMEOUT_MS || 30000);
@@ -59,6 +59,9 @@ async function validateGitLab(creds) {
     const { data } = await axios.get(`${baseUrl}/api/v4/user`, {
       headers: { 'PRIVATE-TOKEN': token },
       timeout: GITLAB_VALIDATE_TIMEOUT_MS,
+      // Same protections as the GitLab client: the instance URL is user-supplied.
+      maxRedirects: 0,
+      ...safeAgents,
     });
     return {
       valid: true,

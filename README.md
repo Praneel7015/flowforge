@@ -19,7 +19,8 @@ Live at **[flowforge.highcortisol.xyz](https://flowforge.highcortisol.xyz)**: fr
 - **Health advisor** – A–F grade across speed, security, reliability and best practices, plus one-click auto-remediation.
 - **Pipeline Assistant** – pipeline-aware chat using the selected AI provider (server Groq key by default, or your own key). n8n routing is optional and falls back to the AI provider if the webhook fails.
 - **Repo integration** – browse GitHub/GitLab/Bitbucket repos, generate from repo files, and push the pipeline as a PR (blocked if the secret scanner finds credentials).
-- **Live runs** – list, trigger and diagnose CI runs, with status overlays on the canvas.
+- **Live runs** – list, trigger and diagnose real CI runs, with status overlays on the canvas. A **run simulator** checks the actual canvas (e.g. a job that runs `npm test` without installing dependencies fails, and downstream jobs are skipped), so a correct AI fix really turns the re-run green.
+- **AI fix review** – diagnose a failed run, then review the proposed YAML as a diff before applying it. Version downgrades and removed commands are flagged and need explicit confirmation; nothing is marked green without being re-run.
 - **Shareable blueprints** – the canvas state can be shared via URL.
 - **Works out of the box** – first-time users use the server's Groq key; anyone can switch to their own key/model in Settings (BYOM).
 
@@ -48,7 +49,7 @@ Live at **[flowforge.highcortisol.xyz](https://flowforge.highcortisol.xyz)**: fr
 | **OpenAI-compatible** | – (you set it) | Any Chat Completions endpoint: OpenRouter, Together, Fireworks, DeepSeek, Mistral, a public vLLM/LM Studio server… Base URL + model required, key optional. |
 | Ollama (local) | `llama3` | No key needed. |
 
-Users pick a provider and enter their own credentials in **Settings → Model and Overrides**; only the selected provider's fields are sent with a request. If no provider is specified, the backend uses the first configured one (Groq → Gemini → OpenAI → Anthropic → Ollama). A provider the user explicitly picked never silently falls back to another.
+Users pick a provider and enter their own credentials in **Settings → Model and Overrides**; only the selected provider's fields are sent with a request, and switching provider clears the previous key, model and base URL. If no provider is specified, the backend uses the first configured one (Groq → Gemini → OpenAI → Anthropic → Ollama). A provider the user explicitly picked never silently falls back to another: without credentials it returns a clear **400**. Custom endpoints must use `https://`.
 
 ## Architecture
 
@@ -84,21 +85,27 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | CORS allowlist (`FRONTEND_URL` + `*.highcortisol.xyz`); rejected origins get **403**, not 500 | `backend/server.js` |
 | Security headers, fixed-window rate limiting (general + tighter AI limit) | `backend/middleware/security.js` |
 | Central error handler, no internal error strings leaked in production | `backend/middleware/errorHandler.js` |
-| **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, and self-hosted GitLab `instanceUrl` on `/api/repo/*` (public HTTPS only). Blocks localhost, cloud metadata, private/loopback/link-local/CGNAT ranges incl. IPv4-mapped IPv6 | `backend/utils/ssrf.js`, `backend/controllers/repoController.js` |
-| n8n webhook calls use `maxRedirects: 0`, so a public URL can't redirect the server to an internal host | `backend/routes/n8nRoutes.js`, `backend/services/aiService.js` |
+| **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, self-hosted GitLab and custom CircleCI hosts. Blocks localhost, cloud metadata, private/loopback/link-local (full `fe80::/10`)/CGNAT ranges, including IPv4-mapped IPv6 in both dotted and hex form (`[::ffff:7f00:1]`) | `backend/utils/ssrf.js` |
+| **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects | `backend/utils/ssrf.js` |
+| **Path traversal**: user-supplied owner/repo/branch/path/id values in GitHub, GitLab, Bitbucket and CircleCI API URLs are encoded per segment, and `.` / `..` are rejected before any request is sent | `backend/utils/url.js` |
+| **Server CI tokens stay with the server's host**: a request that picks its own GitLab/CircleCI URL must bring its own token; custom hosts must be HTTPS | `backend/controllers/runController.js` |
+| **Generated configs can't run user text**: Jenkinsfile strings escape backslashes, quotes and line breaks in one pass; default step commands single-quote the label for the shell, so `$(...)` in a node label is printed, not executed | `backend/providers/cicd/` |
 | **GitHub webhooks**: HMAC-SHA256 over the **raw request bytes**, constant-time compare | `backend/routes/webhookRoutes.js` |
 | **GitLab webhooks**: token compared in constant time | `backend/routes/webhookRoutes.js` |
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
 | BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
-| AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames; the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
+| AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames (validation errors never echo the typed value); the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
+| n8n payloads use an **allowlist** of non-secret fields (model, region, location, project), so new credential fields can't leak to the webhook | `backend/services/aiService.js` |
+| **Error responses**: in production only errors we raise ourselves (validation) show their detail; provider/platform errors get a generic message. Logs use constant format strings and `logSafe()` (strips line breaks, ANSI and control characters) and record the path without the query string | `backend/utils/sendError.js`, `backend/utils/logSafe.js`, `backend/middleware/errorHandler.js` |
+| Registry lookups (providers, generators) use `Map`s with allowlist checks, so names like `__proto__` are rejected; chat/session ids come from `crypto`, not `Math.random` | `backend/providers/*/index.js`, `frontend/src/components/PipelineChat.jsx` |
 
-Known limits: the SSRF guard checks literal hosts, so it doesn't stop DNS rebinding (the fix would be a pinned-lookup HTTP agent). The rate limiter is in memory, so it resets on restart and isn't shared across instances.
+Known limits: the rate limiter is in memory, so it resets on restart and isn't shared across instances (Redis for horizontal scale). The routes have no user accounts or authentication; every visitor shares the server's default AI key, protected by rate limits.
 
 ## Quick start
 
-Prerequisites: Node.js 18+ and npm. For AI features you need a Groq key ([console.groq.com/keys](https://console.groq.com/keys), free) or another provider's key; everything else works without one.
+Prerequisites: Node.js 20.19+ or 22.13+ (22 recommended) and npm. For AI features you need a Groq key ([console.groq.com/keys](https://console.groq.com/keys), free) or another provider's key; everything else works without one.
 
 ```bash
 git clone https://github.com/praneel7015/flowforge.git
@@ -161,10 +168,12 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (SSRF guard, secret scanner, providers, SigV4, import, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (63 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
-cd frontend && npm run test:e2e              # Playwright; starts the API and Vite dev server itself
+cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```
+
+E2E runs with no AI keys (as in CI), so it exercises the deterministic fallbacks.
 
 ## Development workflow
 
@@ -173,9 +182,9 @@ Every pull request to `main` goes through:
 | Check | What it does | Config |
 |---|---|---|
 | **CI** (GitHub Actions) | Backend lint + unit tests, frontend lint + build, then Playwright E2E against a real API + Vite server | `.github/workflows/ci.yml` |
-| **CodeQL** | GitHub code scanning with the `security-extended` query suite, on PRs, pushes and weekly | `.github/workflows/codeql.yml` |
+| **CodeQL** | GitHub code scanning with the `security-extended` query suite, on PRs, pushes and weekly. A PR fails if it introduces a new alert; alerts that are by design (e.g. the user-chosen GitLab/CircleCI host) are dismissed in the Security tab with the mitigation recorded | `.github/workflows/codeql.yml` |
 | **CodeRabbit** | AI code review on each PR, with repo-specific instructions (SSRF, key handling, deterministic generators) plus ESLint, gitleaks, actionlint, yamllint and markdownlint | `.coderabbit.yaml` |
-| **Dependabot** | Weekly grouped npm updates for backend and frontend, monthly GitHub Actions updates | `.github/dependabot.yml` |
+| **Dependabot** | Weekly grouped npm minor/patch updates for backend and frontend, monthly GitHub Actions updates. Major versions arrive as separate PRs and need review before merging | `.github/dependabot.yml` |
 | **Vercel** | Preview deployment of the frontend for each PR | Vercel GitHub app |
 
 PRs use the template in `.github/pull_request_template.md`; `CODEOWNERS` requests a review from the maintainer.
@@ -204,7 +213,8 @@ flowforge/
 │   │                         importService, github/gitlab/bitbucketService
 │   ├── providers/ai/         Groq, Anthropic, Gemini, OpenAI, Vertex, Bedrock, OpenAI-compatible, Ollama
 │   ├── providers/cicd/       GitHub, GitLab, Jenkins, CircleCI, Bitbucket generators
-│   ├── utils/                ssrf, secretScanner, aiOptions (BYOM sanitiser)
+│   ├── utils/                ssrf (guard + connect-time DNS checks), url (path encoding),
+│   │                         aiOptions (BYOM sanitiser), logSafe, sendError, secretScanner
 │   └── test/
 ├── examples/
 ├── render.yaml

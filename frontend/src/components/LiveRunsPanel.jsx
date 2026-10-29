@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { BUILT_IN_TEMPLATES } from './NodeTemplates';
+import { BUILT_IN_TEMPLATES } from './templateStore';
 import { simulatePipeline, reviewFix, jobsWithoutScripts } from '../utils/pipelineChecks';
 
 const CREDS_KEY = 'flowforge.platformCredentials.v1';

