@@ -162,7 +162,7 @@ export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDel
                         key={idx}
                         type="button"
                         onClick={() => handleFieldChange('script', preset)}
-                        className="text-[10px] ff-code px-2 py-0.5 rounded border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors truncate max-w-full"
+                        className="text-[10px] ff-code px-2 py-0.5 rounded-sm border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors truncate max-w-full"
                         title={`Use preset: ${preset}`}
                       >
                         + {preset}

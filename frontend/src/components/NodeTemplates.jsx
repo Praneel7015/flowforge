@@ -42,7 +42,7 @@ export default function NodeTemplates({ onLoadTemplate }) {
             {!template.builtIn && (
               <button
                 onClick={() => handleDelete(template.id)}
-                className="text-[11px] text-[var(--ff-muted)] hover:text-[var(--ff-danger)] transition-colors flex-shrink-0"
+                className="text-[11px] text-[var(--ff-muted)] hover:text-[var(--ff-danger)] transition-colors shrink-0"
                 title="Delete template"
               >
                 Remove

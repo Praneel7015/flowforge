@@ -382,12 +382,12 @@ function PlatformCredentialsStep() {
               <p className="text-xs text-[var(--ff-muted)] mt-0.5">{currentPlatform.description}</p>
             </div>
             {currentValidation.status === 'valid' && (
-              <span className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--ff-success)]/10 text-[var(--ff-success)] border border-[var(--ff-success)]/20">
+              <span className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--ff-success)]/10 text-[var(--ff-success)] border border-[var(--ff-success)]/20">
                 Verified
               </span>
             )}
             {currentValidation.status === 'invalid' && (
-              <span className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--ff-danger)]/10 text-[var(--ff-danger)] border border-[var(--ff-danger)]/20">
+              <span className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--ff-danger)]/10 text-[var(--ff-danger)] border border-[var(--ff-danger)]/20">
                 Failed
               </span>
             )}
@@ -436,7 +436,7 @@ function PlatformCredentialsStep() {
           {/* Validation feedback */}
           {currentValidation.status !== 'idle' && currentValidation.status !== 'testing' && currentValidation.message && (
             <div className={`mt-3 flex items-start gap-2 text-sm ${statusColor[currentValidation.status]}`}>
-              <span className="flex-shrink-0 mt-0.5">
+              <span className="shrink-0 mt-0.5">
                 {currentValidation.status === 'valid' ? (
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="7" r="6"/><path d="M4.5 7l2 2 3.5-3.5"/></svg>
                 ) : (

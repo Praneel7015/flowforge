@@ -45,7 +45,7 @@ export default function MarkdownContent({ content, className = '', compact = fal
             if (inline) {
               return (
                 <code
-                  className="ff-code rounded bg-[var(--ff-code-bg-inline)] border border-[var(--ff-card-border-strong)] px-1.5 py-0.5 text-[0.85em] text-[var(--ff-accent)]"
+                  className="ff-code rounded-sm bg-[var(--ff-code-bg-inline)] border border-[var(--ff-card-border-strong)] px-1.5 py-0.5 text-[0.85em] text-[var(--ff-accent)]"
                   {...props}
                 >
                   {codeValue}

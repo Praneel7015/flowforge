@@ -94,7 +94,7 @@ function Message({ role, content, timestamp, onApplyCode }) {
   return (
     <div className={`group flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
-        <div className="w-7 h-7 rounded-full bg-[var(--ff-avatar-bg)] text-[var(--ff-text)] flex-shrink-0 flex items-center justify-center text-xs font-bold">
+        <div className="w-7 h-7 rounded-full bg-[var(--ff-avatar-bg)] text-[var(--ff-text)] shrink-0 flex items-center justify-center text-xs font-bold">
           FF
         </div>
       )}
@@ -357,7 +357,7 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         ))}
         {loading && (
           <div className="flex gap-3" aria-busy="true" aria-label="Assistant is typing">
-            <div className="w-7 h-7 rounded-full bg-[var(--ff-avatar-bg)] text-[var(--ff-text)] flex-shrink-0 flex items-center justify-center text-xs font-bold" aria-hidden="true">FF</div>
+            <div className="w-7 h-7 rounded-full bg-[var(--ff-avatar-bg)] text-[var(--ff-text)] shrink-0 flex items-center justify-center text-xs font-bold" aria-hidden="true">FF</div>
             <div className="bg-[var(--ff-bubble-bot-bg)] border border-[var(--ff-card-border-strong)] px-4 py-3 rounded-2xl rounded-tl-sm">
               <span className="inline-flex gap-1">
                 <span className="w-2 h-2 rounded-full bg-[var(--ff-muted)] animate-bounce" style={{ animationDelay: '0ms' }} />

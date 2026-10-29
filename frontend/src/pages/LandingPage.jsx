@@ -224,7 +224,7 @@ export default function LandingPage({ onEnterApp }) {
             </div>
 
             {/* Interactive DAG-to-YAML Preview Card */}
-            <div className="rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] overflow-hidden shadow-sm">
+            <div className="rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface)] overflow-hidden shadow-xs">
               {/* Top Bar with Target Tabs */}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-[var(--ff-border)] bg-[var(--ff-bg-soft)]">
                 <span className="text-xs text-[var(--ff-muted)]">
@@ -287,7 +287,7 @@ export default function LandingPage({ onEnterApp }) {
                           onClick={() => {
                             if (line.node) setSelectedStageId(line.node);
                           }}
-                          className={`flex items-start px-2 py-0.5 rounded transition-colors ${
+                          className={`flex items-start px-2 py-0.5 rounded-sm transition-colors ${
                             line.node ? 'cursor-pointer' : ''
                           } ${
                             isHighlighted
@@ -295,7 +295,7 @@ export default function LandingPage({ onEnterApp }) {
                               : 'text-[var(--ff-text-secondary)] hover:bg-[var(--ff-nav-hover)]'
                           }`}
                         >
-                          <span className="w-7 flex-shrink-0 select-none text-[var(--ff-muted)] text-[11px]">
+                          <span className="w-7 shrink-0 select-none text-[var(--ff-muted)] text-[11px]">
                             {line.num}
                           </span>
                           <span className="whitespace-pre">{line.text || ' '}</span>
