@@ -68,9 +68,10 @@ function getAIProvider(name, runtimeConfig = {}) {
   let resolvedName = providerName;
   let config = getAIConfig(resolvedName);
 
-  // If requested provider has no server key and no BYOM runtime key, fall back to
-  // the first enabled cloud provider (e.g. groq -> gemini -> openai -> anthropic).
-  if ((!config || !config.enabled) && !useRuntimeConfig) {
+  // Only the implicit default falls back to another configured provider. If the
+  // user explicitly picked a provider, answering with a different one would
+  // mislabel the result, so that case errors below asking for a key instead.
+  if (!name && (!config || !config.enabled) && !useRuntimeConfig) {
     const fallbackOrder = ['groq', 'gemini', 'openai', 'anthropic', 'ollama'];
     const fallback = fallbackOrder.find((candidate) => {
       const c = getAIConfig(candidate);
@@ -98,7 +99,7 @@ function getAIProvider(name, runtimeConfig = {}) {
 
   if (!config.enabled && !useRuntimeConfig) {
     throw new Error(
-      `AI provider '${resolvedName}' is not enabled. Set GROQ_API_KEY on the backend or provide a free API key in Settings -> Bring Your Own Model.`
+      `AI provider '${resolvedName}' has no API key on this server. Add your own key in Settings -> Bring Your Own Model, or switch back to the default provider.`
     );
   }
 

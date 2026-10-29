@@ -241,10 +241,10 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         n8nConfig = null;
       }
 
+      // n8n is opt-in (Settings → n8n). Without it, chat goes straight to the
+      // selected AI provider: the server's default key, or the user's own key.
       const useN8nChat = Boolean(n8nConfig?.enabled && n8nConfig?.chatWebhookUrl?.trim());
-      const endpoint = useN8nChat ? '/api/n8n/chat' : '/api/advisor/chat';
       const payload = {
-        ...(useN8nChat ? { chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() } : {}),
         messages: apiMessages,
         currentYaml,
         aiProvider,
@@ -258,13 +258,34 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         },
       };
 
-      const { data } = await axios.post(endpoint, payload, { signal: controller.signal });
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply, timestamp: new Date() }]);
+      let reply;
+      if (useN8nChat) {
+        try {
+          const { data } = await axios.post(
+            '/api/n8n/chat',
+            { ...payload, chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() },
+            { signal: controller.signal }
+          );
+          reply = data.reply;
+        } catch (err) {
+          if (axios.isCancel(err)) throw err;
+          const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
+          reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${data.reply}`;
+        }
+      } else {
+        const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
+        reply = data.reply;
+      }
+      setMessages((prev) => [...prev, { role: 'assistant', content: reply, timestamp: new Date() }]);
     } catch (err) {
       if (axios.isCancel(err)) return;
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'Sorry, I encountered an error. Please check backend connectivity.', timestamp: new Date() },
+        {
+          role: 'assistant',
+          content: `Sorry, I couldn't get a response (${err.response?.data?.error || err.message}). Check the AI provider and API key in Settings.`,
+          timestamp: new Date(),
+        },
       ]);
     } finally {
       setLoading(false);

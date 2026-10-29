@@ -30,9 +30,9 @@ const MODEL_PRESETS = {
     'openai/gpt-oss-20b',
     'qwen/qwen3.8-27b',
   ],
-  openai: ['gpt-4o', 'gpt-4.1-mini', 'gpt-4o-mini'],
-  anthropic: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-3-haiku-20240307'],
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-pro'],
+  openai: ['gpt-6-luna', 'gpt-5.6-sol'],
+  anthropic: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'],
+  gemini: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
   ollama: ['llama3', 'mistral', 'codellama'],
 };
 
@@ -85,7 +85,7 @@ function LlmAndProviderStep({
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <RuntimeCard
           title="Cloud LLM"
-          description="Use hosted APIs like Groq (GPT-OSS 120B), Claude, Gemini, or OpenAI for high-speed pipeline synthesis."
+          description="Use hosted APIs like Groq (default, no key needed), Claude, Gemini, or OpenAI. Bring your own key and model any time."
           selected={llmType === 'cloud'}
           onSelect={() => onLlmTypeChange('cloud')}
         />

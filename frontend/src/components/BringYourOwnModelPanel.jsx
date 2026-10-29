@@ -9,15 +9,15 @@ const providerHints = {
     baseUrl: 'https://api.groq.com/openai/v1',
   },
   openai: {
-    model: 'gpt-4o-mini',
+    model: 'gpt-6-luna',
     baseUrl: 'https://api.openai.com/v1',
   },
   anthropic: {
-    model: 'claude-sonnet-4-5',
+    model: 'claude-sonnet-5-5',
     baseUrl: '',
   },
   gemini: {
-    model: 'gemini-1.5-pro',
+    model: 'gemini-3.8-flash',
     baseUrl: '',
   },
   ollama: {

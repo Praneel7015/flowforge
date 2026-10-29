@@ -1443,7 +1443,7 @@ Return ONLY raw JSON, no markdown fences:
     const fallback = buildDeterministicPipelineFromPrompt(prompt, cicdPlatform, options.repoContext);
     return {
       ...fallback,
-      warning: `Generated using smart architecture engine (${err.message}). Add a free Groq API key in Settings for custom LLM synthesis.`,
+      warning: `AI provider unavailable (${err.message}); generated from the built-in template instead. Check the AI provider and API key in Settings.`,
     };
   }
 }
@@ -1475,17 +1475,15 @@ Analyse the provided pipeline failure logs and return ONLY raw JSON — no markd
     maxTokens: 2048,
   });
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {
-      summary: text,
-      explanation: text,
-      rootCause: 'Unknown',
-      suggestedFixes: [],
-      hasSecurityIssue: false,
-    };
-  }
+  const parsed = parseJsonObjectFromText(text);
+  if (parsed) return parsed;
+  return {
+    summary: text,
+    explanation: text,
+    rootCause: 'Unknown',
+    suggestedFixes: [],
+    hasSecurityIssue: false,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1554,7 +1552,7 @@ Return ONLY raw JSON:
       edges: dag.edges,
       sourcePlatform,
       targetPlatform,
-      warning: `Migrated using deterministic AST compiler (${err.message}).`,
+      warning: `AI provider unavailable (${err.message}); converted structurally without AI. Review the result before using it.`,
     };
   }
 
@@ -1827,8 +1825,11 @@ async function pipelineChat(messages, currentYaml, options = {}) {
   const generator = getCICDGenerator(cicdPlatform);
   const metadata = generator.getMetadata();
 
+  // The server's n8n webhook is opt-in per request (the user turned n8n on).
+  // Otherwise chat goes straight to the selected AI provider: the server's
+  // Groq key by default, or the user's own key/model from Settings.
   const n8nWebhookUrl = process.env.N8N_CHAT_WEBHOOK_URL;
-  if (n8nWebhookUrl) {
+  if (options.useN8n && n8nWebhookUrl) {
     const authHeader = process.env.N8N_WEBHOOK_AUTH_HEADER || 'X-FlowForge-Token';
     const authToken = process.env.N8N_WEBHOOK_AUTH_TOKEN;
     const headers = { 'Content-Type': 'application/json' };
@@ -1836,16 +1837,18 @@ async function pipelineChat(messages, currentYaml, options = {}) {
 
     const payload = buildN8NChatPayload(messages, currentYaml, options, cicdPlatform, metadata);
 
-    const { data } = await postN8NChatPayload(n8nWebhookUrl, payload, {
-      headers,
-      timeout: Number(process.env.N8N_CHAT_TIMEOUT_MS || 30000),
-      maxRedirects: 0,
-    });
-
-    return extractN8NReply(data);
+    try {
+      const { data } = await postN8NChatPayload(n8nWebhookUrl, payload, {
+        headers,
+        timeout: Number(process.env.N8N_CHAT_TIMEOUT_MS || 30000),
+        maxRedirects: 0,
+      });
+      return extractN8NReply(data);
+    } catch (err) {
+      console.warn('[chat] n8n webhook failed, answering with the AI provider:', err.message);
+    }
   }
 
-  // Fallback keeps local development unblocked if n8n is not configured yet.
   const system = `You are FlowForge Assistant — an expert CI/CD engineer embedded inside the FlowForge visual pipeline builder.
 
 You have full visibility of the user's current pipeline (shown below).
@@ -1866,7 +1869,7 @@ ${currentYaml || '# No pipeline loaded yet — drag nodes onto the canvas or use
     const latestMsg = extractLatestMessageText(messages, 'user').toLowerCase();
     const health = buildHeuristicHealthReport(currentYaml || '', metadata.displayName);
     const tips = health.topRecommendations.map((t) => `- ${t}`).join('\n');
-    return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Connect a free **Groq API Key** in **Settings → Step 2** for full conversational AI.*`;
+    return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Check the AI provider and API key in **Settings**.*`;
   }
 }
 

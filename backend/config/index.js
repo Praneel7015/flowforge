@@ -7,6 +7,9 @@ const { resolveGroqModel } = require('../providers/ai/GroqProvider');
 // Label the Groq option with the model actually used (after retired-model
 // remapping) so the UI never advertises a model the server isn't calling.
 const GROQ_MODEL = resolveGroqModel(process.env.GROQ_MODEL);
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-6-luna';
 
 function readFeatureFlag(name, defaultValue = true) {
   const value = process.env[name];
@@ -31,24 +34,24 @@ const config = {
     },
     anthropic: {
       name: 'anthropic',
-      displayName: 'Claude (Anthropic)',
+      displayName: `Claude (${ANTHROPIC_MODEL})`,
       enabled: !!process.env.ANTHROPIC_API_KEY,
       apiKey: process.env.ANTHROPIC_API_KEY,
-      model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+      model: ANTHROPIC_MODEL,
     },
     gemini: {
       name: 'gemini',
-      displayName: 'Gemini (Google)',
+      displayName: `Gemini (${GEMINI_MODEL})`,
       enabled: !!process.env.GEMINI_API_KEY,
       apiKey: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL || 'gemini-1.5-pro',
+      model: GEMINI_MODEL,
     },
     openai: {
       name: 'openai',
-      displayName: 'GPT-4 (OpenAI)',
+      displayName: `OpenAI (${OPENAI_MODEL})`,
       enabled: !!process.env.OPENAI_API_KEY,
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+      model: OPENAI_MODEL,
     },
     ollama: {
       name: 'ollama',

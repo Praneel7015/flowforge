@@ -57,14 +57,14 @@ const NAV_ITEMS = [
   { id: 'repo', label: 'AI Generator' },
   { id: 'jenkins', label: 'Migrate' },
   { id: 'health', label: 'Health' },
-  { id: 'chat', label: 'Copilot' },
+  { id: 'chat', label: 'Assistant' },
   { id: 'settings', label: 'Settings' },
 ];
 
 const INSPECTOR_TABS = [
   { id: 'code', label: 'YAML' },
   { id: 'health', label: 'Health' },
-  { id: 'copilot', label: 'Copilot' },
+  { id: 'copilot', label: 'Assistant' },
   { id: 'runs', label: 'Runs' },
 ];
 
@@ -90,7 +90,7 @@ const PANEL_META = {
     subtitle: 'Analyze pipeline quality across speed, security, and reliability.',
   },
   chat: {
-    title: 'Pipeline Copilot',
+    title: 'Pipeline Assistant',
     subtitle: 'Ask questions, troubleshoot, and improve your current pipeline quickly.',
   },
   settings: {
@@ -169,10 +169,10 @@ function canUseProvider(providerList, name) {
 function getFallbackProviders() {
   return {
     ai: [
-      { name: 'groq', displayName: 'Groq (GPT-OSS 120B)', enabled: true },
-      { name: 'anthropic', displayName: 'Claude (Anthropic)', enabled: false },
-      { name: 'gemini', displayName: 'Gemini (Google)', enabled: false },
-      { name: 'openai', displayName: 'GPT (OpenAI)', enabled: false },
+      { name: 'groq', displayName: 'Groq (openai/gpt-oss-120b)', enabled: true },
+      { name: 'anthropic', displayName: 'Claude (claude-sonnet-5-5)', enabled: false },
+      { name: 'gemini', displayName: 'Gemini (gemini-3.8-flash)', enabled: false },
+      { name: 'openai', displayName: 'OpenAI (gpt-6-luna)', enabled: false },
       { name: 'ollama', displayName: 'Ollama (Local)', enabled: true },
     ],
     cicd: [
@@ -553,7 +553,7 @@ export default function App({ onBackToLanding }) {
       return (
         <button
           onClick={() => setYamlCollapsed(false)}
-          title="Expand Studio Inspector (Code, Health, Copilot, Live Runs)"
+          title="Expand Studio Inspector (Code, Health, Assistant, Live Runs)"
           aria-label="Expand Studio Inspector"
           className="ff-surface h-full w-full flex xl:flex-col items-center justify-center gap-2 text-[var(--ff-muted)] hover:text-[var(--ff-text)] transition-colors ff-enter"
         >
@@ -592,7 +592,7 @@ export default function App({ onBackToLanding }) {
           <div className="mx-auto h-full w-0.5 group-hover:bg-[var(--ff-accent)] transition-colors" />
         </div>
 
-        {/* Segmented Docked Studio Inspector Header: YAML | Health | Copilot | Runs */}
+        {/* Segmented Docked Studio Inspector Header: YAML | Health | Assistant | Runs */}
         <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-[var(--ff-card-border)] bg-[var(--ff-surface-2)]">
           <div className="flex items-center gap-0.5 flex-1 min-w-0 p-0.5 rounded-lg bg-[var(--ff-card-bg)] border border-[var(--ff-card-border)]">
             {INSPECTOR_TABS.map((tab) => {
@@ -666,7 +666,7 @@ export default function App({ onBackToLanding }) {
             </ErrorBoundary>
           )}
           {inspectorTab === 'copilot' && (
-            <ErrorBoundary name="Docked Copilot" key="docked-copilot">
+            <ErrorBoundary name="Docked Assistant" key="docked-copilot">
               <Suspense fallback={lazyFallback}>
                 <PipelineChat
                   currentYaml={yamlOutput}
@@ -831,7 +831,7 @@ export default function App({ onBackToLanding }) {
             setActivePanel('settings');
             return;
           }
-          // Clicking Health or Copilot on desktop docks them right beside the visual DAG canvas!
+          // Clicking Health or Assistant on desktop docks them right beside the visual DAG canvas!
           // Clicking a second time toggles full-screen view.
           if ((item.id === 'health' || item.id === 'chat') && typeof window !== 'undefined' && window.innerWidth >= 1280) {
             const targetTab = item.id === 'health' ? 'health' : 'copilot';
