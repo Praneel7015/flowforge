@@ -1,8 +1,10 @@
 /**
- * OpenAI (GPT-4) AI Provider implementation.
+ * OpenAI AI Provider implementation (also used for OpenAI-compatible BYOM base URLs).
  */
 const OpenAI = require('openai');
 const AIProvider = require('./AIProvider');
+
+const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
 class OpenAIProvider extends AIProvider {
   constructor(config) {
@@ -21,11 +23,24 @@ class OpenAIProvider extends AIProvider {
     return this.client;
   }
 
+  _model() {
+    return this.config.model || DEFAULT_OPENAI_MODEL;
+  }
+
+  // Current OpenAI models only accept max_completion_tokens and the default
+  // temperature; OpenAI-compatible servers behind a custom base URL usually
+  // still expect the classic max_tokens/temperature pair.
+  _limits(maxTokens, temperature) {
+    const isOfficialApi = !this.config.baseUrl || /api\.openai\.com/i.test(this.config.baseUrl);
+    if (isOfficialApi) return { max_completion_tokens: maxTokens };
+    return temperature === undefined ? { max_tokens: maxTokens } : { max_tokens: maxTokens, temperature };
+  }
+
   getMetadata() {
     return {
       name: 'openai',
-      displayName: 'GPT-4 (OpenAI)',
-      model: this.config.model || 'gpt-4-turbo',
+      displayName: `OpenAI (${this._model()})`,
+      model: this._model(),
       supportsStreaming: true,
     };
   }
@@ -36,8 +51,8 @@ class OpenAIProvider extends AIProvider {
     }
     try {
       await this._getClient().chat.completions.create({
-        model: this.config.model || 'gpt-4-turbo',
-        max_tokens: 10,
+        model: this._model(),
+        ...this._limits(16),
         messages: [{ role: 'user', content: 'ping' }],
       });
       return { valid: true };
@@ -48,32 +63,25 @@ class OpenAIProvider extends AIProvider {
 
   async complete(systemPrompt, userMessage, options = {}) {
     const response = await this._getClient().chat.completions.create({
-      model: this.config.model || 'gpt-4-turbo',
-      max_tokens: options.maxTokens || 4096,
-      temperature: options.temperature || 0.7,
+      model: this._model(),
+      ...this._limits(options.maxTokens || 4096, options.temperature ?? 0.7),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
       ],
     });
 
-    return response.choices[0].message.content.trim();
+    return (response.choices[0].message.content || '').trim();
   }
 
   async chat(systemPrompt, messages, options = {}) {
-    // Prepend system message
-    const allMessages = [
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ];
-
     const response = await this._getClient().chat.completions.create({
-      model: this.config.model || 'gpt-4-turbo',
-      max_tokens: options.maxTokens || 2048,
-      messages: allMessages,
+      model: this._model(),
+      ...this._limits(options.maxTokens || 2048),
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
     });
 
-    return response.choices[0].message.content.trim();
+    return (response.choices[0].message.content || '').trim();
   }
 }
 

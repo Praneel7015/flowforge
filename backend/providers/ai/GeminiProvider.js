@@ -22,7 +22,7 @@ class GeminiProvider extends AIProvider {
   _getModel() {
     if (!this.model) {
       this.model = this._getClient().getGenerativeModel({
-        model: this.config.model || 'gemini-1.5-pro',
+        model: this.config.model || 'gemini-3.8-flash',
       });
     }
     return this.model;
@@ -31,8 +31,8 @@ class GeminiProvider extends AIProvider {
   getMetadata() {
     return {
       name: 'gemini',
-      displayName: 'Gemini (Google)',
-      model: this.config.model || 'gemini-1.5-pro',
+      displayName: `Gemini (${this.config.model || 'gemini-3.8-flash'})`,
+      model: this.config.model || 'gemini-3.8-flash',
       supportsStreaming: true,
     };
   }
@@ -52,7 +52,7 @@ class GeminiProvider extends AIProvider {
 
   async complete(systemPrompt, userMessage, options = {}) {
     const model = this._getClient().getGenerativeModel({
-      model: this.config.model || 'gemini-1.5-pro',
+      model: this.config.model || 'gemini-3.8-flash',
       systemInstruction: systemPrompt,
     });
 
@@ -69,7 +69,7 @@ class GeminiProvider extends AIProvider {
 
   async chat(systemPrompt, messages, options = {}) {
     const model = this._getClient().getGenerativeModel({
-      model: this.config.model || 'gemini-1.5-pro',
+      model: this.config.model || 'gemini-3.8-flash',
       systemInstruction: systemPrompt,
     });
 

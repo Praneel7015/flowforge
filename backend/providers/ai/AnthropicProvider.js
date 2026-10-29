@@ -24,8 +24,8 @@ class AnthropicProvider extends AIProvider {
   getMetadata() {
     return {
       name: 'anthropic',
-      displayName: 'Claude (Anthropic)',
-      model: this.config.model || 'claude-sonnet-4-5',
+      displayName: `Claude (${this.config.model || 'claude-sonnet-5-5'})`,
+      model: this.config.model || 'claude-sonnet-5-5',
       supportsStreaming: true,
     };
   }
@@ -36,7 +36,7 @@ class AnthropicProvider extends AIProvider {
     }
     try {
       await this._getClient().messages.create({
-        model: this.config.model || 'claude-sonnet-4-5',
+        model: this.config.model || 'claude-sonnet-5-5',
         max_tokens: 10,
         messages: [{ role: 'user', content: 'ping' }],
       });
@@ -48,7 +48,7 @@ class AnthropicProvider extends AIProvider {
 
   async complete(systemPrompt, userMessage, options = {}) {
     const response = await this._getClient().messages.create({
-      model: this.config.model || 'claude-sonnet-4-5',
+      model: this.config.model || 'claude-sonnet-5-5',
       max_tokens: options.maxTokens || 4096,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
@@ -58,7 +58,7 @@ class AnthropicProvider extends AIProvider {
 
   async chat(systemPrompt, messages, options = {}) {
     const response = await this._getClient().messages.create({
-      model: this.config.model || 'claude-sonnet-4-5',
+      model: this.config.model || 'claude-sonnet-5-5',
       max_tokens: options.maxTokens || 2048,
       system: systemPrompt,
       messages,

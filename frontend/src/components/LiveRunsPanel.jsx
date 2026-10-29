@@ -104,6 +104,7 @@ export default function LiveRunsPanel({
   const [simulating, setSimulating] = useState(false);
   const [autoPoll, setAutoPoll] = useState(false);
   const simTimersRef = useRef([]);
+  const simRunCountRef = useRef(0);
 
   useEffect(() => {
     if (RUN_PLATFORMS.some((p) => p.id === cicdPlatform)) {
@@ -244,13 +245,13 @@ export default function LiveRunsPanel({
     const runFailed = results.some((r) => r.status === 'failed');
 
     const simRunId = `sim_${Date.now().toString(36)}`;
+    simRunCountRef.current += 1;
     const initialRun = {
       id: simRunId,
-      number: 142,
+      number: `sim-${simRunCountRef.current}`,
       status: 'running',
       branch: branch || 'main',
-      commitSha: 'a8f4d2c',
-      commitMessage: 'Simulated run of the current canvas',
+      commitMessage: 'Simulated run of the current canvas (not a real CI run)',
       startedAt: new Date().toISOString(),
     };
     setRuns((prev) => [initialRun, ...prev.filter((r) => !String(r.id).startsWith('sim_'))]);

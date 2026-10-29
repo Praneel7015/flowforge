@@ -14,7 +14,7 @@ Live at **[flowforge.highcortisol.xyz](https://flowforge.highcortisol.xyz)**: fr
 - **Migration** – convert between any of the 5 platforms (e.g. Jenkinsfile → GitHub Actions), with a structural parser as an offline fallback.
 - **Import** – paste an existing YAML/Jenkinsfile and get an editable graph (platform detected from the file's shape).
 - **Health advisor** – A–F grade across speed, security, reliability and best practices, plus one-click auto-remediation.
-- **Copilot chat** – pipeline-aware assistant, optionally routed through an n8n webhook.
+- **Pipeline Assistant** – pipeline-aware chat using the selected AI provider (server Groq key by default, or your own key). n8n routing is optional and falls back to the AI provider if the webhook fails.
 - **Repo integration** – browse GitHub/GitLab/Bitbucket repos, generate from repo files, and push the pipeline as a PR (blocked if the secret scanner finds credentials).
 - **Live runs** – list, trigger and diagnose CI runs, with status overlays on the canvas.
 - **Shareable blueprints** – the canvas state can be shared via URL.
@@ -37,9 +37,9 @@ Live at **[flowforge.highcortisol.xyz](https://flowforge.highcortisol.xyz)**: fr
 | Provider | Default model | Notes |
 |---|---|---|
 | **Groq** (default) | `openai/gpt-oss-120b` | Fast, free tier. Server key is shared with all users. Retired Groq models (e.g. `llama-3.3-70b-versatile`, shut down 2026-08-16) are mapped to the default automatically. |
-| Anthropic (Claude) | `claude-sonnet-4-5` | |
-| Google Gemini | `gemini-1.5-pro` | |
-| OpenAI | `gpt-4-turbo` | |
+| Anthropic (Claude) | `claude-sonnet-5-5` | |
+| Google Gemini | `gemini-3.8-flash` | |
+| OpenAI | `gpt-6-luna` | |
 | Ollama (local) | `llama3` | No key needed. |
 
 If the requested provider has no server key and the user hasn't supplied one, the backend falls back to the first configured provider (Groq → Gemini → OpenAI → Anthropic → Ollama).
@@ -117,9 +117,9 @@ Or with Docker: `docker-compose up`.
 | `GROQ_API_KEY` | – | Shared server key used by everyone without BYOM |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Also: `openai/gpt-oss-20b`, `qwen/qwen3.8-27b` |
 | `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | |
-| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – / `claude-sonnet-4-5` | |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | – / `gemini-1.5-pro` | |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | – / `gpt-4-turbo` | |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – / `claude-sonnet-5-5` | |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | – / `gemini-3.8-flash` | |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | – / `gpt-6-luna` | |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | – / `llama3` | Local models |
 | `FRONTEND_URL` | – | Comma-separated CORS origins (`*.highcortisol.xyz` is always allowed) |
 | `NODE_ENV` | `development` | `production` hides internal errors and makes webhooks fail closed |
@@ -129,7 +129,7 @@ Or with Docker: `docker-compose up`.
 | `GITHUB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the secret set on the GitHub webhook |
 | `GITLAB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the GitLab webhook "Secret token" |
 | `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger |
-| `N8N_CHAT_WEBHOOK_URL` | – | If set, Copilot chat goes through n8n |
+| `N8N_CHAT_WEBHOOK_URL` | – | Server-side n8n webhook, used only when a chat request opts in (`useN8n`); falls back to the AI provider on failure |
 | `N8N_WEBHOOK_AUTH_HEADER`, `N8N_WEBHOOK_AUTH_TOKEN` | `X-FlowForge-Token` | Optional n8n auth |
 | `N8N_CHAT_TIMEOUT_MS` | `30000` | |
 | `*_TIMEOUT_MS` | – | Per-platform API timeouts (GitHub, GitLab, Bitbucket, CircleCI) |
@@ -159,7 +159,7 @@ flowforge/
 ├── frontend/                 React 18 + Vite + React Flow + Tailwind
 │   ├── src/
 │   │   ├── AppShell.jsx      landing page ↔ app
-│   │   ├── App.jsx           Builder, AI Generator, Migrate, Health, Copilot, Settings
+│   │   ├── App.jsx           Builder, AI Generator, Migrate, Health, Assistant, Settings
 │   │   ├── pages/            LandingPage, SmartGeneratePage, SettingsPage
 │   │   ├── components/       PromptPanel, JenkinsConverter, HealthAdvisor, PipelineChat,
 │   │   │                     YamlPreview, RepoBrowser, PushToRepoModal, ImportPipelineModal,

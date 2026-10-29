@@ -134,7 +134,7 @@ const FEATURES = [
   },
   {
     title: 'AI & Git Ready',
-    description: 'Generate from your repo with Groq LPU, audit secrets, and push a PR in one click.',
+    description: 'Generate from your repo with AI, audit secrets, and push a PR in one click.',
   },
 ];
 

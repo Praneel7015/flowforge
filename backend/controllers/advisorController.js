@@ -101,7 +101,7 @@ async function remediate(req, res) {
  */
 async function chat(req, res) {
   try {
-    const { messages, currentYaml, aiProvider, cicdPlatform, aiOptions } = req.body;
+    const { messages, currentYaml, aiProvider, cicdPlatform, aiOptions, useN8n } = req.body;
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'messages array is required' });
     }
@@ -113,6 +113,7 @@ async function chat(req, res) {
       cicdPlatform,
       aiOptions: buildAIOptions(aiOptions),
       userContext,
+      useN8n: useN8n === true,
     });
     res.json({ reply });
   } catch (err) {
