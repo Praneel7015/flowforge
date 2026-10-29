@@ -97,7 +97,7 @@ function ScriptCommandList({ commands, onChange, placeholder }) {
             type="button"
             onClick={() => remove(index)}
             aria-label={`Remove command ${index + 1}`}
-            className="w-6 h-6 mt-1 flex-shrink-0 rounded flex items-center justify-center text-[var(--ff-muted)] hover:text-red-400 hover:bg-red-500/10 text-xs transition-colors"
+            className="w-6 h-6 mt-1 shrink-0 rounded-sm flex items-center justify-center text-[var(--ff-muted)] hover:text-red-400 hover:bg-red-500/10 text-xs transition-colors"
           >
             ✕
           </button>
@@ -210,7 +210,7 @@ export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDel
                     const current = Array.isArray(config.script) ? config.script : toCommandList(config.script);
                     handleFieldChange('script', [...current, '']);
                   }}
-                  className="text-[10px] ff-code px-2 py-0.5 rounded border border-dashed border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
+                  className="text-[10px] ff-code px-2 py-0.5 rounded-sm border border-dashed border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
                   title="Add a command that can span several lines, such as an if/fi block"
                 >
                   + Multi-line command
@@ -222,7 +222,7 @@ export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDel
                         key={idx}
                         type="button"
                         onClick={() => handleFieldChange('script', preset)}
-                        className="text-[10px] ff-code px-2 py-0.5 rounded border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors truncate max-w-full"
+                        className="text-[10px] ff-code px-2 py-0.5 rounded-sm border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors truncate max-w-full"
                         title={`Use preset: ${preset}`}
                       >
                         + {preset}

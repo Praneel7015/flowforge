@@ -40,7 +40,7 @@ export default function KeyboardShortcuts({ open, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-xs"
       onClick={onClose}
     >
       <div
@@ -86,7 +86,7 @@ export default function KeyboardShortcuts({ open, onClose }) {
         </div>
 
         <p className="mt-5 text-xs text-[var(--ff-muted)]">
-          Press <kbd className="px-1.5 py-0.5 rounded text-xs font-mono bg-[var(--ff-card-bg)] border border-[var(--ff-border-strong)]">?</kbd> or <kbd className="px-1.5 py-0.5 rounded text-xs font-mono bg-[var(--ff-card-bg)] border border-[var(--ff-border-strong)]">Esc</kbd> to close.
+          Press <kbd className="px-1.5 py-0.5 rounded-sm text-xs font-mono bg-[var(--ff-card-bg)] border border-[var(--ff-border-strong)]">?</kbd> or <kbd className="px-1.5 py-0.5 rounded-sm text-xs font-mono bg-[var(--ff-card-bg)] border border-[var(--ff-border-strong)]">Esc</kbd> to close.
         </p>
       </div>
     </div>

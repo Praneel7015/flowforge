@@ -483,7 +483,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
         {genError && (
           <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
             <p className="flex-1">{genError}</p>
-            <button onClick={() => setGenError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 flex-shrink-0">
+            <button onClick={() => setGenError('')} aria-label="Dismiss error" className="text-red-400 hover:text-red-300 shrink-0">
               Dismiss
             </button>
           </div>

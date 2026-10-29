@@ -107,7 +107,7 @@ function StageNode({ id, data, type, selected }) {
 
   const selectedTone = selected
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
-    : 'hover:border-[var(--ff-border-strong)] transition-all shadow-sm';
+    : 'hover:border-[var(--ff-border-strong)] transition-all shadow-xs';
 
   const firstScriptLine = scriptPreview(data.config?.script);
 
@@ -121,10 +121,10 @@ function StageNode({ id, data, type, selected }) {
         <span className={`text-[10px] ${c.text} font-semibold uppercase tracking-wider truncate`}>
           {type.replace(/_/g, ' ')}
         </span>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {statusStyle && (
             <span
-              className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-semibold tracking-wide ${statusStyle.pill}`}
+              className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold tracking-wide ${statusStyle.pill}`}
               title={`Execution status: ${statusStyle.label}${data.runDuration ? ` (${data.runDuration})` : ''}`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
@@ -135,7 +135,7 @@ function StageNode({ id, data, type, selected }) {
             </span>
           )}
           {!statusStyle && data.config?.stage && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${c.badge}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-mono ${c.badge}`}>
               {data.config.stage}
             </span>
           )}
@@ -160,7 +160,7 @@ function StageNode({ id, data, type, selected }) {
               }
             }}
             onClick={(e) => e.stopPropagation()}
-            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded px-1.5 py-0.5 text-xs font-semibold text-[var(--ff-text)] focus:outline-none"
+            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded-sm px-1.5 py-0.5 text-xs font-semibold text-[var(--ff-text)] focus:outline-hidden"
           />
         ) : (
           <div
@@ -180,12 +180,12 @@ function StageNode({ id, data, type, selected }) {
       {(data.config?.image || data.config?.environment) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--ff-text-secondary)] ff-code">
           {data.config?.image && (
-            <span className="px-1.5 py-0.5 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] truncate max-w-[180px]">
+            <span className="px-1.5 py-0.5 rounded-sm bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] truncate max-w-[180px]">
               {data.config.image}
             </span>
           )}
           {data.config?.environment && (
-            <span className="px-1.5 py-0.5 rounded bg-[var(--ff-accent-soft)] text-[var(--ff-accent-text)] border border-[var(--ff-card-border-strong)] truncate">
+            <span className="px-1.5 py-0.5 rounded-sm bg-[var(--ff-accent-soft)] text-[var(--ff-accent-text)] border border-[var(--ff-card-border-strong)] truncate">
               env:{data.config.environment}
             </span>
           )}
@@ -211,7 +211,7 @@ function StageNode({ id, data, type, selected }) {
             }}
             onClick={(e) => e.stopPropagation()}
             placeholder="Enter shell commands..."
-            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded px-1.5 py-1 text-[11px] ff-code text-[var(--ff-text)] focus:outline-none resize-none"
+            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded-sm px-1.5 py-1 text-[11px] ff-code text-[var(--ff-text)] focus:outline-hidden resize-none"
           />
         ) : (
           <div
@@ -224,7 +224,7 @@ function StageNode({ id, data, type, selected }) {
                 ? 'Multi-line commands: click the node to edit them in the inspector'
                 : 'Double-click to edit command inline'
             }
-            className="text-[11px] text-[var(--ff-text-secondary)] ff-code truncate bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded border border-[var(--ff-card-border-strong)] cursor-text transition-colors"
+            className="text-[11px] text-[var(--ff-text-secondary)] ff-code truncate bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded-sm border border-[var(--ff-card-border-strong)] cursor-text transition-colors"
           >
             {firstScriptLine ? `$ ${firstScriptLine}` : '+ Double-click to set script'}
           </div>

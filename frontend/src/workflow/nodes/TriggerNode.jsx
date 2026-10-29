@@ -30,7 +30,7 @@ function TriggerNode({ id, data, type, selected }) {
 
   const selectedTone = selected
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
-    : 'hover:border-emerald-500/60 transition-all shadow-sm';
+    : 'hover:border-emerald-500/60 transition-all shadow-xs';
 
   const branchValue = isMR
     ? data.config?.targetBranch || 'main'
@@ -44,7 +44,7 @@ function TriggerNode({ id, data, type, selected }) {
         <span className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wider">
           {isMR ? 'PR / MR Trigger' : 'Push Trigger'}
         </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] ff-code">
+        <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-[var(--ff-surface-inset)] border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] ff-code">
           {branchValue}
         </span>
       </div>
@@ -66,7 +66,7 @@ function TriggerNode({ id, data, type, selected }) {
               }
             }}
             onClick={(e) => e.stopPropagation()}
-            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-emerald-400 rounded px-1.5 py-0.5 text-xs font-semibold text-[var(--ff-text)] focus:outline-none"
+            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-emerald-400 rounded-sm px-1.5 py-0.5 text-xs font-semibold text-[var(--ff-text)] focus:outline-hidden"
           />
         ) : (
           <div
