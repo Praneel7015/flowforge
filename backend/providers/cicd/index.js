@@ -32,18 +32,30 @@ const instances = new Map();
  */
 function getCICDGenerator(name) {
   const platformName = name || getDefaults().cicdPlatform;
+  // Names come from requests; only strings can match the registry or be cached.
+  if (typeof platformName !== 'string') {
+    const error = new Error('CI/CD platform must be a string');
+    error.status = 400;
+    error.expose = true;
+    throw error;
+  }
 
   // Return cached instance if available
   if (instances.has(platformName)) {
     return instances.get(platformName);
   }
 
-  const GeneratorClass = generators.get(platformName);
-  if (!GeneratorClass) {
+  // Allowlist check before the lookup, and a function check before `new`, so
+  // a request-supplied name can never select an unexpected callee.
+  const GeneratorClass = getAvailablePlatforms().includes(platformName)
+    ? generators.get(platformName)
+    : undefined;
+  if (typeof GeneratorClass !== 'function') {
     const error = new Error(
       `Unknown CI/CD platform: ${platformName}. Available: ${getAvailablePlatforms().join(', ')}`
     );
     error.status = 400;
+    error.expose = true;
     throw error;
   }
 

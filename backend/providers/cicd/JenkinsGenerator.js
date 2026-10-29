@@ -77,11 +77,10 @@ class JenkinsGenerator extends CICDGenerator {
     jenkinsfile += '    stages {\n';
 
     for (const node of stages) {
-      const stageName = escapeGroovy(node.data?.label || this._capitalize(node.type));
-      const scripts = this._normalizeScripts(
-        node.data?.config?.script,
-        `echo "Running ${stageName}..."`
-      );
+      const rawLabel = node.data?.label || this._capitalize(node.type);
+      const stageName = escapeGroovy(rawLabel);
+      // Raw label here: scripts are Groovy-escaped once, when they are written out.
+      const scripts = this._normalizeScripts(node.data?.config?.script, this._echoLabel(rawLabel));
 
       if (node.type === 'matrix_build') {
         const matrix = this._parseMatrix(node.data?.config?.matrix, {

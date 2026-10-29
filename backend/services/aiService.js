@@ -1538,6 +1538,9 @@ Return ONLY raw JSON, no markdown fences:
 
     return parsePipelineResult(text, cicdPlatform);
   } catch (err) {
+    // An unknown provider name is a client error, not "AI unavailable": return
+    // the 400 instead of silently generating from the template.
+    if (err.code === 'UNKNOWN_AI_PROVIDER') throw err;
     // Graceful smart-template synthesis if the AI key is depleted or not configured
     const fallback = buildDeterministicPipelineFromPrompt(prompt, cicdPlatform, options.repoContext);
     return {

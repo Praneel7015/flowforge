@@ -76,7 +76,7 @@ class CircleCIGenerator extends CICDGenerator {
 
       const scripts = this._normalizeScripts(
         node.data?.config?.script,
-        `echo "Running ${node.data?.label || node.type}..."`
+        this._echoLabel(node.data?.label || node.type)
       );
 
       // Build job definition

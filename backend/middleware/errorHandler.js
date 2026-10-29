@@ -16,7 +16,7 @@ function notFound(_req, res) {
 function errorHandler(err, req, res, next) {
   const status = err.status || err.statusCode || 500;
 
-  console.error('[error] %s %s -> %d: %s', logSafe(req.method, 10), logSafe(req.originalUrl), Number(status) || 500, logSafe(err.message));
+  console.error('[error] %s %s -> %d: %s', logSafe(req.method, 10), logSafe(String(req.originalUrl || '').split('?')[0]), Number(status) || 500, logSafe(err.message));
 
   if (res.headersSent) return next(err);
 

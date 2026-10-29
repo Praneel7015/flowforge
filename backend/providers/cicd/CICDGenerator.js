@@ -262,6 +262,18 @@ class CICDGenerator {
   }
 
   /**
+   * Default command for a step without a script: prints the label. The label
+   * is user text (and arrives via shared blueprint links), so it is
+   * single-quoted for the shell: $(...), backticks and $VAR are printed, not run.
+   * @param {string} label
+   * @returns {string}
+   */
+  _echoLabel(label) {
+    const text = `Running ${String(label ?? 'job')}...`;
+    return `echo '${text.replace(/'/g, "'\\''")}'`;
+  }
+
+  /**
    * Normalize script config to an array of commands.
    * @param {string|string[]|undefined} input
    * @param {string|string[]} fallback

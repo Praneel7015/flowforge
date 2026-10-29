@@ -31,6 +31,7 @@ const providers = new Map([
 function badRequest(message) {
   const error = new Error(message);
   error.status = 400;
+  error.expose = true;
   return error;
 }
 
@@ -126,11 +127,13 @@ function getAIProvider(name, runtimeConfig = {}) {
     }
   }
 
-  const ProviderClass = providers.get(resolvedName);
-  if (!ProviderClass) {
-    throw badRequest(
+  const ProviderClass = providers.has(resolvedName) ? providers.get(resolvedName) : undefined;
+  if (typeof ProviderClass !== 'function') {
+    const error = badRequest(
       `Unknown AI provider: ${resolvedName}. Available: ${[...providers.keys()].join(', ')}`
     );
+    error.code = 'UNKNOWN_AI_PROVIDER';
+    throw error;
   }
 
   if (!config) {

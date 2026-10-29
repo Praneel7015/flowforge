@@ -15,6 +15,7 @@ const MAX_SERVICE_ACCOUNT_JSON = 10_000;
 function badRequest(message) {
   const error = new Error(message);
   error.status = 400;
+  error.expose = true;
   return error;
 }
 

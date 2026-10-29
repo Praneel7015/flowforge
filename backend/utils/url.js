@@ -13,6 +13,7 @@ function trimTrailingSlashes(value) {
 function invalidPath() {
   const error = new Error('Invalid path segment in request');
   error.status = 400;
+  error.expose = true;
   return error;
 }
 

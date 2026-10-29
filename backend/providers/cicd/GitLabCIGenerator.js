@@ -76,7 +76,7 @@ class GitLabCIGenerator extends CICDGenerator {
 
       const jobName = jobNameMap[node.id] || this._getJobName(node);
       const defaultScripts =
-        mapping.template.script || [`echo "Running ${node.data?.label || node.type}..."`];
+        mapping.template.script || [this._echoLabel(node.data?.label || node.type)];
       const job = {
         stage,
         script: this._normalizeScripts(node.data?.config?.script, defaultScripts),

@@ -158,7 +158,7 @@ class GitHubActionsGenerator extends CICDGenerator {
       // Add main step
       const scripts = this._normalizeScripts(
         node.data?.config?.script,
-        `echo "Running ${node.data?.label || node.type}..."`
+        this._echoLabel(node.data?.label || node.type)
       );
       for (const script of scripts) {
         job.steps.push({
