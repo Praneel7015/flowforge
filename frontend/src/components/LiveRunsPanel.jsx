@@ -415,7 +415,7 @@ export default function LiveRunsPanel({
         const { unscripted } = runSimulation({ nodes, edges }) || {};
         setNotice(
           unscripted
-            ? `Fix applied and re-running, but ${unscripted} job${unscripted === 1 ? '' : 's'} came back without a script (e.g. multi-line Jenkins sh blocks), so this run can't fully verify the fix.`
+            ? `Fix applied and re-running, but ${unscripted} job${unscripted === 1 ? '' : 's'} came back without a script, so this run can't fully verify the fix.`
             : 'Fix applied. Re-running the pipeline to verify it.'
         );
       } else {

@@ -1,5 +1,6 @@
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Handle, Position } from 'reactflow';
+import { firstScriptLine as scriptPreview, isCommandArray } from '../../utils/scriptCommands';
 
 const COLORS = {
   build: { border: 'border-sky-500/40', bg: 'bg-[var(--ff-surface-solid)]', text: 'text-sky-500', handle: '!bg-sky-500', badge: 'bg-sky-500/15 text-sky-500 border border-sky-500/25' },
@@ -60,7 +61,12 @@ function StageNode({ id, data, type, selected }) {
   const statusStyle = RUN_STATUS_STYLES[runStatusKey] || null;
   const [editingField, setEditingField] = useState(null); // 'label' | 'script' | null
   const [draftLabel, setDraftLabel] = useState(data.label || '');
-  const [draftScript, setDraftScript] = useState(data.config?.script || '');
+  // A list of commands (which may span lines) is edited in the node inspector,
+  // where each command keeps its line breaks; the inline box only edits the
+  // legacy one-command-per-line string.
+  const scriptIsList = isCommandArray(data.config?.script);
+  const inlineScript = scriptIsList ? '' : data.config?.script || '';
+  const [draftScript, setDraftScript] = useState(inlineScript);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -68,8 +74,8 @@ function StageNode({ id, data, type, selected }) {
   }, [data.label]);
 
   useEffect(() => {
-    setDraftScript(data.config?.script || '');
-  }, [data.config?.script]);
+    setDraftScript(inlineScript);
+  }, [inlineScript]);
 
   useEffect(() => {
     if (editingField && inputRef.current) {
@@ -91,7 +97,7 @@ function StageNode({ id, data, type, selected }) {
   };
 
   const commitScript = () => {
-    if (draftScript !== (data.config?.script || '')) {
+    if (draftScript !== inlineScript) {
       data.onInlineUpdate?.(id, {
         config: { ...(data.config || {}), script: draftScript },
       });
@@ -103,10 +109,7 @@ function StageNode({ id, data, type, selected }) {
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
     : 'hover:border-[var(--ff-border-strong)] transition-all shadow-sm';
 
-  const firstScriptLine = (data.config?.script || '')
-    .split('\n')
-    .map((s) => s.trim())
-    .find(Boolean);
+  const firstScriptLine = scriptPreview(data.config?.script);
 
   return (
     <div
@@ -202,7 +205,7 @@ function StageNode({ id, data, type, selected }) {
               e.stopPropagation();
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitScript();
               if (e.key === 'Escape') {
-                setDraftScript(data.config?.script || '');
+                setDraftScript(inlineScript);
                 setEditingField(null);
               }
             }}
@@ -214,9 +217,13 @@ function StageNode({ id, data, type, selected }) {
           <div
             onDoubleClick={(e) => {
               e.stopPropagation();
-              setEditingField('script');
+              if (!scriptIsList) setEditingField('script');
             }}
-            title="Double-click to edit command inline"
+            title={
+              scriptIsList
+                ? 'Multi-line commands: click the node to edit them in the inspector'
+                : 'Double-click to edit command inline'
+            }
             className="text-[11px] text-[var(--ff-text-secondary)] ff-code truncate bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded border border-[var(--ff-card-border-strong)] cursor-text transition-colors"
           >
             {firstScriptLine ? `$ ${firstScriptLine}` : '+ Double-click to set script'}

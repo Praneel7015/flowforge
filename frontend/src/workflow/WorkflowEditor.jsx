@@ -17,6 +17,7 @@ import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
 import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/NodeTemplates';
 import { buildBlueprintShareUrl, readBlueprintFromLocationHash } from '../utils/blueprintShare';
+import { toCommandList } from '../utils/scriptCommands';
 
 const nodeTypes = {
   trigger_push: TriggerNode,
@@ -242,9 +243,18 @@ function getDefaultNodeConfig(type) {
   return { ...(DEFAULT_NODE_CONFIGS[type] || { stage: 'build', script: `echo "Running ${type}"` }) };
 }
 
+const localScriptCommands = (cfg, fallback) => {
+  const commands = toCommandList(cfg.script);
+  return commands.length > 0 ? commands : [fallback];
+};
+
+// A multi-line command becomes a YAML literal block so it stays one command.
+const yamlCommand = (cmd, indent) =>
+  cmd.includes('\n') ? `|-\n${cmd.split('\n').map((line) => `${indent}${line}`).join('\n')}` : cmd;
+
 // Local, offline-safe fallback used when the backend export endpoint is
 // unreachable so the live YAML panel still reflects the current graph.
-const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
+const buildLocalYaml =(nodeList, edgeList = [], platform = 'gitlab') => {
   const stageSet = new Set();
   const stageNodes = nodeList.filter(
     (n) => !n.type?.startsWith('trigger_') && n.type !== 'conditional'
@@ -275,10 +285,7 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
     stageNodes.forEach((node) => {
       const jobName = idToJobName.get(node.id);
       const cfg = node.data?.config || {};
-      const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
-        .split('\n')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const scriptLines = localScriptCommands(cfg, `echo "Running ${node.data?.label || jobName}"`);
       const parentJobs = edgeList
         .filter((e) => e.target === node.id && idToJobName.get(e.source))
         .map((e) => idToJobName.get(e.source));
@@ -294,7 +301,7 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
       lines.push('      - uses: actions/checkout@v4');
       scriptLines.forEach((cmd) => {
         lines.push(`      - name: ${node.data?.label || jobName}`);
-        lines.push(`        run: ${cmd}`);
+        lines.push(`        run: ${yamlCommand(cmd, '          ')}`);
       });
     });
     return lines.join('\n');
@@ -304,10 +311,7 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
   stageNodes.forEach((node) => {
     const jobName = idToJobName.get(node.id);
     const cfg = node.data?.config || {};
-    const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const scriptLines = localScriptCommands(cfg, `echo "Running ${node.data?.label || jobName}"`);
     const parentJobs = edgeList
       .filter((e) => e.target === node.id && idToJobName.get(e.source))
       .map((e) => idToJobName.get(e.source));
@@ -323,7 +327,7 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
     }
     yamlLines.push('  script:');
     scriptLines.forEach((cmd) => {
-      yamlLines.push(`    - ${cmd}`);
+      yamlLines.push(`    - ${yamlCommand(cmd, '      ')}`);
     });
     yamlLines.push('');
   });
