@@ -37,6 +37,8 @@ services:
         sync: false
       - key: GITLAB_WEBHOOK_SECRET
         sync: false
+      - key: SESSION_SECRET
+        generateValue: true
       - key: VERTEX_API_KEY
         sync: false
       - key: VERTEX_SERVICE_ACCOUNT_JSON
