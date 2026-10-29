@@ -252,7 +252,8 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
   stageNodes.forEach((n) => stageSet.add(n.data?.config?.stage || 'build'));
   const stages = stageSet.size > 0 ? [...stageSet] : ['build', 'test', 'deploy'];
 
-  const idToJobName = {};
+  // Map, not an object: node ids come from imported/shared workflows.
+  const idToJobName = new Map();
   const usedNames = new Set();
   stageNodes.forEach((n) => {
     const base =
@@ -266,21 +267,21 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
       candidate = `${base}_${idx++}`;
     }
     usedNames.add(candidate);
-    idToJobName[n.id] = candidate;
+    idToJobName.set(n.id, candidate);
   });
 
   if (platform === 'github') {
     const lines = ['name: CI/CD Pipeline', 'on:', '  push:', '    branches: ["main"]', 'jobs:'];
     stageNodes.forEach((node) => {
-      const jobName = idToJobName[node.id];
+      const jobName = idToJobName.get(node.id);
       const cfg = node.data?.config || {};
       const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean);
       const parentJobs = edgeList
-        .filter((e) => e.target === node.id && idToJobName[e.source])
-        .map((e) => idToJobName[e.source]);
+        .filter((e) => e.target === node.id && idToJobName.get(e.source))
+        .map((e) => idToJobName.get(e.source));
 
       lines.push(`  ${jobName}:`);
       lines.push(`    runs-on: ${cfg.runsOn || 'ubuntu-latest'}`);
@@ -301,15 +302,15 @@ const buildLocalYaml = (nodeList, edgeList = [], platform = 'gitlab') => {
 
   const yamlLines = ['stages:', ...stages.map((s) => `  - ${s}`), ''];
   stageNodes.forEach((node) => {
-    const jobName = idToJobName[node.id];
+    const jobName = idToJobName.get(node.id);
     const cfg = node.data?.config || {};
     const scriptLines = String(cfg.script || `echo "Running ${node.data?.label || jobName}"`)
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
     const parentJobs = edgeList
-      .filter((e) => e.target === node.id && idToJobName[e.source])
-      .map((e) => idToJobName[e.source]);
+      .filter((e) => e.target === node.id && idToJobName.get(e.source))
+      .map((e) => idToJobName.get(e.source));
 
     yamlLines.push(`${jobName}:`);
     yamlLines.push(`  stage: ${cfg.stage || 'build'}`);

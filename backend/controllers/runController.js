@@ -4,9 +4,10 @@ const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
-const { isSafePublicUrl } = require('../utils/ssrf');
+const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 const { getAvailablePlatforms } = require('../providers/cicd');
 const { logSafe } = require('../utils/logSafe');
+const { trimTrailingSlashes, pathSegment, pathSegments } = require('../utils/url');
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -156,7 +157,7 @@ function resolveCredentials(platform, credentials = {}) {
 
   if (platform === 'circleci') {
     const token = creds.token || process.env.CIRCLECI_TOKEN;
-    const baseUrl = (creds.url || CIRCLECI_API).replace(/\/+$/, '');
+    const baseUrl = trimTrailingSlashes(creds.url || CIRCLECI_API);
     if (!token) {
       const err = new Error('CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)');
       err.status = 400;
@@ -175,6 +176,9 @@ function makeCircleClient(token, baseUrl = CIRCLECI_API) {
     baseURL: baseUrl,
     headers: { 'Circle-Token': token },
     timeout: CIRCLECI_TIMEOUT_MS,
+    // The CircleCI URL can be user-supplied: no redirects, connect-time checks.
+    maxRedirects: 0,
+    ...safeAgents,
   });
 }
 
@@ -200,14 +204,14 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
   const params = {};
   if (branch) params.branch = branch;
 
-  const { data } = await client.get(`/project/${slug}/pipeline`, { params });
+  const { data } = await client.get(`/project/${pathSegments(slug)}/pipeline`, { params });
   const pipelines = (data?.items || []).slice(0, perPage);
 
   const runs = await Promise.all(
     pipelines.map(async (p) => {
       let wf;
       try {
-        const { data: wfData } = await client.get(`/pipeline/${p.id}/workflow`);
+        const { data: wfData } = await client.get(`/pipeline/${pathSegment(p.id)}/workflow`);
         wf = (wfData?.items || [])[0] || null;
       } catch {
         wf = null;
@@ -295,7 +299,7 @@ async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
 async function triggerCircleRun(creds, { projectId, owner, repo, branch = 'main', inputs = {} }) {
   const client = makeCircleClient(creds.token, creds.baseUrl);
   const slug = resolveCircleProjectSlug({ projectId, owner, repo });
-  const { data } = await client.post(`/project/${slug}/pipeline`, {
+  const { data } = await client.post(`/project/${pathSegments(slug)}/pipeline`, {
     branch,
     parameters: inputs && typeof inputs === 'object' ? inputs : {},
   });

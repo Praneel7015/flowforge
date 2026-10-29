@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 const { isSafePublicUrl } = require('../utils/ssrf');
+const { trimTrailingSlashes } = require('../utils/url');
 const GITHUB_VALIDATE_TIMEOUT_MS = Number(process.env.GITHUB_VALIDATE_TIMEOUT_MS || 30000);
 const GITLAB_VALIDATE_TIMEOUT_MS = Number(process.env.GITLAB_VALIDATE_TIMEOUT_MS || 30000);
 const BITBUCKET_VALIDATE_TIMEOUT_MS = Number(process.env.BITBUCKET_VALIDATE_TIMEOUT_MS || 30000);
@@ -48,7 +49,7 @@ async function validateGitLab(creds) {
   const { instanceUrl, token } = creds;
   if (!token) return { valid: false, error: 'Personal Access Token is required.' };
 
-  const baseUrl = (instanceUrl || 'https://gitlab.com').replace(/\/+$/, '');
+  const baseUrl = trimTrailingSlashes(instanceUrl || 'https://gitlab.com');
 
   if (!isSafePublicUrl(baseUrl + '/api/v4/user') || !baseUrl.startsWith('https://')) {
     return { valid: false, error: 'Invalid instance URL. Must be a public HTTPS URL.' };

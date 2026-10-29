@@ -1,4 +1,5 @@
 const aiService = require('../services/aiService');
+const { logSafe } = require('../utils/logSafe');
 const gitlabService = require('../services/gitlabService');
 
 /**
@@ -24,7 +25,7 @@ async function handleWebhook(req, res) {
 
     res.json({ status: 'received' });
   } catch (err) {
-    console.error('Webhook processing error:', err.message);
+    console.error('Webhook processing error: %s', logSafe(err.message));
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 }
@@ -33,7 +34,7 @@ async function handleWebhook(req, res) {
  * Handle GitLab-specific webhook events.
  */
 async function handleGitLabWebhook(event, payload) {
-  console.log(`Received GitLab webhook: ${event}`);
+  console.log('Received GitLab webhook: %s', logSafe(event));
 
   switch (event) {
     case 'Pipeline Hook': {
@@ -43,15 +44,15 @@ async function handleGitLabWebhook(event, payload) {
       break;
     }
     case 'Push Hook': {
-      console.log(`Push to ${payload.ref} by ${payload.user_name}`);
+      console.log('Push to %s by %s', logSafe(payload.ref), logSafe(payload.user_name));
       break;
     }
     case 'Merge Request Hook': {
-      console.log(`MR #${payload.object_attributes?.iid}: ${payload.object_attributes?.action}`);
+      console.log('MR #%s: %s', logSafe(payload.object_attributes?.iid), logSafe(payload.object_attributes?.action));
       break;
     }
     default:
-      console.log(`Unhandled GitLab event type: ${event}`);
+      console.log('Unhandled GitLab event type: %s', logSafe(event));
   }
 }
 
@@ -72,7 +73,7 @@ async function handlePipelineFailure(payload) {
     return;
   }
 
-  console.log(`Pipeline #${pipelineId} failed — running failure analysis...`);
+  console.log('Pipeline #%s failed — running failure analysis...', logSafe(pipelineId));
 
   // Step 1: Fetch logs
   const { failedLogs } = await gitlabService.getPipelineLogs(projectId, pipelineId);
@@ -108,10 +109,10 @@ async function handlePipelineFailure(payload) {
   // Step 4: Post comment
   if (mergeRequestIid) {
     await gitlabService.commentOnMergeRequest(projectId, mergeRequestIid, comment);
-    console.log(`Posted analysis to MR #${mergeRequestIid}`);
+    console.log('Posted analysis to MR #%s', logSafe(mergeRequestIid));
   } else if (commitSha) {
     await gitlabService.commentOnCommit(projectId, commitSha, comment);
-    console.log(`Posted analysis to commit ${commitSha}`);
+    console.log('Posted analysis to commit %s', logSafe(commitSha));
   }
 }
 
@@ -124,18 +125,18 @@ async function handleGitHubWebhook(event, payload) {
   switch (event) {
     case 'workflow_run': {
       const run = payload.workflow_run || {};
-      console.log(`GitHub workflow_run: ${run.name} — ${run.status}/${run.conclusion} (id: ${run.id})`);
+      console.log('GitHub workflow_run: %s — %s/%s (id: %s)', logSafe(run.name), logSafe(run.status), logSafe(run.conclusion), logSafe(run.id));
       break;
     }
     case 'push': {
       const ref = payload.ref || '';
       const pusher = payload.pusher?.name || 'unknown';
-      console.log(`GitHub push to ${ref} by ${pusher}`);
+      console.log('GitHub push to %s by %s', logSafe(ref), logSafe(pusher));
       break;
     }
     case 'pull_request': {
       const pr = payload.pull_request || {};
-      console.log(`GitHub PR #${pr.number} — ${payload.action}: ${pr.title}`);
+      console.log('GitHub PR #%s — %s: %s', logSafe(pr.number), logSafe(payload.action), logSafe(pr.title));
       break;
     }
     case 'ping': {
@@ -143,7 +144,7 @@ async function handleGitHubWebhook(event, payload) {
       break;
     }
     default:
-      console.log(`GitHub event received: ${event}`);
+      console.log('GitHub event received: %s', logSafe(event));
   }
 }
 

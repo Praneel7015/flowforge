@@ -62,7 +62,7 @@ class GroqProvider extends AIProvider {
   getMetadata() {
     return {
       name: 'groq',
-      displayName: 'Groq (GPT-OSS 120B)',
+      displayName: `Groq (${resolveGroqModel(this.config.model)})`,
       model: resolveGroqModel(this.config.model),
       supportsStreaming: true,
     };

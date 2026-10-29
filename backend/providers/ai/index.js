@@ -26,6 +26,13 @@ const providers = {
   featherless: FeatherlessProvider,
 };
 
+/** Factory errors describe the request (unknown provider, missing key), not a server fault. */
+function badRequest(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
 const CREDENTIAL_FIELDS = ['apiKey', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'serviceAccountJson'];
 
 const CREDENTIAL_HINTS = {
@@ -51,8 +58,10 @@ function hasCredentials(name, cfg) {
   }
 }
 
-// Cached provider instances
-const instances = {};
+// Cached provider instances. A Map (not a plain object) so a request-supplied
+// provider name like "__proto__" can never touch Object.prototype.
+const instances = new Map();
+const hasProvider = (name) => Object.prototype.hasOwnProperty.call(providers, name);
 
 /**
  * Get an AI provider instance by name.
@@ -92,8 +101,8 @@ function getAIProvider(name, runtimeConfig = {}) {
   const useRuntimeConfig = hasRuntimeConfig(requestConfig);
 
   // Return cached instance if available
-  if (!useRuntimeConfig && instances[providerName]) {
-    return instances[providerName];
+  if (!useRuntimeConfig && instances.has(providerName)) {
+    return instances.get(providerName);
   }
 
   let resolvedName = providerName;
@@ -111,25 +120,25 @@ function getAIProvider(name, runtimeConfig = {}) {
     if (fallback) {
       resolvedName = fallback;
       config = getAIConfig(resolvedName);
-      if (instances[resolvedName]) {
-        return instances[resolvedName];
+      if (instances.has(resolvedName)) {
+        return instances.get(resolvedName);
       }
     }
   }
 
-  const ProviderClass = providers[resolvedName];
+  const ProviderClass = hasProvider(resolvedName) ? providers[resolvedName] : null;
   if (!ProviderClass) {
-    throw new Error(
+    throw badRequest(
       `Unknown AI provider: ${resolvedName}. Available: ${Object.keys(providers).join(', ')}`
     );
   }
 
   if (!config) {
-    throw new Error(`No configuration found for AI provider: ${resolvedName}`);
+    throw badRequest(`No configuration found for AI provider: ${resolvedName}`);
   }
 
   if (!config.enabled && !useRuntimeConfig) {
-    throw new Error(
+    throw badRequest(
       `AI provider '${resolvedName}' has no API key on this server. Add your own key in Settings -> Bring Your Own Model, or switch back to the default provider.`
     );
   }
@@ -152,7 +161,7 @@ function getAIProvider(name, runtimeConfig = {}) {
   };
 
   if (!hasCredentials(resolvedName, mergedConfig)) {
-    throw new Error(
+    throw badRequest(
       userChangesEndpoint && !userBringsCredentials && hasCredentials(resolvedName, { ...config, ...requestConfig })
         ?`A custom base URL needs your own API key: the server's key is only sent to the provider's default endpoint.`
         : `AI provider '${resolvedName}' is missing credentials. ${CREDENTIAL_HINTS[resolvedName] || 'Add an API key in Settings -> Bring Your Own Model.'}`
@@ -167,8 +176,8 @@ function getAIProvider(name, runtimeConfig = {}) {
   }
 
   // Create and cache the instance
-  instances[resolvedName] = instance;
-  return instances[resolvedName];
+  instances.set(resolvedName, instance);
+  return instance;
 }
 
 /**
@@ -193,7 +202,7 @@ function isProviderAvailable(name) {
  * Clear cached provider instances (useful for testing).
  */
 function clearCache() {
-  Object.keys(instances).forEach((key) => delete instances[key]);
+  instances.clear();
 }
 
 module.exports = {

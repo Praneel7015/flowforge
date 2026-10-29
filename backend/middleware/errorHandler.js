@@ -4,6 +4,8 @@
  * still logging the full detail server-side.
  */
 
+const { logSafe } = require('../utils/logSafe');
+
 const IS_PROD = process.env.NODE_ENV === 'production';
 
 function notFound(_req, res) {
@@ -14,7 +16,7 @@ function notFound(_req, res) {
 function errorHandler(err, req, res, next) {
   const status = err.status || err.statusCode || 500;
 
-  console.error(`[error] ${req.method} ${req.originalUrl} -> ${status}:`, err.message);
+  console.error('[error] %s %s -> %d: %s', logSafe(req.method, 10), logSafe(req.originalUrl), Number(status) || 500, logSafe(err.message));
 
   if (res.headersSent) return next(err);
 

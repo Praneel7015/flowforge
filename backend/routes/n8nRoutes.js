@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const axios = require('axios');
 const router = express.Router();
 const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
@@ -38,9 +39,8 @@ function buildChatPayload({ messages, currentYaml, cicdPlatform, aiProvider, use
   const yamlContext = typeof currentYaml === 'string' ? currentYaml : '';
 
   const rawContext = userContext && typeof userContext === 'object' ? userContext : {};
-  const fallbackUserId = `anon-${Date.now().toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+  // n8n uses these ids as memory/session keys, so they must not be guessable.
+  const fallbackUserId = `anon-${crypto.randomUUID()}`;
 
   const userId = sanitizeText(rawContext.userId, 120) || fallbackUserId;
   const username = sanitizeText(rawContext.username, 120) || `flowforge-${userId.slice(-6)}`;

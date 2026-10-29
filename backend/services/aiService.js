@@ -5,6 +5,8 @@
 const { getAIProvider } = require('../providers/ai');
 const { getCICDGenerator } = require('../providers/cicd');
 const { scanForSecrets } = require('../utils/secretScanner');
+const crypto = require('crypto');
+const { logSafe } = require('../utils/logSafe');
 const axios = require('axios');
 const yaml = require('js-yaml');
 
@@ -1834,9 +1836,8 @@ function buildN8NUserContext(messages, options = {}) {
   const rawContext =
     options.userContext && typeof options.userContext === 'object' ? options.userContext : {};
 
-  const fallbackUserId = `anon-${Date.now().toString(36)}${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+  // n8n uses these ids as memory/session keys, so they must not be guessable.
+  const fallbackUserId = `anon-${crypto.randomUUID()}`;
 
   const userId = sanitizeChatContextValue(rawContext.userId, 120) || fallbackUserId;
   const username =
@@ -1938,7 +1939,7 @@ async function pipelineChat(messages, currentYaml, options = {}) {
       });
       return extractN8NReply(data);
     } catch (err) {
-      console.warn('[chat] n8n webhook failed, answering with the AI provider:', err.message);
+      console.warn('[chat] n8n webhook failed, answering with the AI provider: %s', logSafe(err.message));
     }
   }
 

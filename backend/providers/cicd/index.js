@@ -18,8 +18,9 @@ const generators = {
   bitbucket: BitbucketPipelinesGenerator,
 };
 
-// Cached generator instances
-const instances = {};
+// Cached generator instances. A Map so a request-supplied platform name like
+// "__proto__" can't reach Object.prototype.
+const instances = new Map();
 
 /**
  * Get a CI/CD generator instance by platform name.
@@ -31,11 +32,13 @@ function getCICDGenerator(name) {
   const platformName = name || getDefaults().cicdPlatform;
 
   // Return cached instance if available
-  if (instances[platformName]) {
-    return instances[platformName];
+  if (instances.has(platformName)) {
+    return instances.get(platformName);
   }
 
-  const GeneratorClass = generators[platformName];
+  const GeneratorClass = Object.prototype.hasOwnProperty.call(generators, platformName)
+    ? generators[platformName]
+    : null;
   if (!GeneratorClass) {
     throw new Error(
       `Unknown CI/CD platform: ${platformName}. Available: ${Object.keys(generators).join(', ')}`
@@ -43,8 +46,9 @@ function getCICDGenerator(name) {
   }
 
   // Create and cache the instance
-  instances[platformName] = new GeneratorClass();
-  return instances[platformName];
+  const generator = new GeneratorClass();
+  instances.set(platformName, generator);
+  return generator;
 }
 
 /**
@@ -70,7 +74,7 @@ function getAllPlatformMetadata() {
  * Clear cached generator instances (useful for testing).
  */
 function clearCache() {
-  Object.keys(instances).forEach((key) => delete instances[key]);
+  instances.clear();
 }
 
 module.exports = {

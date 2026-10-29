@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { pathSegment, pathSegments } = require('../utils/url');
 
 const BITBUCKET_API = 'https://api.bitbucket.org/2.0';
 const DEFAULT_TIMEOUT = Number(process.env.BITBUCKET_TIMEOUT_MS || 60000);
@@ -13,6 +14,8 @@ function makeClient(username, appPassword) {
 }
 
 function toApiError(action, err) {
+  // Our own validation errors (e.g. an invalid path segment) keep their 400.
+  if (err.status === 400 && !err.response) return err;
   const status = err.response?.status;
   const detail = err.response?.data?.error?.message || err.response?.data?.message || err.message;
   return new Error(`Bitbucket ${action} failed${status ? ` (${status})` : ''}: ${detail}`);
@@ -29,7 +32,7 @@ async function listRepos(username, appPassword, workspace) {
   const client = makeClient(username, appPassword);
   const ws = workspace || username;
   try {
-    const { data } = await client.get(`/repositories/${ws}`, {
+    const { data } = await client.get(`/repositories/${pathSegment(ws)}`, {
       params: { pagelen: 100, sort: '-updated_on', fields: 'values.slug,values.full_name,values.name,values.mainbranch,values.is_private,values.description,values.language,values.updated_on' },
     });
     return (data.values || []).map((r) => ({
@@ -53,7 +56,7 @@ async function listBranches(username, appPassword, workspace, repo) {
   const client = makeClient(username, appPassword);
   const ws = workspace || username;
   try {
-    const { data } = await client.get(`/repositories/${ws}/${repo}/refs/branches`, {
+    const { data } = await client.get(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/refs/branches`, {
       params: { pagelen: 100 },
     });
     return (data.values || []).map((b) => ({
@@ -74,8 +77,8 @@ async function getRepoTree(username, appPassword, workspace, repo, branch) {
 
   async function fetchDir(path) {
     const url = path
-      ? `/repositories/${ws}/${repo}/src/${branch}/${path}`
-      : `/repositories/${ws}/${repo}/src/${branch}/`;
+      ? `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src/${pathSegments(branch)}/${pathSegments(path)}`
+      : `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src/${pathSegments(branch)}/`;
 
     try {
       const { data } = await client.get(url, { params: { pagelen: 100 } });
@@ -106,7 +109,7 @@ async function getFileContent(username, appPassword, workspace, repo, filePath, 
   try {
     // Get file metadata first to check size
     const { data: meta } = await client.get(
-      `/repositories/${ws}/${repo}/src/${branch}/${filePath}`,
+      `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src/${pathSegments(branch)}/${pathSegments(filePath)}`,
       { params: { format: 'meta' } }
     );
 
@@ -115,7 +118,7 @@ async function getFileContent(username, appPassword, workspace, repo, filePath, 
     }
 
     const { data: content } = await client.get(
-      `/repositories/${ws}/${repo}/src/${branch}/${filePath}`,
+      `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src/${pathSegments(branch)}/${pathSegments(filePath)}`,
       { responseType: 'text', transformResponse: [(d) => d] }
     );
 
@@ -152,7 +155,7 @@ async function pushFile(username, appPassword, workspace, repo, filePath, conten
     form.append('message', commitMessage || `ci: add ${filePath} via FlowForge`);
     form.append('branch', branch);
 
-    await client.post(`/repositories/${ws}/${repo}/src`, form, {
+    await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src`, form, {
       headers: form.getHeaders(),
     });
 
@@ -168,7 +171,7 @@ async function createBranch(username, appPassword, workspace, repo, branchName, 
   const ws = workspace || username;
 
   try {
-    const { data } = await client.post(`/repositories/${ws}/${repo}/refs/branches`, {
+    const { data } = await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/refs/branches`, {
       name: branchName,
       target: { hash: fromRef },
     });
@@ -184,7 +187,7 @@ async function createPullRequest(username, appPassword, workspace, repo, { title
   const ws = workspace || username;
 
   try {
-    const { data } = await client.post(`/repositories/${ws}/${repo}/pullrequests`, {
+    const { data } = await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pullrequests`, {
       title,
       description: description || '',
       source: { branch: { name: sourceBranch } },
@@ -205,7 +208,7 @@ async function getDefaultBranch(username, appPassword, workspace, repo) {
   const client = makeClient(username, appPassword);
   const ws = workspace || username;
   try {
-    const { data } = await client.get(`/repositories/${ws}/${repo}`);
+    const { data } = await client.get(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}`);
     return data.mainbranch?.name || 'main';
   } catch (err) {
     throw toApiError('get default branch', err);
@@ -221,7 +224,7 @@ async function listPipelines(username, appPassword, workspace, repo, { branch, p
   try {
     const params = { pagelen: perPage, sort: '-created_on' };
     if (branch) params['target.ref_name'] = branch;
-    const { data } = await client.get(`/repositories/${ws}/${repo}/pipelines/`, { params });
+    const { data } = await client.get(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/`, { params });
     return (data.values || []).map((p) => ({
       id: p.uuid || p.build_number,
       runNumber: p.build_number,
@@ -245,9 +248,9 @@ async function getPipelineStatus(username, appPassword, workspace, repo, pipelin
   const ws = workspace || username;
   try {
     const [pipeRes, stepsRes] = await Promise.all([
-      client.get(`/repositories/${ws}/${repo}/pipelines/${encodeURIComponent(pipelineId)}`),
+      client.get(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/${encodeURIComponent(pipelineId)}`),
       client
-        .get(`/repositories/${ws}/${repo}/pipelines/${encodeURIComponent(pipelineId)}/steps/`)
+        .get(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/${encodeURIComponent(pipelineId)}/steps/`)
         .catch(() => ({ data: { values: [] } })),
     ]);
 
@@ -284,7 +287,7 @@ async function getPipelineLogs(username, appPassword, workspace, repo, pipelineI
   const ws = workspace || username;
   try {
     const { data } = await client.get(
-      `/repositories/${ws}/${repo}/pipelines/${encodeURIComponent(pipelineId)}/steps/`
+      `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/${encodeURIComponent(pipelineId)}/steps/`
     );
     const steps = Array.isArray(data?.values) ? data.values : [];
     const failedSteps = steps.filter(
@@ -298,7 +301,7 @@ async function getPipelineLogs(username, appPassword, workspace, repo, pipelineI
         let logText = '';
         try {
           const { data: rawLog } = await client.get(
-            `/repositories/${ws}/${repo}/pipelines/${encodeURIComponent(pipelineId)}/steps/${encodeURIComponent(step.uuid)}/log`,
+            `/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/${encodeURIComponent(pipelineId)}/steps/${encodeURIComponent(step.uuid)}/log`,
             { responseType: 'text', transformResponse: [(d) => d] }
           );
           if (typeof rawLog === 'string' && rawLog.trim()) {
@@ -328,7 +331,7 @@ async function triggerPipeline(username, appPassword, workspace, repo, branch = 
   const client = makeClient(username, appPassword);
   const ws = workspace || username;
   try {
-    const { data } = await client.post(`/repositories/${ws}/${repo}/pipelines/`, {
+    const { data } = await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/pipelines/`, {
       target: {
         ref_type: 'branch',
         type: 'pipeline_ref_target',
