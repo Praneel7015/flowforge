@@ -6,6 +6,16 @@ const AIProvider = require('./AIProvider');
 
 const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
+// Compare the parsed hostname, not a substring: "api.openai.com.evil.example"
+// must not count as the official API.
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 class OpenAIProvider extends AIProvider {
   constructor(config) {
     super(config);
@@ -31,7 +41,7 @@ class OpenAIProvider extends AIProvider {
   // temperature; OpenAI-compatible servers behind a custom base URL usually
   // still expect the classic max_tokens/temperature pair.
   _limits(maxTokens, temperature) {
-    const isOfficialApi = !this.config.baseUrl || /api\.openai\.com/i.test(this.config.baseUrl);
+    const isOfficialApi = !this.config.baseUrl || hostOf(this.config.baseUrl) === 'api.openai.com';
     if (isOfficialApi) return { max_completion_tokens: maxTokens };
     return temperature === undefined ? { max_tokens: maxTokens } : { max_tokens: maxTokens, temperature };
   }

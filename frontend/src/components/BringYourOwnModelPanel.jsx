@@ -39,41 +39,30 @@ const providerHints = {
   },
 };
 
-// "Remember" stores the API key plus provider secrets (Vertex JSON, AWS keys).
-function readSavedCredentials() {
+// "Remember" stores only the provider API key, at the user's request. Cloud
+// credentials (AWS secret keys, service account private keys) are long-lived
+// and high-value, so they are never written to browser storage.
+function readSavedApiKey() {
   try {
     const raw = localStorage.getItem(API_KEY_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return {
-        key: typeof parsed?.key === 'string' ? parsed.key : '',
-        secrets: parsed?.secrets && typeof parsed.secrets === 'object' ? parsed.secrets : {},
-      };
+      return typeof parsed?.key === 'string' ? parsed.key : '';
     }
   } catch { /* ignore */ }
-  return { key: '', secrets: {} };
+  return '';
 }
 
-function hasSavedCredentials() {
-  const { key, secrets } = readSavedCredentials();
-  return Boolean(key) || Object.values(secrets).some(Boolean);
-}
-
-function persistCredentials(key, secrets = {}) {
+function persistApiKey(key) {
   try {
-    const kept = Object.fromEntries(Object.entries(secrets).filter(([, v]) => v));
-    if (key || Object.keys(kept).length > 0) {
-      localStorage.setItem(
-        API_KEY_STORAGE_KEY,
-        JSON.stringify({ key, secrets: kept, savedAt: new Date().toISOString() })
-      );
+    if (key) {
+      // Explicit opt-in ("Remember API key"); see the warning next to the checkbox.
+      localStorage.setItem(API_KEY_STORAGE_KEY, JSON.stringify({ key, savedAt: new Date().toISOString() }));
     } else {
       localStorage.removeItem(API_KEY_STORAGE_KEY);
     }
   } catch { /* ignore */ }
 }
-
-const pickSecrets = (value) => Object.fromEntries(SECRET_FIELD_NAMES.map((n) => [n, value[n] || '']));
 
 export default function BringYourOwnModelPanel({
   selectedProvider,
@@ -83,15 +72,14 @@ export default function BringYourOwnModelPanel({
 }) {
   const hints = providerHints[selectedProvider] || providerHints.groq;
   const [testState, setTestState] = useState({ status: 'idle', message: '' });
-  const [rememberKey, setRememberKey] = useState(() => hasSavedCredentials());
+  const [rememberKey, setRememberKey] = useState(() => Boolean(readSavedApiKey()));
   const abortRef = useRef(null);
 
-  // On mount, restore saved credentials if available
+  // On mount, restore a saved API key if available
   useEffect(() => {
-    const { key, secrets } = readSavedCredentials();
-    const hasSecrets = Object.values(secrets).some(Boolean);
-    if ((key && !value.apiKey) || hasSecrets) {
-      onChange({ ...value, ...secrets, apiKey: value.apiKey || key, enabled: true });
+    const savedKey = readSavedApiKey();
+    if (savedKey && !value.apiKey) {
+      onChange({ ...value, apiKey: savedKey, enabled: true });
     }
     // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,16 +93,10 @@ export default function BringYourOwnModelPanel({
     setTestState({ status: 'idle', message: '' });
   }, [selectedProvider, value]);
 
-  // Persist or clear credentials when the remember toggle or values change
-  const secretsSignature = JSON.stringify(pickSecrets(value));
+  // Persist or clear the key when the remember toggle or key changes
   useEffect(() => {
-    if (rememberKey) {
-      persistCredentials(value.apiKey, pickSecrets(value));
-    } else {
-      persistCredentials('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rememberKey, value.apiKey, secretsSignature]);
+    persistApiKey(rememberKey ? value.apiKey : '');
+  }, [rememberKey, value.apiKey]);
 
   const extraFields = PROVIDER_FIELDS[selectedProvider] || [];
   const showBaseUrl = !NO_BASE_URL.has(selectedProvider);
@@ -163,7 +145,7 @@ export default function BringYourOwnModelPanel({
   };
 
   const handleClearSavedKey = () => {
-    persistCredentials('');
+    persistApiKey('');
     setRememberKey(false);
     onChange({ ...value, apiKey: '', ...Object.fromEntries(SECRET_FIELD_NAMES.map((n) => [n, ''])) });
   };
@@ -175,7 +157,7 @@ export default function BringYourOwnModelPanel({
         ? 'text-[var(--ff-warning)]'
         : 'text-[var(--ff-danger)]';
 
-  const hasSavedKey = hasSavedCredentials();
+  const hasSavedKey = Boolean(readSavedApiKey());
 
   return (
     <div className="rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-4 md:p-5">
@@ -184,7 +166,7 @@ export default function BringYourOwnModelPanel({
           <p className="text-sm font-semibold text-[var(--ff-text)]">Runtime Overrides</p>
           <p className="text-xs text-[var(--ff-muted)] mt-1">
             {rememberKey
-              ? 'Credentials are saved in this browser and persist across refreshes.'
+              ? 'Your API key is saved unencrypted in this browser. Cloud credentials (AWS keys, service account JSON) are never saved.'
               : 'Credentials are session-only and cleared on refresh.'}
           </p>
         </div>
@@ -278,7 +260,7 @@ export default function BringYourOwnModelPanel({
             disabled={!value.enabled}
             className="accent-current"
           />
-          Remember credentials in this browser
+          Remember API key in this browser
         </label>
 
         {hasSavedKey && (
@@ -286,7 +268,7 @@ export default function BringYourOwnModelPanel({
             onClick={handleClearSavedKey}
             className="text-xs text-[var(--ff-danger)] hover:underline"
           >
-            Clear saved credentials
+            Clear saved key
           </button>
         )}
       </div>

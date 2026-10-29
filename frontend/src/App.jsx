@@ -107,8 +107,8 @@ const DEFAULT_BYOM = {
   ...Object.fromEntries(EXTRA_FIELD_NAMES.map((name) => [name, ''])),
 };
 
-// Non-secret BYOM fields saved with workspace settings; keys and other
-// secrets only persist through the "Remember" option in the BYOM panel.
+// Non-secret BYOM fields saved with workspace settings. Only the API key can
+// be remembered (opt-in, in the BYOM panel); cloud secrets are never stored.
 const PERSISTED_BYOM_FIELDS = ['model', 'baseUrl', ...EXTRA_FIELD_NAMES.filter((n) => !SECRET_FIELD_NAMES.includes(n))];
 
 function inferLlmType(providerName) {

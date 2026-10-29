@@ -1,34 +1,40 @@
 import { test, expect } from '@playwright/test';
+import { openStudio, waitForBuilder, openPanel } from './helpers';
 
-test.describe('Settings / Onboarding', () => {
+test.describe('First visit', () => {
+  test('a new visitor lands straight in the studio (no forced setup)', async ({ page }) => {
+    await openStudio(page, { onboarding: null });
+    await waitForBuilder(page);
+    await expect(page.getByText('First-Run Setup')).toHaveCount(0);
+  });
+});
+
+test.describe('Provider settings', () => {
   test.beforeEach(async ({ page }) => {
-    // Clear localStorage to simulate fresh install
-    await page.goto('/');
-    await page.evaluate(() => {
-      localStorage.removeItem('flowforge.preferences.v1');
-      localStorage.removeItem('flowforge.onboarding.v1');
-    });
-    await page.reload();
+    await openStudio(page);
+    await waitForBuilder(page);
+    await openPanel(page, 'Settings');
+    await expect(page.getByRole('heading', { name: 'Step 1: LLM and Provider' })).toBeVisible();
   });
 
-  test('should show settings page on first visit (onboarding required)', async ({ page }) => {
-    await page.waitForSelector('text=First-Run Setup', { timeout: 10000 });
-    await expect(page.locator('text=First-Run Setup')).toBeVisible();
+  const providerSelect = (page) =>
+    page.getByRole('heading', { name: 'Step 1: LLM and Provider' }).locator('xpath=..').getByRole('combobox').first();
+
+  test('AWS Bedrock shows region and access-key fields, no base URL', async ({ page }) => {
+    await providerSelect(page).selectOption('bedrock');
+    await expect(page.getByText('AWS region')).toBeVisible();
+    await expect(page.getByText('Secret access key (optional)')).toBeVisible();
+    await expect(page.getByText(/^Base URL/)).toHaveCount(0);
   });
 
-  test('should allow skipping onboarding', async ({ page }) => {
-    await page.waitForSelector('text=Skip for now', { timeout: 10000 });
-    await page.click('text=Skip for now');
-    // Should land on builder
-    await expect(page.locator('text=Workflow Builder')).toBeVisible();
+  test('Vertex AI shows project, location and service account fields', async ({ page }) => {
+    await providerSelect(page).selectOption('vertex');
+    await expect(page.getByText('GCP project ID')).toBeVisible();
+    await expect(page.getByText(/Service account JSON key/)).toBeVisible();
   });
 
-  test('should persist provider selection through onboarding', async ({ page }) => {
-    await page.waitForSelector('text=Continue to Step 2', { timeout: 10000 });
-    await page.click('text=Continue to Step 2');
-    await page.waitForSelector('text=Finish setup', { timeout: 5000 });
-    await page.click('text=Finish setup');
-    // Should land on builder after completing onboarding
-    await expect(page.locator('text=Workflow Builder')).toBeVisible();
+  test('OpenAI-compatible requires a base URL', async ({ page }) => {
+    await providerSelect(page).selectOption('openai_compatible');
+    await expect(page.getByText('Base URL', { exact: true })).toBeVisible();
   });
 });

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openStudio, waitForBuilder } from './helpers';
 
 const GITHUB_YAML = `name: CI
 on:
@@ -20,24 +21,9 @@ jobs:
     steps:
       - run: deploy.sh`;
 
-async function bootstrap(page, seedWorkflow) {
-  await page.goto('/');
-  await page.evaluate((seed) => {
-    localStorage.setItem('flowforge.hasVisited.v1', 'true');
-    localStorage.setItem('flowforge.onboarding.v1', JSON.stringify({ status: 'completed' }));
-    localStorage.setItem('flowforge.preferences.v1', JSON.stringify({
-      selectedProviders: { ai: 'ollama', cicd: 'github' },
-      llmType: 'local',
-      byomConfig: { enabled: false, model: '', baseUrl: '' },
-    }));
-    if (seed) {
-      localStorage.setItem('flowforge.workflow.builder.v1', JSON.stringify(seed));
-    } else {
-      localStorage.removeItem('flowforge.workflow.builder.v1');
-    }
-  }, seedWorkflow);
-  await page.reload();
-  await page.waitForSelector('text=Workflow Builder', { timeout: 10000 });
+async function bootstrap(page, workflow) {
+  await openStudio(page, { workflow, cicd: 'github' });
+  await waitForBuilder(page);
 }
 
 test.describe('Import existing pipeline', () => {
@@ -52,7 +38,7 @@ test.describe('Import existing pipeline', () => {
 
     // Nodes render on the canvas: trigger + lint + test + deploy = 4.
     await page.waitForSelector('.react-flow__node', { timeout: 15000 });
-    await expect(page.locator('text=/4 nodes/')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/4 nodes/)).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.react-flow__node')).toHaveCount(4);
   });
 });
@@ -75,7 +61,7 @@ test.describe('Edit block text', () => {
     await expect(nameInput).toBeVisible();
 
     await nameInput.fill('Compile App');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
 
     await expect(page.locator('.react-flow__node').first()).toContainText('Compile App');
   });

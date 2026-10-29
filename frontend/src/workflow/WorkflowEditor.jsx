@@ -1383,6 +1383,7 @@ function WorkflowEditorInner({
               : 'ff-btn-secondary'
           }`}
           title="Automatically re-generate YAML as you edit the canvas"
+          aria-pressed={autoSync}
         >
           Auto-sync
         </button>
