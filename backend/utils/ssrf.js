@@ -16,6 +16,7 @@ const net = require('net');
 const http = require('http');
 const https = require('https');
 const { logSafe } = require('./logSafe');
+const { Agent: UndiciAgent, fetch: undiciFetch } = require('undici');
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -179,6 +180,17 @@ const safeAgents = {
   proxy: false,
 };
 
+/**
+ * fetch for SDK clients (OpenAI, Groq) calling user-supplied base URLs: the
+ * same connect-time address check as safeAgents, and no redirects. Uses
+ * undici's own fetch so the dispatcher always matches its version.
+ */
+const safeDispatcher = new UndiciAgent({ connect: { lookup: safeLookup } });
+
+function safeFetch(url, init = {}) {
+  return undiciFetch(url, { ...init, redirect: 'error', dispatcher: safeDispatcher });
+}
+
 module.exports = {
   inspectUrl,
   isSafePublicUrl,
@@ -187,4 +199,5 @@ module.exports = {
   createSafeLookup,
   safeLookup,
   safeAgents,
+  safeFetch,
 };

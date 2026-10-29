@@ -883,7 +883,13 @@ async function diagnoseAndFix(req, res) {
     });
   } catch (err) {
     const status = err.status || 500;
-    console.error('[runs] diagnose-and-fix failed (%d): %s', Number(status) || 500, logSafe(err.message));
+    // 4xx errors describe the caller's own input, which can include values
+    // they typed, so only the status is logged; 5xx keep a cleaned message.
+    if (status >= 500) {
+      console.error('[runs] diagnose-and-fix failed (%d): %s', Number(status) || 500, logSafe(err.message));
+    } else {
+      console.warn('[runs] diagnose-and-fix rejected request (%d)', Number(status));
+    }
     // 4xx messages are ours or the CI platform's (e.g. bad credentials) and help
     // the user; server errors only show details outside production.
     const message =

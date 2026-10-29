@@ -298,3 +298,51 @@ test('diagnose-and-fix hides provider error details in production', () => {
   assert.strictEqual(body.explanation.warning, 'AI diagnosis unavailable');
   assert.strictEqual(body.warning, 'AI remediation unavailable');
 });
+
+test('validation errors name the field but never echo the typed value', () => {
+  const secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+  for (const field of ['region', 'location', 'projectId', 'accessKeyId']) {
+    const err = (() => {
+      try {
+        buildAIOptions({ [field]: secret });
+      } catch (e) {
+        return e;
+      }
+      return null;
+    })();
+    assert.ok(err, `${field} should be rejected`);
+    assert.strictEqual(err.status, 400);
+    assert.ok(!err.message.includes(secret), `${field} echoed the value: ${err.message}`);
+  }
+});
+
+test('user-supplied OpenAI-compatible endpoints are checked at connect time (DNS rebinding)', async () => {
+  const net = require('node:net');
+  let connections = 0;
+  const server = net.createServer((socket) => {
+    connections += 1;
+    socket.destroy();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  // "localhost" passes the literal-host check only if it were a public name;
+  // here it stands in for a public hostname that resolves to loopback.
+  const baseUrl = `https://localhost:${port}/v1`;
+  const call = async (config) => {
+    const provider = new OpenAIProvider({ apiKey: 'k', model: 'm', baseUrl, ...config });
+    provider._getClient().maxRetries = 0;
+    await assert.rejects(() => provider.complete('system', 'user'));
+  };
+
+  try {
+    await call({ userSuppliedEndpoint: true });
+    assert.strictEqual(connections, 0, 'connected to a loopback address');
+
+    // Control: without the guard the same request does open a connection,
+    // so the zero above is the guard working, not a broken test.
+    await call({});
+    assert.ok(connections > 0, 'control request never connected');
+  } finally {
+    server.close();
+  }
+});

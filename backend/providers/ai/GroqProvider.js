@@ -5,6 +5,7 @@
  */
 const OpenAI = require('openai');
 const AIProvider = require('./AIProvider');
+const { safeFetch } = require('../../utils/ssrf');
 
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 const DEFAULT_GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
@@ -52,6 +53,7 @@ class GroqProvider extends AIProvider {
         apiKey: this.config.apiKey,
         baseURL: this.config.baseUrl || DEFAULT_GROQ_BASE_URL,
         fetchOptions: { redirect: 'error' },
+        ...(this.config.userSuppliedEndpoint ? { fetch: safeFetch } : {}),
       });
     }
     return this.client;

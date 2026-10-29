@@ -44,7 +44,9 @@ function sanitizeBaseUrl(value) {
 function sanitizePattern(value, pattern, label) {
   const text = sanitizeText(value, 100);
   if (!text) return undefined;
-  if (!pattern.test(text)) throw badRequest(`Invalid ${label}: ${text}`);
+  // Name the field only: a secret pasted into the wrong field must not be
+  // echoed back in the response or written to logs.
+  if (!pattern.test(text)) throw badRequest(`Invalid ${label}`);
   return text;
 }
 

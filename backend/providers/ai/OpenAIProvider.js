@@ -3,6 +3,7 @@
  */
 const OpenAI = require('openai');
 const AIProvider = require('./AIProvider');
+const { safeFetch } = require('../../utils/ssrf');
 
 const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
@@ -35,6 +36,9 @@ class OpenAIProvider extends AIProvider {
         // Base URLs can be user-supplied; a redirect must not steer the
         // server to a host the SSRF guard never checked.
         fetchOptions: { redirect: 'error' },
+        // Request-supplied endpoints also get the connect-time address check
+        // (blocks DNS rebinding to private addresses).
+        ...(this.config.userSuppliedEndpoint ? { fetch: safeFetch } : {}),
       });
     }
     return this.client;
