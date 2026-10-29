@@ -811,6 +811,7 @@ async function diagnoseAndFix(req, res) {
         aiOptions: parsedAIOptions,
       });
     } catch (err) {
+      console.error('[runs] AI failure diagnosis failed:', logSafe(err.message));
       const firstJob = failedJobs[0];
       explanation = {
         summary: `Job "${firstJob.jobName}" failed during ${firstJob.stage || 'execution'}.`,
@@ -821,7 +822,9 @@ async function diagnoseAndFix(req, res) {
           'Add retry or timeout guards if the failure was caused by transient network issues.',
         ],
         hasSecurityIssue: false,
-        warning: err.message,
+        // Provider errors can include upstream details; production gets a
+        // fixed message (the detail is logged above).
+        warning: IS_PROD ? 'AI diagnosis unavailable' : `AI diagnosis unavailable: ${err.message}`,
       };
     }
 
@@ -880,7 +883,14 @@ async function diagnoseAndFix(req, res) {
     });
   } catch (err) {
     const status = err.status || 500;
-    return res.status(status).json({ error: err.message || 'Failed to diagnose and fix pipeline run' });
+    console.error(`[runs] diagnose-and-fix failed (${status}):`, logSafe(err.message));
+    // 4xx messages are ours or the CI platform's (e.g. bad credentials) and help
+    // the user; server errors only show details outside production.
+    const message =
+      status < 500 || !IS_PROD
+        ? err.message || 'Failed to diagnose and fix pipeline run'
+        : 'Failed to diagnose and fix pipeline run';
+    return res.status(status).json({ error: message });
   }
 }
 

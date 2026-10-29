@@ -258,3 +258,34 @@ test('logSafe strips line breaks so values cannot forge log lines', () => {
   assert.strictEqual(logSafe('bad\nFAKE LOG LINE\r\nmore'), 'bad FAKE LOG LINE more');
   assert.strictEqual(logSafe('x'.repeat(500)).length, 300);
 });
+
+test('logSafe removes ANSI escape sequences and other control characters', () => {
+  const esc = String.fromCharCode(27);
+  const input = `ok${esc}[2J${esc}[31mred${esc}[0m\nnext${String.fromCharCode(7)}bell${String.fromCharCode(0)}end`;
+  assert.strictEqual(logSafe(input), 'okred next bell end');
+  // Truncation happens after cleaning, so escape codes can't eat the budget.
+  assert.strictEqual(logSafe(`${esc}[31m`.repeat(200) + 'tail', 10), 'tail');
+});
+
+test('diagnose-and-fix hides provider error details in production', () => {
+  const { execFileSync } = require('node:child_process');
+  const path = require('node:path');
+  const script = `
+    const aiService = require('./services/aiService');
+    aiService.explainPipelineFailure = async () => { throw new Error('upstream secret detail'); };
+    aiService.autoRemediatePipeline = async () => { throw new Error('upstream secret detail'); };
+    const runController = require('./controllers/runController');
+    const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+    runController.diagnoseAndFix({ body: { platform: 'github', failedLogs: [{ jobName: 't', log: 'x' }], yaml: 'a: 1' } }, res)
+      .then(() => process.stdout.write(JSON.stringify(res.body)));
+  `;
+  const out = execFileSync(process.execPath, ['-e', script], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).toString();
+  const body = JSON.parse(out);
+  assert.ok(!out.includes('upstream secret detail'), out);
+  assert.strictEqual(body.explanation.warning, 'AI diagnosis unavailable');
+  assert.strictEqual(body.warning, 'AI remediation unavailable');
+});
