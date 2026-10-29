@@ -121,11 +121,13 @@ export default function LiveRunsPanel({
   // depends on it) keeps its identity across renders.
   const getPlatformCredentials = useCallback(() => readCredentialsFor(platform), [platform]);
 
-  // A status response is applied only if it is the newest request and its run
-  // is still the one shown; a slow poll for the previous run (or one that
-  // lands after a simulation starts) would otherwise overwrite its jobs.
-  const statusRequestRef = useRef(0);
+  // A status response is applied only while its run is still the one shown:
+  // a slow poll for the previous run (or one that lands after a simulation
+  // starts) would otherwise overwrite its jobs. Polls for the same run are
+  // serialized instead of superseded, so a request slower than the poll
+  // interval still gets applied.
   const shownRunIdRef = useRef(null);
+  const inFlightRunIdRef = useRef(null);
   useEffect(() => {
     shownRunIdRef.current = selectedRun?.id ?? null;
   }, [selectedRun]);
@@ -134,8 +136,9 @@ export default function LiveRunsPanel({
     async (runToInspect) => {
       const target = runToInspect || selectedRun;
       if (!target || String(target.id).startsWith('sim_')) return;
-      const request = ++statusRequestRef.current;
-      const isCurrent = () => request === statusRequestRef.current && shownRunIdRef.current === target.id;
+      if (inFlightRunIdRef.current === target.id) return; // previous poll still running
+      inFlightRunIdRef.current = target.id;
+      const isCurrent = () => shownRunIdRef.current === target.id;
 
       try {
         const [owner, repo] = repoSlug.trim().split('/');
@@ -155,6 +158,8 @@ export default function LiveRunsPanel({
       } catch (err) {
         if (!isCurrent()) return;
         setError(err.response?.data?.error || 'Could not fetch run job details.');
+      } finally {
+        if (inFlightRunIdRef.current === target.id) inFlightRunIdRef.current = null;
       }
     },
     [selectedRun, repoSlug, platform, getPlatformCredentials, canvasGraph?.nodes, onUpdateNodeStatuses]

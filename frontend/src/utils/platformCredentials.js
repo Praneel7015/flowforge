@@ -9,19 +9,20 @@ const SETTINGS_KEY = 'flowforge.platformSettings.v1';
 const LEGACY_KEY = 'flowforge.platformCredentials.v1';
 const SECRET_FIELDS = new Set(['token', 'appPassword']);
 
-// A URL like https://user:pass@gitlab.example.com carries a password, so it is
-// kept in memory with the tokens rather than saved as a setting.
-function hasUserinfo(value) {
-  if (typeof value !== 'string' || !value.includes('@')) return false;
+// A URL can carry a credential: https://user:pass@host, or a token in the
+// query or fragment (?private_token=...). Such a URL is kept in memory with
+// the tokens rather than saved as a setting; a plain instance URL is saved.
+function mayCarryCredential(value) {
+  if (typeof value !== 'string' || !/^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim())) return false;
   try {
     const url = new URL(value.trim());
-    return Boolean(url.username || url.password);
+    return Boolean(url.username || url.password || url.search || url.hash);
   } catch {
-    return /^[a-z][a-z0-9+.-]*:\/\/[^/]*@/i.test(value.trim());
+    return /[@?#]/.test(value);
   }
 }
 
-const isSecret = (name, value) => SECRET_FIELDS.has(name) || hasUserinfo(value);
+const isSecret = (name, value) => SECRET_FIELDS.has(name) || mayCarryCredential(value);
 
 let secrets = {};
 let settings = {};

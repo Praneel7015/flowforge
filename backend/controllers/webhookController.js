@@ -10,7 +10,6 @@ const gitlabService = require('../services/gitlabService');
 // Delivery ids already accepted. Senders retry a delivery they consider
 // failed with the same id; without this a retry would post a second analysis.
 const SEEN_DELIVERY_LIMIT = 1000;
-const WEBHOOK_RETRY_DELAY_MS = Number(process.env.WEBHOOK_RETRY_DELAY_MS) || 15000;
 const seenDeliveries = new Set();
 
 function isDuplicateDelivery(id) {
@@ -51,20 +50,14 @@ async function handleWebhook(req, res) {
     return undefined;
   };
 
-  // There is no job store, so the work lives in this process: one delayed
-  // retry for transient failures, and if that fails too the delivery id is
-  // released, so a redelivery from the sender is processed rather than skipped.
+  // No automatic retry: if GitLab saved the comment but the response was lost,
+  // a retry would post it twice. On failure the delivery id is released, so a
+  // redelivery from the sender (or a manual one) is processed, not skipped.
   try {
     await runHandler();
   } catch (err) {
-    console.error('Webhook processing error (retrying once): %s', logSafe(err.message));
-    await new Promise((resolve) => setTimeout(resolve, WEBHOOK_RETRY_DELAY_MS));
-    try {
-      await runHandler();
-    } catch (retryErr) {
-      console.error('Webhook processing failed: %s', logSafe(retryErr.message));
-      if (deliveryId) seenDeliveries.delete(deliveryId);
-    }
+    console.error('Webhook processing failed: %s', logSafe(err.message));
+    if (deliveryId) seenDeliveries.delete(deliveryId);
   }
 }
 

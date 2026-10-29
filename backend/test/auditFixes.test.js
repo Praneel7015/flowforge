@@ -4,8 +4,6 @@ const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
 
 const BACKEND = path.join(__dirname, '..');
-// Webhook retries wait this long; keep the tests fast.
-process.env.WEBHOOK_RETRY_DELAY_MS = '5';
 
 function mockRes() {
   return {
@@ -167,7 +165,7 @@ test('TRUST_PROXY=false and a hop count start the server; CORS checks hostnames 
   }
 });
 
-test('webhooks: Idempotency-Key wins, one retry, and a failed delivery can be redelivered', async () => {
+test('webhooks: Idempotency-Key wins, no auto-retry, and a failed delivery can be redelivered', async () => {
   const controller = require('../controllers/webhookController');
   const gitlabService = require('../services/gitlabService');
   const original = gitlabService.getPipelineLogs;
@@ -186,14 +184,14 @@ test('webhooks: Idempotency-Key wins, one retry, and a failed delivery can be re
     });
     // Two deliveries sharing an event UUID are both processed.
     await controller.handleWebhook(req('delivery-a'), mockRes());
-    assert.strictEqual(calls, 2, 'first attempt + one retry');
+    assert.strictEqual(calls, 1, 'no automatic retry (it could post a comment twice)');
     await controller.handleWebhook(req('delivery-b'), mockRes());
-    assert.strictEqual(calls, 4);
+    assert.strictEqual(calls, 2);
     // Both failed, so their ids were released: a redelivery runs again.
     const redelivery = mockRes();
     await controller.handleWebhook(req('delivery-a'), redelivery);
     assert.strictEqual(redelivery.statusCode, 202);
-    assert.strictEqual(calls, 6);
+    assert.strictEqual(calls, 3);
   } finally {
     gitlabService.getPipelineLogs = original;
     console.log = quiet.log;
