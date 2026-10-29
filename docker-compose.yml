@@ -4,14 +4,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Baked into the static build; the browser calls this URL directly
+        # (serve has no /api proxy), so it must be reachable from the host.
+        VITE_API_BASE_URL: http://localhost:3001
     ports:
       - "5173:5173"
-    environment:
-      - VITE_API_URL=http://backend:3001
     depends_on:
       - backend
-    volumes:
-      - ./frontend/src:/app/src
 
   backend:
     build:
@@ -21,6 +21,11 @@ services:
       - "3001:3001"
     env_file:
       - ./backend/.env
+    # Overrides NODE_ENV from .env (env_file loses to environment), so a copied
+    # .env.example can't put the published API into development mode.
+    environment:
+      - NODE_ENV=production
+      - FRONTEND_URL=http://localhost:5173
     volumes:
       - ./backend:/app
       - /app/node_modules

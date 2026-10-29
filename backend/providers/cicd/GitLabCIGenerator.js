@@ -5,6 +5,13 @@
 const yaml = require('js-yaml');
 const CICDGenerator = require('./CICDGenerator');
 
+// Global keywords: a job with one of these names would replace or be read as
+// pipeline-level configuration.
+const GITLAB_RESERVED_KEYS = new Set([
+  'stages', 'variables', 'workflow', 'default', 'include', 'image', 'services',
+  'before_script', 'after_script', 'cache', 'types',
+]);
+
 class GitLabCIGenerator extends CICDGenerator {
   constructor() {
     super();
@@ -47,6 +54,10 @@ class GitLabCIGenerator extends CICDGenerator {
       notify: { stage: '.post', template: { script: ['echo "Sending notification..."'] } },
       conditional: { stage: null, template: {} },
     };
+  }
+
+  _reservedJobNames() {
+    return GITLAB_RESERVED_KEYS;
   }
 
   generate(nodes, edges) {

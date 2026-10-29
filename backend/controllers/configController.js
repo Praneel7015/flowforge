@@ -4,6 +4,7 @@
 const { getProviderSummary, getAIConfig, getCICDConfig, getFeatureFlags } = require('../config');
 const { getAIProvider } = require('../providers/ai');
 const { buildAIOptions } = require('../utils/aiOptions');
+const { sendError } = require('../utils/sendError');
 
 /**
  * GET /api/config/providers
@@ -14,7 +15,7 @@ async function getProviders(req, res) {
     const summary = getProviderSummary();
     res.json(summary);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err, 'Failed to list providers');
   }
 }
 
@@ -66,7 +67,7 @@ async function getProviderStatus(req, res) {
       res.status(400).json({ error: `Unknown provider type: ${type}` });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err, 'Failed to check provider status');
   }
 }
 

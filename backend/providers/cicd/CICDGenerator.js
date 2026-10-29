@@ -96,6 +96,14 @@ class CICDGenerator {
    * @param {Array} nodes
    * @returns {object<string, string>}
    */
+  /**
+   * Top-level keys a job name must not take. Platforms override this.
+   * @returns {Set<string>}
+   */
+  _reservedJobNames() {
+    return new Set();
+  }
+
   _buildUniqueJobNameMap(nodes) {
     const map = {};
     const counts = {};
@@ -106,7 +114,10 @@ class CICDGenerator {
         continue;
       }
 
-      const base = this._getJobName(node);
+      // A job named like a platform keyword (GitLab 'stages', 'variables', ...)
+      // would be read as global config, so it gets a suffix.
+      const rawBase = this._getJobName(node);
+      const base = this._reservedJobNames().has(rawBase) ? `${rawBase}_job` : rawBase;
       counts[base] = (counts[base] || 0) + 1;
 
       let candidate = counts[base] === 1 ? base : `${base}_${counts[base]}`;

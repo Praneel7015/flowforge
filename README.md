@@ -85,16 +85,17 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | CORS allowlist (`FRONTEND_URL` + `*.highcortisol.xyz`); rejected origins get **403**, not 500 | `backend/server.js` |
 | Security headers, fixed-window rate limiting (general + tighter AI limit) | `backend/middleware/security.js` |
 | Central error handler, no internal error strings leaked in production | `backend/middleware/errorHandler.js` |
-| **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, self-hosted GitLab and custom CircleCI hosts. Blocks localhost, cloud metadata, private/loopback/link-local (full `fe80::/10`)/CGNAT ranges, including IPv4-mapped IPv6 in both dotted and hex form (`[::ffff:7f00:1]`) | `backend/utils/ssrf.js` |
+| **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, self-hosted GitLab and custom CircleCI hosts. Blocks localhost, cloud metadata, private/loopback/link-local (full `fe80::/10`)/CGNAT ranges, TEST-NET, benchmarking (`198.18.0.0/15`), multicast and reserved ranges, IPv6 multicast, and private IPv4 embedded in IPv4-mapped (dotted and hex), NAT64 and 6to4 addresses. Hostnames are compared without trailing dots (`localhost.`) | `backend/utils/ssrf.js` |
 | **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects. The operator's own `GITLAB_URL` is trusted, so a self-hosted GitLab on a private network works; a request-supplied URL never is | `backend/utils/ssrf.js` |
 | **Path traversal**: user-supplied owner/repo/branch/path/id values in GitHub, GitLab, Bitbucket and CircleCI API URLs are encoded per segment, and `.` / `..` are rejected before any request is sent | `backend/utils/url.js` |
 | **Server CI tokens stay with the server's host**: a request that picks its own GitLab/CircleCI URL must bring its own token; custom hosts must be HTTPS | `backend/controllers/runController.js` |
 | **Generated configs can't run user text**: Jenkinsfile strings escape backslashes, quotes and line breaks in one pass; default step commands single-quote the label for the shell, so `$(...)` in a node label is printed, not executed | `backend/providers/cicd/` |
 | **GitHub webhooks**: HMAC-SHA256 over the **raw request bytes**, constant-time compare | `backend/routes/webhookRoutes.js` |
 | **GitLab webhooks**: token compared in constant time | `backend/routes/webhookRoutes.js` |
+| Webhooks are **acknowledged first** (202) and processed in the background, so slow AI analysis can't trip the sender's timeout; a redelivered event (same `X-Gitlab-Event-UUID` / `X-GitHub-Delivery`) is skipped instead of posting a second comment | `backend/controllers/webhookController.js` |
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
-| BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
+| BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). The same goes for CI/CD tokens and app passwords from Settings; only non-secret fields (instance URL, username, default repo) are remembered. Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
 | **Server CI tokens need the operator key**: `/api/runs` has no accounts, so `GITHUB_TOKEN`, `GITLAB_TOKEN`, `BITBUCKET_*` and `CIRCLECI_TOKEN` are used only for requests carrying `RUNS_OPERATOR_KEY` (constant-time compare); anyone else must bring their own token | `backend/controllers/runController.js` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
 | AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames (validation errors never echo the typed value); the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
@@ -123,7 +124,7 @@ npm install
 npm run dev               # http://127.0.0.1:5174 (proxies /api → :3001)
 ```
 
-Or with Docker: `docker-compose up`.
+Or with Docker: `docker-compose up` (frontend on :5173 calls the API on :3001; the backend runs with `NODE_ENV=production` there).
 
 ## Environment variables (backend)
 
@@ -172,7 +173,7 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (99 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (109 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
 cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```

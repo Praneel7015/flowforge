@@ -39,8 +39,11 @@ export default function MarkdownContent({ content, className = '', compact = fal
               {...props}
             />
           ),
-          code: ({ node, inline, className: codeClassName, children, ...props }) => {
+          code: ({ node, className: codeClassName, children, ...props }) => {
             const codeValue = String(children).replace(/\n$/, '');
+            // react-markdown 9+ no longer passes `inline`: a fenced block has a
+            // language class or a line break, inline code has neither.
+            const inline = !/language-/.test(codeClassName || '') && !String(children).includes('\n');
 
             if (inline) {
               return (
@@ -61,6 +64,9 @@ export default function MarkdownContent({ content, className = '', compact = fal
               </pre>
             );
           },
+          // The code renderer above draws the block's <pre>; react-markdown's
+          // own wrapper would nest a second one around it.
+          pre: ({ children }) => <>{children}</>,
           a: ({ node, ...props }) => (
             <a
               className="text-[var(--ff-accent)] underline underline-offset-2 hover:opacity-70"

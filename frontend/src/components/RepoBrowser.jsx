@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { readPlatformCredentials as readStoredCredentials } from '../utils/platformCredentials';
 
 const PLATFORM_LABELS = {
   github: 'GitHub',
@@ -7,16 +8,6 @@ const PLATFORM_LABELS = {
   bitbucket: 'Bitbucket',
 };
 
-const CREDS_KEY = 'flowforge.platformCredentials.v1';
-
-function readStoredCredentials() {
-  try {
-    const raw = localStorage.getItem(CREDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
 
 function hasCredentials(creds, platform) {
   if (!creds[platform]) return false;
@@ -24,13 +15,26 @@ function hasCredentials(creds, platform) {
   return !!(creds[platform].token);
 }
 
-export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, selectedRepo, selectedBranch }) {
+export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, selectedRepo, selectedOwner, selectedBranch }) {
   const [repos, setRepos] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [error, setError] = useState('');
   const [repoSearch, setRepoSearch] = useState('');
+  // Two repos can share a name (alice/api, acme/api), so the choice is kept
+  // by full name; parents still get the plain name.
+  const [selectedFullName, setSelectedFullName] = useState('');
+
+  // The repo the parent has selected. After a remount the local full name is
+  // gone, so the parent's owner disambiguates; the bare name is a last resort.
+  const findRepo = useCallback(
+    (name) =>
+      repos.find((r) => r.fullName === selectedFullName && r.name === name) ||
+      (selectedOwner && repos.find((r) => r.name === name && r.owner === selectedOwner)) ||
+      repos.find((r) => r.name === name || r.fullName === name),
+    [repos, selectedFullName, selectedOwner]
+  );
 
   const allCreds = readStoredCredentials();
   const isConnected = hasCredentials(allCreds, platform);
@@ -58,7 +62,7 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
     setBranches([]);
     try {
       const creds = readStoredCredentials()[platform] || {};
-      const repo = repos.find((r) => r.name === repoName || r.fullName === repoName);
+      const repo = findRepo(repoName);
       const owner = repo?.owner || creds.username || '';
       const { data } = await axios.post('/api/repo/list-branches', {
         platform,
@@ -77,7 +81,7 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
     } finally {
       setLoadingBranches(false);
     }
-  }, [platform, repos, isConnected, onBranchSelect]);
+  }, [platform, isConnected, onBranchSelect, findRepo]);
 
   useEffect(() => {
     if (isConnected) fetchRepos();
@@ -94,12 +98,13 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
 
   useEffect(() => {
     if (selectedRepo) fetchBranchesRef.current(selectedRepo);
-  }, [selectedRepo]);
+  }, [selectedRepo, selectedFullName]);
 
   const handleRepoChange = (e) => {
     const value = e.target.value;
-    const selectedRepoObj = repos.find((r) => r.name === value || r.fullName === value) || null;
-    onRepoSelect(value, selectedRepoObj?.owner, selectedRepoObj);
+    const selectedRepoObj = repos.find((r) => r.fullName === value) || null;
+    setSelectedFullName(value);
+    onRepoSelect(selectedRepoObj?.name || '', selectedRepoObj?.owner, selectedRepoObj);
     onBranchSelect('');
   };
 
@@ -135,14 +140,14 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
           />
         )}
         <select
-          value={selectedRepo || ''}
+          value={(selectedRepo && findRepo(selectedRepo)?.fullName) || ''}
           onChange={handleRepoChange}
           disabled={loadingRepos}
           className="ff-input px-3 py-2 text-sm"
         >
           <option value="">{loadingRepos ? 'Loading...' : 'Select a repository'}</option>
           {filteredRepos.map((r) => (
-            <option key={r.id} value={r.name}>
+            <option key={r.id} value={r.fullName}>
               {r.fullName}{r.private ? ' 🔒' : ''}
             </option>
           ))}

@@ -2,20 +2,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import ProviderSelector from '../components/ProviderSelector';
 import BringYourOwnModelPanel from '../components/BringYourOwnModelPanel';
+import { readPlatformCredentials, writePlatformCredentials } from '../utils/platformCredentials';
 
-const PLATFORM_CREDS_KEY = 'flowforge.platformCredentials.v1';
 const N8N_CONFIG_KEY = 'flowforge.n8n.v1';
-
-function readPlatformCredentials() {
-  try {
-    const raw = localStorage.getItem(PLATFORM_CREDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
-
-function writePlatformCredentials(creds) {
-  try { localStorage.setItem(PLATFORM_CREDS_KEY, JSON.stringify(creds)); } catch { /* ignore */ }
-}
 
 function readN8nConfig() {
   try {
@@ -449,7 +438,7 @@ function PlatformCredentialsStep() {
         </div>
 
         <p className="text-xs text-[var(--ff-muted)]">
-          Credentials are stored in your browser only. The Test Connection button validates against the real platform API.
+          Tokens and app passwords are kept in memory for this tab only (re-enter them after a reload); other fields are remembered in this browser. The Test Connection button validates against the real platform API.
         </p>
       </div>
     </section>

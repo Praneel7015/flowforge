@@ -3,6 +3,7 @@ const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
 const { scanForSecrets } = require('../utils/secretScanner');
 const { inspectUrl } = require('../utils/ssrf');
+const { sendStatusError } = require('../utils/sendError');
 
 function extractGitHubCreds(credentials) {
   return { token: credentials.token };
@@ -56,7 +57,7 @@ async function listRepos(req, res) {
     }
     res.json({ repos });
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    sendStatusError(res, err, 'Repository request failed');
   }
 }
 
@@ -81,7 +82,7 @@ async function listBranches(req, res) {
     }
     res.json({ branches });
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    sendStatusError(res, err, 'Repository request failed');
   }
 }
 
@@ -106,7 +107,7 @@ async function getRepoTree(req, res) {
     }
     res.json({ tree });
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    sendStatusError(res, err, 'Repository request failed');
   }
 }
 
@@ -139,7 +140,7 @@ async function getFileContents(req, res) {
     }
     res.json({ files });
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    sendStatusError(res, err, 'Repository request failed');
   }
 }
 
@@ -250,7 +251,7 @@ async function pushPipeline(req, res) {
 
     return badRequest(res, `Unsupported platform: ${platform}`);
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    sendStatusError(res, err, 'Repository request failed');
   }
 }
 

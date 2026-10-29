@@ -57,8 +57,19 @@ function isPrivateIPv4(host) {
     inRange('127.0.0.0', 8) || // loopback
     inRange('169.254.0.0', 16) || // link-local (cloud metadata: 169.254.169.254)
     inRange('0.0.0.0', 8) ||
-    inRange('100.64.0.0', 10) // carrier-grade NAT
+    inRange('100.64.0.0', 10) || // carrier-grade NAT
+    inRange('192.0.0.0', 24) || // IETF protocol assignments
+    inRange('192.0.2.0', 24) || // TEST-NET-1
+    inRange('198.18.0.0', 15) || // benchmarking (used inside some cloud networks)
+    inRange('198.51.100.0', 24) || // TEST-NET-2
+    inRange('203.0.113.0', 24) || // TEST-NET-3
+    inRange('224.0.0.0', 3) // multicast, reserved and broadcast (224.0.0.0-255.255.255.255)
   );
+}
+
+// Two 16-bit groups -> dotted IPv4 (0x7f00, 0x0001 -> "127.0.0.1").
+function groupsToIPv4(high, low) {
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
 }
 
 function normalizeIpv6(host) {
@@ -66,23 +77,49 @@ function normalizeIpv6(host) {
   return host.replace(/^\[/, '').replace(/\]$/, '').split('%')[0].toLowerCase();
 }
 
-function isPrivateIPv6(host) {
-  const addr = normalizeIpv6(host);
-  if (addr === '::1' || addr === '::') return true;
-  if (/^fe[89ab][0-9a-f]:/.test(addr)) return true; // link-local fe80::/10 (fe80–febf)
-  if (addr.startsWith('fc') || addr.startsWith('fd')) return true; // unique local
-  // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
-  const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIPv4(mapped[1]);
-  // The WHATWG URL parser rewrites [::ffff:127.0.0.1] to [::ffff:7f00:1], so
-  // the hex form must be decoded too. Deprecated IPv4-compatible addresses
-  // (::7f00:1) are treated the same way.
-  const hexMapped = addr.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMapped) {
-    const high = parseInt(hexMapped[1], 16);
-    const low = parseInt(hexMapped[2], 16);
-    return isPrivateIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+/**
+ * Expands an IPv6 address (any textual form: "::" compression, embedded
+ * dotted IPv4) into its eight 16-bit groups, or null if it isn't one.
+ * Range checks then work on numbers, so "2002:a01::1" and "2002:0a01:0::1"
+ * are the same address.
+ */
+function expandIPv6(addr) {
+  let text = addr;
+  const dotted = text.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const parts = dotted[2].split('.').map(Number);
+    if (parts.some((p) => p > 255)) return null;
+    text = `${dotted[1]}${((parts[0] << 8) | parts[1]).toString(16)}:${((parts[2] << 8) | parts[3]).toString(16)}`;
   }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const toGroups = (part) => (part ? part.split(':') : []);
+  const head = toGroups(halves[0]);
+  const tail = halves.length === 2 ? toGroups(halves[1]) : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+  if (groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  return groups.map((g) => parseInt(g, 16));
+}
+
+function isPrivateIPv6(host) {
+  const g = expandIPv6(normalizeIpv6(host));
+  // Not parseable as IPv6: refuse rather than guess.
+  if (!g) return true;
+  const zeroUpTo = (n) => g.slice(0, n).every((x) => x === 0);
+
+  if (zeroUpTo(7) && g[7] <= 1) return true; // :: and ::1
+  if ((g[0] & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
+  if ((g[0] & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+  if ((g[0] & 0xff00) === 0xff00) return true; // multicast ff00::/8
+  // Forms that embed an IPv4 address, which must pass the IPv4 checks:
+  if (zeroUpTo(5) && g[5] === 0xffff) return isPrivateIPv4(groupsToIPv4(g[6], g[7])); // ::ffff:a.b.c.d (mapped)
+  if (zeroUpTo(6)) return isPrivateIPv4(groupsToIPv4(g[6], g[7])); // ::a.b.c.d (deprecated compatible)
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) {
+    return isPrivateIPv4(groupsToIPv4(g[6], g[7])); // NAT64 64:ff9b::/96
+  }
+  if (g[0] === 0x2002) return isPrivateIPv4(groupsToIPv4(g[1], g[2])); // 6to4 2002::/16
   return false;
 }
 
@@ -110,7 +147,8 @@ function inspectUrl(rawUrl, { requireHttps = false } = {}) {
     return { safe: false, reason: 'custom endpoints must use https://' };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  // "localhost." names the same host as "localhost": strip trailing dots first.
+  const hostname = parsed.hostname.toLowerCase().replace(/\.+$/, '');
 
   if (BLOCKED_HOSTNAMES.has(hostname)) {
     return { safe: false, reason: `Host ${hostname} is not allowed` };

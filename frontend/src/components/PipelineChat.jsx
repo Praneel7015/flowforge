@@ -7,7 +7,13 @@ function formatTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-const CHAT_IDENTITY_STORAGE_KEY = 'flowforge.chatIdentity.v1';
+// Older builds kept a per-browser chat identity here; n8n memory keys now come
+// from the server-signed session, so drop the stored id.
+try {
+  window.localStorage.removeItem('flowforge.chatIdentity.v1');
+} catch {
+  /* storage unavailable */
+}
 
 // Server-signed anonymous session for n8n chat memory. Held in memory only
 // (like BYOM keys): a reload starts a new n8n session.
@@ -27,52 +33,9 @@ function randomHex(bytes = 8) {
   return Array.from(values, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function createRandomId(prefix = 'ff') {
-  if (typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${randomHex(16)}`;
-}
-
-function createConversationId(userId) {
-  const userFragment = String(userId || 'anon').replace(/[^a-zA-Z0-9_-]/g, '').slice(-8) || 'anon';
-  return `${userFragment}-${Date.now().toString(36)}-${randomHex(6)}`;
-}
-
-function readOrCreateChatIdentity() {
-  if (typeof window === 'undefined') {
-    const userId = createRandomId('user');
-    return { userId, username: `FlowForge-${userId.slice(-6)}` };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(CHAT_IDENTITY_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const userId = typeof parsed?.userId === 'string' ? parsed.userId.trim() : '';
-      if (userId) {
-        const username =
-          typeof parsed?.username === 'string' && parsed.username.trim()
-            ? parsed.username.trim()
-            : `FlowForge-${userId.slice(-6)}`;
-
-        return { userId, username };
-      }
-    }
-  } catch {
-    // Ignore malformed local identity data and recreate.
-  }
-
-  const userId = createRandomId('user');
-  const identity = { userId, username: `FlowForge-${userId.slice(-6)}` };
-
-  try {
-    window.localStorage.setItem(CHAT_IDENTITY_STORAGE_KEY, JSON.stringify(identity));
-  } catch {
-    // Ignore storage write failures.
-  }
-
-  return identity;
+// A label for the conversation; the server scopes it to the signed session.
+function createConversationId() {
+  return `conv-${Date.now().toString(36)}-${randomHex(6)}`;
 }
 
 function extractPipelineBlock(text) {
@@ -170,8 +133,7 @@ const SUGGESTION_CATEGORIES = [
 ];
 
 export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, aiOptions, onApplyToCanvas }) {
-  const [chatIdentity] = useState(() => readOrCreateChatIdentity());
-  const [conversationId, setConversationId] = useState(() => createConversationId(chatIdentity.userId));
+  const [conversationId, setConversationId] = useState(() => createConversationId());
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -325,9 +287,9 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         timestamp: new Date(),
       },
     ]);
-    setConversationId(createConversationId(chatIdentity.userId));
+    setConversationId(createConversationId());
     setLoading(false);
-  }, [chatIdentity.userId]);
+  }, []);
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

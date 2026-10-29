@@ -2,23 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { BUILT_IN_TEMPLATES } from './templateStore';
 import { simulatePipeline, reviewFix, jobsWithoutScripts } from '../utils/pipelineChecks';
+import { readCredentialsFor } from '../utils/platformCredentials';
 
-const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const RUN_PLATFORMS = [
   { id: 'github', label: 'GitHub Actions' },
   { id: 'gitlab', label: 'GitLab CI' },
   { id: 'bitbucket', label: 'Bitbucket' },
   { id: 'circleci', label: 'CircleCI' },
 ];
-
-function readStoredCredentials() {
-  try {
-    const raw = localStorage.getItem(CREDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
 
 // The diagnose API nests text inside objects (e.g. explanation is
 // { summary, explanation, rootCause, ... }); React can't render objects, so
@@ -32,7 +23,15 @@ function toText(value) {
   return String(value);
 }
 
+const NORMALIZED_STATUSES = new Set(['queued', 'running', 'passed', 'failed', 'skipped', 'pending']);
+
 function normalizeStatus(rawStatus, conclusion) {
+  // The backend already normalizes `status` (the raw value is in
+  // `conclusion`); guessing from substrings would turn CircleCI's "not_run"
+  // into "running".
+  if (NORMALIZED_STATUSES.has(rawStatus)) {
+    return rawStatus === 'queued' ? 'pending' : rawStatus;
+  }
   const combined = `${rawStatus || ''} ${conclusion || ''}`.toLowerCase();
   if (combined.includes('fail') || combined.includes('error') || combined.includes('timed_out')) {
     return 'failed';
@@ -84,7 +83,6 @@ export default function LiveRunsPanel({
   onUpdateNodeStatuses,
   onApplyFixedPipeline,
 }) {
-  const creds = readStoredCredentials();
   const [platform, setPlatform] = useState(
     RUN_PLATFORMS.some((p) => p.id === cicdPlatform) ? cicdPlatform : 'github'
   );
@@ -119,10 +117,71 @@ export default function LiveRunsPanel({
 
   useEffect(() => () => clearSimTimers(), [clearSimTimers]);
 
-  const getPlatformCredentials = useCallback(() => {
-    const c = creds[platform] || {};
-    return c;
-  }, [creds, platform]);
+  // Read at call time, so this callback (and the auto-poll interval that
+  // depends on it) keeps its identity across renders.
+  const getPlatformCredentials = useCallback(() => readCredentialsFor(platform), [platform]);
+
+  // A status response is applied only while its run is still the one shown:
+  // a slow poll for the previous run (or one that lands after a simulation
+  // starts) would otherwise overwrite its jobs. Polls for the same run are
+  // serialized instead of superseded, so a request slower than the poll
+  // interval still gets applied.
+  const shownRunIdRef = useRef(null);
+  const inFlightRunIdRef = useRef(null);
+  useEffect(() => {
+    shownRunIdRef.current = selectedRun?.id ?? null;
+  }, [selectedRun]);
+
+  const fetchRunStatus = useCallback(
+    async (runToInspect) => {
+      const target = runToInspect || selectedRun;
+      if (!target || String(target.id).startsWith('sim_')) return;
+      if (inFlightRunIdRef.current === target.id) return; // previous poll still running
+      inFlightRunIdRef.current = target.id;
+      const isCurrent = () => shownRunIdRef.current === target.id;
+
+      try {
+        const [owner, repo] = repoSlug.trim().split('/');
+        const { data } = await axios.post('/api/runs/status', {
+          platform,
+          credentials: getPlatformCredentials(),
+          owner: owner || '',
+          repo: repo || repoSlug.trim(),
+          projectSlug: repoSlug.trim(),
+          runId: target.id,
+        });
+        if (!isCurrent()) return;
+        const runJobs = Array.isArray(data?.jobs) ? data.jobs : [];
+        setJobs(runJobs);
+        const overlay = buildOverlayMapFromJobs(runJobs, canvasGraph?.nodes || []);
+        onUpdateNodeStatuses?.(overlay);
+      } catch (err) {
+        if (!isCurrent()) return;
+        setError(err.response?.data?.error || 'Could not fetch run job details.');
+      } finally {
+        if (inFlightRunIdRef.current === target.id) inFlightRunIdRef.current = null;
+      }
+    },
+    [selectedRun, repoSlug, platform, getPlatformCredentials, canvasGraph?.nodes, onUpdateNodeStatuses]
+  );
+
+  // Shows a real run: replaces any simulated run and loads its jobs, so the
+  // canvas overlay and "Diagnose & Fix" reflect it without waiting for a poll.
+  const showRun = useCallback(
+    async (run) => {
+      clearSimTimers();
+      setSimulating(false);
+      setDiagnosis(null);
+      setJobs([]);
+      // The previous run's badges must not stay on the canvas if this run's
+      // status request fails.
+      onUpdateNodeStatuses?.({});
+      shownRunIdRef.current = run.id;
+      setSelectedRun(run);
+      await fetchRunStatus(run);
+    },
+    [clearSimTimers, fetchRunStatus, onUpdateNodeStatuses]
+  );
 
   const fetchRunsList = useCallback(async () => {
     if (!repoSlug.trim()) {
@@ -143,41 +202,17 @@ export default function LiveRunsPanel({
       });
       const fetchedRuns = Array.isArray(data?.runs) ? data.runs : [];
       setRuns(fetchedRuns);
-      if (fetchedRuns.length > 0 && !selectedRun) {
-        setSelectedRun(fetchedRuns[0]);
+      if (fetchedRuns.length > 0) {
+        await showRun(fetchedRuns[0]);
+      } else {
+        setNotice('No runs found for this repository and branch.');
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Could not fetch live runs. Verify repository & token in Settings.');
     } finally {
       setLoadingRuns(false);
     }
-  }, [repoSlug, platform, getPlatformCredentials, branch, selectedRun]);
-
-  const fetchRunStatus = useCallback(
-    async (runToInspect) => {
-      const target = runToInspect || selectedRun;
-      if (!target || String(target.id).startsWith('sim_')) return;
-
-      try {
-        const [owner, repo] = repoSlug.trim().split('/');
-        const { data } = await axios.post('/api/runs/status', {
-          platform,
-          credentials: getPlatformCredentials(),
-          owner: owner || '',
-          repo: repo || repoSlug.trim(),
-          projectSlug: repoSlug.trim(),
-          runId: target.id,
-        });
-        const runJobs = Array.isArray(data?.jobs) ? data.jobs : [];
-        setJobs(runJobs);
-        const overlay = buildOverlayMapFromJobs(runJobs, canvasGraph?.nodes || []);
-        onUpdateNodeStatuses?.(overlay);
-      } catch (err) {
-        setError(err.response?.data?.error || 'Could not fetch run job details.');
-      }
-    },
-    [selectedRun, repoSlug, platform, getPlatformCredentials, canvasGraph?.nodes, onUpdateNodeStatuses]
-  );
+  }, [repoSlug, platform, getPlatformCredentials, branch, showRun]);
 
   useEffect(() => {
     if (!autoPoll || !selectedRun || String(selectedRun.id).startsWith('sim_')) return undefined;
@@ -206,7 +241,7 @@ export default function LiveRunsPanel({
       });
       if (data?.run) {
         setRuns((prev) => [data.run, ...prev]);
-        setSelectedRun(data.run);
+        await showRun(data.run);
       } else {
         await fetchRunsList();
       }

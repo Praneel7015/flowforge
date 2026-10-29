@@ -7,26 +7,57 @@ const gitlabService = require('../services/gitlabService');
  * Currently supports: GitLab pipeline events, push events, merge request events.
  * TODO: Add support for GitHub Actions and other platforms.
  */
+// Delivery ids already accepted. Senders retry a delivery they consider
+// failed with the same id; without this a retry would post a second analysis.
+const SEEN_DELIVERY_LIMIT = 1000;
+const seenDeliveries = new Set();
+
+function isDuplicateDelivery(id) {
+  if (!id) return false;
+  if (seenDeliveries.has(id)) return true;
+  seenDeliveries.add(id);
+  if (seenDeliveries.size > SEEN_DELIVERY_LIMIT) {
+    seenDeliveries.delete(seenDeliveries.values().next().value);
+  }
+  return false;
+}
+
 async function handleWebhook(req, res) {
   // Detect platform from headers
   const gitlabEvent = req.headers['x-gitlab-event'];
   const githubEvent = req.headers['x-github-event'];
+  // GitLab's Idempotency-Key names one delivery (recursive events can share
+  // an X-Gitlab-Event-UUID); older GitLab versions only send the UUID.
+  const deliveryId = String(
+    req.headers['idempotency-key'] || req.headers['x-github-delivery'] || req.headers['x-gitlab-event-uuid'] || ''
+  ).slice(0, 200);
 
   const payload = req.body;
 
-  try {
-    if (gitlabEvent) {
-      await handleGitLabWebhook(gitlabEvent, payload);
-    } else if (githubEvent) {
-      await handleGitHubWebhook(githubEvent, payload);
-    } else {
-      console.log('Unknown webhook source');
-    }
+  if (isDuplicateDelivery(deliveryId)) {
+    return res.status(200).json({ status: 'duplicate' });
+  }
 
-    res.json({ status: 'received' });
+  // Answer first: failure analysis fetches logs and calls the AI provider,
+  // which can outlast the sender's webhook timeout (GitLab disables hooks
+  // that keep timing out). The work continues in the background.
+  res.status(202).json({ status: 'received' });
+
+  const runHandler = () => {
+    if (gitlabEvent) return handleGitLabWebhook(gitlabEvent, payload);
+    if (githubEvent) return handleGitHubWebhook(githubEvent, payload);
+    console.log('Unknown webhook source');
+    return undefined;
+  };
+
+  // No automatic retry: if GitLab saved the comment but the response was lost,
+  // a retry would post it twice. On failure the delivery id is released, so a
+  // redelivery from the sender (or a manual one) is processed, not skipped.
+  try {
+    await runHandler();
   } catch (err) {
-    console.error('Webhook processing error: %s', logSafe(err.message));
-    res.status(500).json({ error: 'Webhook processing failed' });
+    console.error('Webhook processing failed: %s', logSafe(err.message));
+    if (deliveryId) seenDeliveries.delete(deliveryId);
   }
 }
 
@@ -148,4 +179,4 @@ async function handleGitHubWebhook(event, payload) {
   }
 }
 
-module.exports = { handleWebhook };
+module.exports = { handleWebhook, _seenDeliveries: seenDeliveries };

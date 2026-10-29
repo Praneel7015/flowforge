@@ -148,16 +148,15 @@ async function pushFile(username, appPassword, workspace, repo, filePath, conten
   const ws = workspace || username;
 
   try {
-    // Bitbucket uses multipart form for file commits
-    const FormData = require('form-data');
+    // Bitbucket uses multipart form for file commits. Node's global FormData
+    // (axios sets the multipart boundary itself), not the undeclared
+    // 'form-data' package that was only present through axios.
     const form = new FormData();
-    form.append(filePath, content, { filename: filePath });
+    form.append(filePath, new Blob([content]), filePath);
     form.append('message', commitMessage || `ci: add ${filePath} via FlowForge`);
     form.append('branch', branch);
 
-    await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src`, form, {
-      headers: form.getHeaders(),
-    });
+    await client.post(`/repositories/${pathSegment(ws)}/${pathSegment(repo)}/src`, form);
 
     return { path: filePath, branch };
   } catch (err) {

@@ -12,7 +12,7 @@ const PLATFORM_LABELS = {
 const EXAMPLE = `# Paste a .gitlab-ci.yml, GitHub Actions workflow,
 # CircleCI config, or a Jenkinsfile here.`;
 
-export default function ImportPipelineModal({ open, onClose, onImported, cicdPlatform, availablePlatforms }) {
+export default function ImportPipelineModal({ open, onClose, onImported, availablePlatforms }) {
   const [content, setContent] = useState('');
   const [platform, setPlatform] = useState('auto');
   const [loading, setLoading] = useState(false);
@@ -44,7 +44,9 @@ export default function ImportPipelineModal({ open, onClose, onImported, cicdPla
       const { data } = await axios.post('/api/pipelines/import', {
         configText: content,
         yaml: content,
-        cicdPlatform: platform === 'auto' ? cicdPlatform || 'auto' : platform,
+        // Auto-detect sends no platform, so the backend detects it from the
+        // content instead of forcing the workspace's target platform.
+        ...(platform === 'auto' ? {} : { cicdPlatform: platform }),
       });
       onImported(data);
     } catch (err) {
