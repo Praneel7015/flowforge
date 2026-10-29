@@ -213,3 +213,48 @@ test('Jenkins import keeps sh scripts in all common forms', () => {
   assert.strictEqual(scriptOf('Build'), "npm ci\necho 'building' && npm run build");
   assert.strictEqual(scriptOf('Test'), 'npm ci\nnpm test -- --ci\nnpm run lint\nnpm audit --audit-level=high');
 });
+
+const { inspectUrl } = require('../utils/ssrf');
+const { logSafe } = require('../utils/logSafe');
+
+const jenkinsStage = (body) => `pipeline {\n  stages {\n    stage('Build') {\n      steps {\n${body}\n      }\n    }\n  }\n}`;
+const buildScript = (jenkinsfile) =>
+  aiService.parseConfigToDAG(jenkinsfile, 'jenkins').nodes.find((n) => n.data?.label === 'Build')?.data?.config?.script;
+
+test('Jenkins sh scanning stays fast on inputs that broke the old regex (ReDoS)', () => {
+  for (const evil of [`sh${' '.repeat(50000)}x`, `sh(${',script:""'.repeat(20000)}`, `sh label: ${'a: b, '.repeat(20000)}`]) {
+    const started = Date.now();
+    buildScript(jenkinsStage(evil));
+    assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
+  }
+});
+
+test('Jenkins import ignores commented-out sh steps but keeps quoted text', () => {
+  const script = buildScript(
+    jenkinsStage(`        // sh 'rm -rf /'
+        /* sh 'old-step'
+           sh 'another' */
+        sh "echo 'run sh deploy later' // not a comment"
+        sh 'npm ci'`)
+  );
+  assert.strictEqual(script, "echo 'run sh deploy later' // not a comment\nnpm ci");
+});
+
+test('IPv4-mapped IPv6 literals are blocked in both dotted and hex forms', () => {
+  for (const url of [
+    'http://[::ffff:127.0.0.1]:11434/',
+    'http://[::ffff:7f00:1]/',
+    'http://[::ffff:a9fe:a9fe]/latest/meta-data',
+    'http://[::127.0.0.1]/',
+    'http://[0:0:0:0:0:ffff:10.0.0.1]/',
+  ]) {
+    assert.strictEqual(inspectUrl(url).safe, false, url);
+  }
+  assert.strictEqual(inspectUrl('https://[::ffff:8.8.8.8]/').safe, true);
+  assert.throws(() => buildAIOptions({ baseUrl: 'https://[::ffff:127.0.0.1]/v1' }), /Rejected baseUrl/);
+});
+
+test('logSafe strips line breaks so values cannot forge log lines', () => {
+  assert.strictEqual(logSafe('bad\nFAKE LOG LINE\r\nmore'), 'bad FAKE LOG LINE more');
+  assert.strictEqual(logSafe('x'.repeat(500)).length, 300);
+});

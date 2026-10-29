@@ -629,17 +629,102 @@ function joinCommands(value) {
 // Jenkins `sh` steps in the forms people actually write:
 //   sh 'cmd'   sh "echo 'x'"   sh '''multi\nline'''   sh """..."""
 //   sh(script: 'cmd', returnStdout: true)   sh label: 'Build', script: 'cmd'
-// Triple quotes are tried first; each body runs to the matching delimiter.
-const JENKINS_SH_PATTERN =
-  /\bsh\s*\(?\s*(?:\w+\s*:\s*(?:'[^']*'|"[^"]*"|\w+)\s*,\s*)*(?:script\s*:\s*)?('''|"""|'|")([\s\S]*?)\1/g;
+// A single forward scan (no regex backtracking, so a crafted Jenkinsfile
+// can't stall the server) that skips Groovy comments and unrelated strings.
+const GROOVY_QUOTES = ["'''", '"""', "'", '"'];
+const isIdentChar = (ch) => ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
+
+/** Reads a Groovy string literal at `i`; returns { value, end } or null. */
+function readGroovyString(src, i) {
+  const quote = GROOVY_QUOTES.find((q) => src.startsWith(q, i));
+  if (!quote) return null;
+  let j = i + quote.length;
+  let value = '';
+  while (j < src.length) {
+    if (src[j] === '\\') {
+      value += src.slice(j, j + 2);
+      j += 2;
+      continue;
+    }
+    if (src.startsWith(quote, j)) return { value, end: j + quote.length };
+    if (quote.length === 1 && src[j] === '\n') return null;
+    value += src[j];
+    j += 1;
+  }
+  return null;
+}
+
+const skipSpaces = (src, j) => {
+  while (j < src.length && /\s/.test(src[j])) j += 1;
+  return j;
+};
+
+/** Parses the arguments after `sh` at `j`; returns { script, end } or null. */
+function readShCall(src, j) {
+  j = skipSpaces(src, j);
+  if (src[j] === '(') j = skipSpaces(src, j + 1);
+
+  const positional = readGroovyString(src, j);
+  if (positional) return { script: positional.value, end: positional.end };
+
+  // Named arguments: name: value, name: value, ... (script: is the command)
+  let script = null;
+  for (;;) {
+    const nameStart = j;
+    while (isIdentChar(src[j])) j += 1;
+    if (j === nameStart) break;
+    const name = src.slice(nameStart, j);
+    j = skipSpaces(src, j);
+    if (src[j] !== ':') break;
+    j = skipSpaces(src, j + 1);
+    const str = readGroovyString(src, j);
+    if (str) {
+      if (name === 'script') script = str.value;
+      j = str.end;
+    } else {
+      const valueStart = j;
+      while (isIdentChar(src[j]) || src[j] === '.') j += 1;
+      if (j === valueStart) break;
+    }
+    j = skipSpaces(src, j);
+    if (src[j] !== ',') break;
+    j = skipSpaces(src, j + 1);
+  }
+  return script === null ? null : { script, end: j };
+}
 
 function extractJenkinsShScripts(stageBody) {
+  const src = String(stageBody || '');
   const commands = [];
-  for (const match of String(stageBody || '').matchAll(JENKINS_SH_PATTERN)) {
-    for (const line of match[2].split('\n')) {
-      const command = line.trim();
-      if (command) commands.push(command);
+  let i = 0;
+  while (i < src.length) {
+    if (src.startsWith('//', i)) {
+      const eol = src.indexOf('\n', i);
+      i = eol === -1 ? src.length : eol + 1;
+      continue;
     }
+    if (src.startsWith('/*', i)) {
+      const close = src.indexOf('*/', i + 2);
+      i = close === -1 ? src.length : close + 2;
+      continue;
+    }
+    if (src[i] === "'" || src[i] === '"') {
+      const str = readGroovyString(src, i);
+      i = str ? str.end : i + 1;
+      continue;
+    }
+    if (src.startsWith('sh', i) && !isIdentChar(src[i - 1]) && !isIdentChar(src[i + 2])) {
+      const call = readShCall(src, i + 2);
+      if (call) {
+        for (const line of call.script.split('\n')) {
+          const command = line.trim();
+          if (command) commands.push(command);
+        }
+        i = call.end;
+        continue;
+      }
+    }
+    i += 1;
   }
   return commands;
 }

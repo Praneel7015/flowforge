@@ -15,6 +15,7 @@ const dns = require('dns');
 const net = require('net');
 const http = require('http');
 const https = require('https');
+const { logSafe } = require('./logSafe');
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -72,6 +73,15 @@ function isPrivateIPv6(host) {
   // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
   const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateIPv4(mapped[1]);
+  // The WHATWG URL parser rewrites [::ffff:127.0.0.1] to [::ffff:7f00:1], so
+  // the hex form must be decoded too. Deprecated IPv4-compatible addresses
+  // (::7f00:1) are treated the same way.
+  const hexMapped = addr.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const high = parseInt(hexMapped[1], 16);
+    const low = parseInt(hexMapped[2], 16);
+    return isPrivateIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
   return false;
 }
 
@@ -143,7 +153,7 @@ function createSafeLookup(baseLookup = dns.lookup) {
       if (list.length === 0 || blocked) {
         // Callers can see this message, so it must not reveal internal DNS
         // answers; the resolved address is only logged server-side.
-        console.warn(`[ssrf] blocked ${hostname} -> ${blocked ? blocked.address : 'no addresses'}`);
+        console.warn(`[ssrf] blocked ${logSafe(hostname)} -> ${blocked ? blocked.address : 'no addresses'}`);
         const error = new Error(`Blocked: ${hostname} does not resolve to a public address`);
         error.code = 'ESSRFBLOCKED';
         return callback(error);

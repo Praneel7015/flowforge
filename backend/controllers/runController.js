@@ -6,6 +6,7 @@ const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
 const { isSafePublicUrl } = require('../utils/ssrf');
 const { getAvailablePlatforms } = require('../providers/cicd');
+const { logSafe } = require('../utils/logSafe');
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -851,7 +852,7 @@ async function diagnoseAndFix(req, res) {
       } catch (err) {
         // Report that no fix was produced instead of returning an annotated
         // copy of the original YAML that looks like a change.
-        console.error('[runs] auto-remediation failed:', err.message);
+        console.error('[runs] auto-remediation failed:', logSafe(err.message));
         remediation = {
           patchedYaml: rawYaml,
           changeLog: [],
