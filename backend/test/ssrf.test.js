@@ -7,6 +7,16 @@ test('allows normal public https URLs', () => {
   assert.strictEqual(isSafePublicUrl('https://api.featherless.ai/v1'), true);
 });
 
+test('HTTPS-only inspection rejects public HTTP endpoints', () => {
+  const url = 'http://openrouter.ai/api/v1';
+  assert.strictEqual(inspectUrl(url).safe, true);
+  assert.deepStrictEqual(inspectUrl(url, { requireHttps: true }), {
+    safe: false,
+    reason: 'custom endpoints must use https://',
+  });
+  assert.strictEqual(inspectUrl('https://openrouter.ai/api/v1', { requireHttps: true }).safe, true);
+});
+
 test('blocks loopback and localhost', () => {
   assert.strictEqual(isSafePublicUrl('http://localhost:11434'), false);
   assert.strictEqual(isSafePublicUrl('http://127.0.0.1/v1'), false);

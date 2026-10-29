@@ -87,7 +87,8 @@ test('remediation fallback returns the YAML unchanged with a warning, not a fake
   }
 });
 
-test('OpenAI-compatible clients refuse to follow redirects from the base URL', async () => {
+test('OpenAI-compatible clients refuse to follow redirects from the base URL', async (t) => {
+  let baseHit = false;
   let redirectedHit = false;
   const server = http.createServer((req, res) => {
     if (req.url.startsWith('/internal')) {
@@ -95,6 +96,7 @@ test('OpenAI-compatible clients refuse to follow redirects from the base URL', a
       res.end('{}');
       return;
     }
+    baseHit = true;
     res.writeHead(307, { location: '/internal/chat/completions' });
     res.end();
   });
@@ -102,9 +104,16 @@ test('OpenAI-compatible clients refuse to follow redirects from the base URL', a
   const { port } = server.address();
 
   try {
-    const provider = new OpenAIProvider({ apiKey: 'k', model: 'm', baseUrl: `http://127.0.0.1:${port}/v1` });
+    // Route the HTTPS test endpoint to the local fixture while preserving the
+    // SDK's fetch options so the real fetch still enforces redirect: 'error'.
+    const originalFetch = globalThis.fetch;
+    t.mock.method(globalThis, 'fetch', (url, options) =>
+      originalFetch(String(url).replace('https://openai.example', `http://127.0.0.1:${port}`), options)
+    );
+    const provider = new OpenAIProvider({ apiKey: 'k', model: 'm', baseUrl: 'https://openai.example/v1' });
     provider._getClient().maxRetries = 0;
     await assert.rejects(() => provider.complete('system', 'user'));
+    assert.strictEqual(baseHit, true, 'client never reached the base URL');
     assert.strictEqual(redirectedHit, false, 'client followed the redirect');
   } finally {
     server.close();

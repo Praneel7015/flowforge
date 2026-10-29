@@ -87,9 +87,10 @@ function isPrivateIPv6(host) {
 
 /**
  * @param {string} rawUrl
+ * @param {{ requireHttps?: boolean }} [options] Require TLS for URLs carrying credentials.
  * @returns {{ safe: boolean, reason?: string }}
  */
-function inspectUrl(rawUrl) {
+function inspectUrl(rawUrl, { requireHttps = false } = {}) {
   if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
     return { safe: false, reason: 'URL is empty' };
   }
@@ -103,6 +104,9 @@ function inspectUrl(rawUrl) {
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { safe: false, reason: `Protocol ${parsed.protocol} is not allowed` };
+  }
+  if (requireHttps && parsed.protocol !== 'https:') {
+    return { safe: false, reason: 'custom endpoints must use https://' };
   }
 
   const hostname = parsed.hostname.toLowerCase();

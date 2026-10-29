@@ -30,11 +30,11 @@ function sanitizeBaseUrl(value) {
   if (!url) return undefined;
   // SSRF guard: reject internal/loopback/metadata targets so a caller cannot
   // use the backend to reach hosts it should not.
-  const inspection = inspectUrl(url);
+  // API keys are sent to this URL: never over plain HTTP.
+  const inspection = inspectUrl(url, { requireHttps: true });
   if (!inspection.safe) {
     throw badRequest(`Rejected baseUrl: ${inspection.reason}`);
   }
-  // API keys are sent to this URL: never over plain HTTP.
   if (!/^https:\/\//i.test(url)) {
     throw badRequest('Rejected baseUrl: custom endpoints must use https://');
   }

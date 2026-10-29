@@ -6,7 +6,32 @@ process.env.GROQ_API_KEY = 'gsk_server_key';
 
 const { buildAIOptions } = require('../utils/aiOptions');
 const { getAIProvider } = require('../providers/ai');
+const OpenAIProvider = require('../providers/ai/OpenAIProvider');
+const OpenAICompatibleProvider = require('../providers/ai/OpenAICompatibleProvider');
 const { signV4, toConverseMessages } = require('../providers/ai/BedrockProvider');
+
+test('HTTP custom endpoints are rejected before OpenAI clients are constructed', () => {
+  for (const baseUrl of ['http://openrouter.ai/api/v1', 'HTTP://openrouter.ai/api/v1', 'http:\t//openrouter.ai/api/v1']) {
+    const config = { baseUrl, apiKey: 'user-key', model: 'a/b' };
+    assert.throws(() => buildAIOptions(config), { status: 400, message: /must use https/ });
+    for (const Provider of [OpenAIProvider, OpenAICompatibleProvider]) {
+      const provider = new Provider(config);
+      assert.throws(() => provider._getClient(), /must use https/);
+      assert.strictEqual(provider.client, null);
+    }
+  }
+});
+
+test('HTTPS custom endpoints still construct OpenAI clients', () => {
+  const config = buildAIOptions({ baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'user-key', model: 'a/b' });
+  for (const Provider of [OpenAIProvider, OpenAICompatibleProvider]) {
+    const provider = new Provider(config);
+    const client = provider._getClient();
+    assert.strictEqual(client.baseURL, config.baseUrl);
+    assert.strictEqual(client.apiKey, config.apiKey);
+    assert.strictEqual(provider._getClient(), client);
+  }
+});
 
 test('server key is never sent to a user-supplied base URL', () => {
   assert.throws(

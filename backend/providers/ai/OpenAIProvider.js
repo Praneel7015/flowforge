@@ -25,6 +25,10 @@ class OpenAIProvider extends AIProvider {
 
   _getClient() {
     if (!this.client) {
+      // Also cover direct/server configuration that bypasses buildAIOptions.
+      if (this.config.baseUrl && new URL(this.config.baseUrl).protocol !== 'https:') {
+        throw new Error('Rejected baseUrl: custom endpoints must use https://');
+      }
       this.client = new OpenAI({
         apiKey: this.config.apiKey,
         baseURL: this.config.baseUrl,
