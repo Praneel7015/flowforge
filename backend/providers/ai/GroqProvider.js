@@ -6,8 +6,38 @@
 const OpenAI = require('openai');
 const AIProvider = require('./AIProvider');
 
-const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 const DEFAULT_GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+
+// Models Groq has shut down. Hosts often pin GROQ_MODEL (and users save BYOM
+// presets), so map retired names to a live model instead of 404ing every call.
+const RETIRED_GROQ_MODELS = new Set([
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
+  'qwen-2.5-coder-32b',
+  'qwen/qwen3.6-27b',
+]);
+
+function resolveGroqModel(model) {
+  if (!model || RETIRED_GROQ_MODELS.has(model)) return DEFAULT_GROQ_MODEL;
+  return model;
+}
+
+// gpt-oss models reason before answering and those tokens count against
+// max_tokens; keep reasoning short so the JSON answer isn't truncated.
+function reasoningParams(model) {
+  return model.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {};
+}
+
+function extractContent(response) {
+  const content = response?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('Groq returned an empty completion');
+  }
+  return content.trim();
+}
 
 class GroqProvider extends AIProvider {
   constructor(config) {
@@ -29,8 +59,8 @@ class GroqProvider extends AIProvider {
   getMetadata() {
     return {
       name: 'groq',
-      displayName: 'Groq (Llama 3.3 / Mixtral)',
-      model: this.config.model || DEFAULT_GROQ_MODEL,
+      displayName: 'Groq (GPT-OSS 120B)',
+      model: resolveGroqModel(this.config.model),
       supportsStreaming: true,
     };
   }
@@ -41,7 +71,7 @@ class GroqProvider extends AIProvider {
     }
     try {
       await this._getClient().chat.completions.create({
-        model: this.config.model || DEFAULT_GROQ_MODEL,
+        model: resolveGroqModel(this.config.model),
         max_tokens: 10,
         messages: [{ role: 'user', content: 'ping' }],
       });
@@ -52,8 +82,10 @@ class GroqProvider extends AIProvider {
   }
 
   async complete(systemPrompt, userMessage, options = {}) {
+    const model = resolveGroqModel(this.config.model);
     const response = await this._getClient().chat.completions.create({
-      model: this.config.model || DEFAULT_GROQ_MODEL,
+      model,
+      ...reasoningParams(model),
       max_tokens: options.maxTokens || 4096,
       temperature: options.temperature ?? 0.4,
       messages: [
@@ -62,18 +94,20 @@ class GroqProvider extends AIProvider {
       ],
     });
 
-    return response.choices[0].message.content.trim();
+    return extractContent(response);
   }
 
   async chat(systemPrompt, messages, options = {}) {
+    const model = resolveGroqModel(this.config.model);
     const response = await this._getClient().chat.completions.create({
-      model: this.config.model || DEFAULT_GROQ_MODEL,
+      model,
+      ...reasoningParams(model),
       max_tokens: options.maxTokens || 2048,
       temperature: options.temperature ?? 0.5,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
     });
 
-    return response.choices[0].message.content.trim();
+    return extractContent(response);
   }
 }
 

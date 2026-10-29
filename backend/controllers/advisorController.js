@@ -62,7 +62,7 @@ async function healthScore(req, res) {
     res.json(report);
   } catch (err) {
     console.error('healthScore error:', err.message);
-    res.status(500).json({ error: 'Health analysis failed: ' + err.message });
+    res.status(err.status === 400 ? 400 : 500).json({ error: 'Health analysis failed: ' + err.message });
   }
 }
 
@@ -85,7 +85,7 @@ async function remediate(req, res) {
     res.json(result);
   } catch (err) {
     console.error('remediate error:', err.message);
-    res.status(500).json({ error: 'Auto-remediation failed: ' + err.message });
+    res.status(err.status === 400 ? 400 : 500).json({ error: 'Auto-remediation failed: ' + err.message });
   }
 }
 
@@ -117,7 +117,7 @@ async function chat(req, res) {
     res.json({ reply });
   } catch (err) {
     console.error('chat error:', err.message);
-    res.status(500).json({ error: 'Chat failed: ' + err.message });
+    res.status(err.status === 400 ? 400 : 500).json({ error: 'Chat failed: ' + err.message });
   }
 }
 

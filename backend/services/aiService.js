@@ -640,7 +640,10 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
   let detectedPlatform = isJenkins ? 'jenkins' : cicdPlatform || 'gitlab';
 
   if (isJenkins && rawText) {
-    hasPushTrigger = /pollSCM|triggers\s*\{/i.test(rawText) || true;
+    // Jenkins jobs run on SCM changes whether or not a triggers {} block is
+    // declared, so keep the push trigger; add an MR trigger only when the file
+    // branches on change requests.
+    hasMrTrigger = /changeRequest\s*\(|\bCHANGE_ID\b/.test(rawText);
     const stageRegex = /stage\(\s*['"]([^'"]+)['"]\s*\)\s*\{([\s\S]*?)(?=stage\(\s*['"]|\}\s*\}\s*$|$)/g;
     let match = stageRegex.exec(rawText);
     let prevKey = null;
@@ -1825,6 +1828,7 @@ async function pipelineChat(messages, currentYaml, options = {}) {
     const { data } = await postN8NChatPayload(n8nWebhookUrl, payload, {
       headers,
       timeout: Number(process.env.N8N_CHAT_TIMEOUT_MS || 30000),
+      maxRedirects: 0,
     });
 
     return extractN8NReply(data);

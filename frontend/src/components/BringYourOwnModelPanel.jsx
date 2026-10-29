@@ -5,7 +5,7 @@ const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
 const providerHints = {
   groq: {
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     baseUrl: 'https://api.groq.com/openai/v1',
   },
   openai: {

@@ -109,6 +109,7 @@ router.post('/forward', async (req, res) => {
   try {
     const { data } = await axios.post(webhookUrl, payload || {}, {
       timeout: 15000,
+      maxRedirects: 0,
       headers: { 'Content-Type': 'application/json' },
     });
     res.json({ success: true, response: data });
@@ -157,6 +158,7 @@ router.post('/chat', async (req, res) => {
     try {
       const response = await axios.post(chatWebhookUrl, payload, {
         timeout: 30000,
+        maxRedirects: 0,
         headers: { 'Content-Type': 'application/json' },
       });
       data = response.data;
@@ -168,6 +170,7 @@ router.post('/chat', async (req, res) => {
 
       const fallbackResponse = await axios.post(fallbackUrl, payload, {
         timeout: 30000,
+        maxRedirects: 0,
         headers: { 'Content-Type': 'application/json' },
       });
       data = fallbackResponse.data;

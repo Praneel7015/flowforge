@@ -2,13 +2,25 @@ const githubService = require('../services/githubService');
 const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
 const { scanForSecrets } = require('../utils/secretScanner');
+const { inspectUrl } = require('../utils/ssrf');
 
 function extractGitHubCreds(credentials) {
   return { token: credentials.token };
 }
 
 function extractGitLabCreds(credentials) {
-  return { token: credentials.token, instanceUrl: credentials.instanceUrl };
+  const { token, instanceUrl } = credentials || {};
+  if (instanceUrl) {
+    // Self-hosted GitLab URLs are user-supplied: same SSRF rules as the
+    // /api/platforms verify route (public HTTPS hosts only).
+    const inspection = inspectUrl(instanceUrl);
+    if (!inspection.safe || !/^https:\/\//i.test(instanceUrl.trim())) {
+      const err = new Error('Invalid GitLab instance URL. Must be a public HTTPS URL.');
+      err.status = 400;
+      throw err;
+    }
+  }
+  return { token, instanceUrl };
 }
 
 function extractBitbucketCreds(credentials) {
@@ -44,7 +56,7 @@ async function listRepos(req, res) {
     }
     res.json({ repos });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -69,7 +81,7 @@ async function listBranches(req, res) {
     }
     res.json({ branches });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -94,7 +106,7 @@ async function getRepoTree(req, res) {
     }
     res.json({ tree });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -127,7 +139,7 @@ async function getFileContents(req, res) {
     }
     res.json({ files });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -238,7 +250,7 @@ async function pushPipeline(req, res) {
 
     return badRequest(res, `Unsupported platform: ${platform}`);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 }
 
