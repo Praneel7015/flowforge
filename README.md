@@ -105,7 +105,7 @@ Known limits: the rate limiter is in memory, so it resets on restart and isn't s
 
 ## Quick start
 
-Prerequisites: Node.js 20.18+ (22 recommended) and npm. For AI features you need a Groq key ([console.groq.com/keys](https://console.groq.com/keys), free) or another provider's key; everything else works without one.
+Prerequisites: Node.js 20.19+ or 22.13+ (22 recommended) and npm. For AI features you need a Groq key ([console.groq.com/keys](https://console.groq.com/keys), free) or another provider's key; everything else works without one.
 
 ```bash
 git clone https://github.com/praneel7015/flowforge.git

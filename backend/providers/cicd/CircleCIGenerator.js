@@ -94,9 +94,9 @@ class CircleCIGenerator extends CICDGenerator {
         job.steps.push({
           run: {
             name: 'Matrix dimensions',
-            command: `echo "Matrix: ${Object.entries(matrix)
+            command: `echo 'Matrix: ${this._shellText(Object.entries(matrix)
               .map(([k, vals]) => `${k}=${vals.join('|')}`)
-              .join('; ')}"`,
+              .join('; '))}'`,
           },
         });
       }
@@ -128,7 +128,7 @@ class CircleCIGenerator extends CICDGenerator {
         job.steps.push({
           run: {
             name: 'Canary rollout',
-            command: `echo "Deploying canary with ${trafficPercent}% traffic"`,
+            command: `echo 'Deploying canary with ${this._shellText(trafficPercent)}% traffic'`,
           },
         });
       }
@@ -138,7 +138,7 @@ class CircleCIGenerator extends CICDGenerator {
         job.steps.push({
           run: {
             name: 'Blue/Green switch',
-            command: `echo "Switching active stack to ${activeColor}"`,
+            command: `echo 'Switching active stack to ${this._shellText(activeColor)}'`,
           },
         });
       }
