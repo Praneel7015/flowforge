@@ -1,17 +1,12 @@
 const express = require('express');
-const crypto = require('crypto');
 const axios = require('axios');
 const router = express.Router();
 const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
+const { resolveChatSession, deriveChatKeys } = require('../utils/chatSession');
+
+const SESSION_HEADER = 'x-flowforge-chat-session';
 
 // === Chat payload helpers (from main) ===
-function sanitizeText(value, maxLen = 200) {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  return trimmed.slice(0, maxLen);
-}
-
 function extractLatestMessageText(messages, preferredRole = 'user') {
   if (!Array.isArray(messages)) return '';
 
@@ -34,21 +29,13 @@ function buildProductionWebhookUrl(webhookUrl) {
   return webhookUrl.replace('/webhook-test/', '/webhook/');
 }
 
-function buildChatPayload({ messages, currentYaml, cicdPlatform, aiProvider, userContext }) {
+function buildChatPayload({ messages, currentYaml, cicdPlatform, aiProvider, chatKeys }) {
   const safeMessages = Array.isArray(messages) ? messages : [];
   const yamlContext = typeof currentYaml === 'string' ? currentYaml : '';
 
-  const rawContext = userContext && typeof userContext === 'object' ? userContext : {};
-  // n8n uses these ids as memory/session keys, so they must not be guessable.
-  const fallbackUserId = `anon-${crypto.randomUUID()}`;
-
-  const userId = sanitizeText(rawContext.userId, 120) || fallbackUserId;
-  const username = sanitizeText(rawContext.username, 120) || `flowforge-${userId.slice(-6)}`;
-  const conversationId =
-    sanitizeText(rawContext.conversationId, 160) ||
-    sanitizeText(rawContext.chatId, 160) ||
-    `${userId}-default`;
-  const chatId = sanitizeText(rawContext.chatId, 160) || conversationId;
+  // n8n uses these ids as memory keys, so they come only from the server-signed
+  // session, never from the request body.
+  const { userId, username, chatId, conversationId } = chatKeys;
   const text = extractLatestMessageText(safeMessages, 'user') || extractLatestMessageText(safeMessages, '');
 
   return {
@@ -131,8 +118,13 @@ router.post('/forward', async (req, res) => {
  *   currentYaml,
  *   cicdPlatform,
  *   aiProvider,
- *   userContext: { userId, username, chatId, conversationId }
+ *   userContext: { conversationId }   // optional label, scoped to the session
  * }
+ * Header: X-FlowForge-Chat-Session: <token from a previous response>
+ *
+ * The n8n memory keys are derived from a server-signed anonymous session.
+ * A missing or forged token gets a fresh session; the response always carries
+ * the token to use next time as `sessionToken`.
  */
 router.post('/chat', async (req, res) => {
   const { chatWebhookUrl, messages, currentYaml, cicdPlatform, aiProvider, userContext } = req.body;
@@ -145,12 +137,16 @@ router.post('/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid webhook URL. Must be a public HTTP(S) URL.' });
   }
 
+  const session = resolveChatSession(req.get(SESSION_HEADER));
+  const conversationLabel =
+    userContext && typeof userContext === 'object' ? userContext.conversationId : undefined;
+
   const payload = buildChatPayload({
     messages,
     currentYaml,
     cicdPlatform,
     aiProvider,
-    userContext,
+    chatKeys: deriveChatKeys(session.sessionId, conversationLabel),
   });
 
   try {
@@ -179,13 +175,15 @@ router.post('/chat', async (req, res) => {
       data = fallbackResponse.data;
     }
 
-    res.json({ reply: extractReply(data) });
+    res.json({ reply: extractReply(data), sessionToken: session.token });
   } catch (err) {
     res.status(502).json({
       error: 'Failed to get response from n8n chat webhook',
       details: err.response?.data || err.message,
+      sessionToken: session.token,
     });
   }
 });
 
 module.exports = router;
+module.exports.buildChatPayload = buildChatPayload;

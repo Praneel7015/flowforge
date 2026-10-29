@@ -97,6 +97,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
 | AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames (validation errors never echo the typed value); the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
+| **n8n memory keys are server-derived**: `/api/n8n/chat` ignores `userId`/`chatId` from the body and derives them from an HMAC-signed anonymous session token, so callers can't pick another visitor's n8n memory | `backend/utils/chatSession.js` |
 | n8n payloads use an **allowlist** of non-secret fields (model, region, location, project), so new credential fields can't leak to the webhook | `backend/services/aiService.js` |
 | **Error responses**: in production only errors we raise ourselves (validation) show their detail; provider/platform errors get a generic message. Logs use constant format strings and `logSafe()` (strips line breaks, ANSI and control characters) and record the path without the query string | `backend/utils/sendError.js`, `backend/utils/logSafe.js`, `backend/middleware/errorHandler.js` |
 | Registry lookups (providers, generators) use `Map`s with allowlist checks, so names like `__proto__` are rejected; chat/session ids come from `crypto`, not `Math.random` | `backend/providers/*/index.js`, `frontend/src/components/PipelineChat.jsx` |
@@ -149,6 +150,7 @@ Or with Docker: `docker-compose up`.
 | `GITHUB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the secret set on the GitHub webhook |
 | `GITLAB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the GitLab webhook "Secret token" |
 | `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger |
+| `SESSION_SECRET` | random per process | HMAC key (32+ chars) that signs the anonymous n8n chat sessions; set it in production so n8n memory survives restarts and works across instances (a warning is logged when unset) |
 | `N8N_CHAT_WEBHOOK_URL` | – | Server-side n8n webhook, used only when a chat request opts in (`useN8n`); falls back to the AI provider on failure |
 | `N8N_WEBHOOK_AUTH_HEADER`, `N8N_WEBHOOK_AUTH_TOKEN` | `X-FlowForge-Token` | Optional n8n auth |
 | `N8N_CHAT_TIMEOUT_MS` | `30000` | |
@@ -163,7 +165,7 @@ Frontend: `VITE_API_BASE_URL` (optional). In production Vercel rewrites `/api/*`
 
 ## n8n chat integration
 
-With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`input`, `userId`, `username`, `chatId`, `conversationId`, `currentYaml`/`yamlContext`, `messages`, `cicdPlatform`, `aiProvider`, `source` and `timestamp`. In n8n, read them from `{{$json.body.<field>}}`; use `userId` or `chatId` as the memory session key. The response can be a plain string or JSON with `reply`, `response`, `message`, `output` or `text`. A `/webhook-test/` URL that returns 404 is retried once on the production `/webhook/` URL. Without the env var, chat uses the configured AI provider.
+With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`input`, `userId`, `username`, `chatId`, `conversationId`, `currentYaml`/`yamlContext`, `messages`, `cicdPlatform`, `aiProvider`, `source` and `timestamp`. In n8n, read them from `{{$json.body.<field>}}`; use `userId` or `chatId` as the memory session key. For the Settings → n8n chat proxy (`/api/n8n/chat`) these ids are derived by the server from a signed anonymous session (`SESSION_SECRET`), never taken from the request body, so one visitor cannot read or write another's n8n memory. The browser keeps the session token in memory only and sends it back in the `X-FlowForge-Chat-Session` header; a missing or forged token gets a fresh session. The response can be a plain string or JSON with `reply`, `response`, `message`, `output` or `text`. A `/webhook-test/` URL that returns 404 is retried once on the production `/webhook/` URL. Without the env var, chat uses the configured AI provider.
 
 ## Testing
 

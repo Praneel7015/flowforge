@@ -9,6 +9,17 @@ function formatTime(date) {
 
 const CHAT_IDENTITY_STORAGE_KEY = 'flowforge.chatIdentity.v1';
 
+// Server-signed anonymous session for n8n chat memory. Held in memory only
+// (like BYOM keys): a reload starts a new n8n session.
+const N8N_SESSION_HEADER = 'X-FlowForge-Chat-Session';
+let n8nSessionToken = null;
+
+function rememberN8nSession(data) {
+  if (typeof data?.sessionToken === 'string' && data.sessionToken) {
+    n8nSessionToken = data.sessionToken;
+  }
+}
+
 // Ids double as n8n memory/session keys, so use the CSPRNG, never Math.random.
 // getRandomValues also works on non-secure (http) pages, unlike randomUUID.
 function randomHex(bytes = 8) {
@@ -269,12 +280,23 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         try {
           const { data } = await axios.post(
             '/api/n8n/chat',
-            { ...payload, chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() },
-            { signal: controller.signal }
+            {
+              ...payload,
+              chatWebhookUrl: n8nConfig.chatWebhookUrl.trim(),
+              // The server derives n8n memory keys from the signed session;
+              // only the conversation label is sent.
+              userContext: { conversationId },
+            },
+            {
+              signal: controller.signal,
+              headers: n8nSessionToken ? { [N8N_SESSION_HEADER]: n8nSessionToken } : undefined,
+            }
           );
+          rememberN8nSession(data);
           reply = data.reply;
         } catch (err) {
           if (axios.isCancel(err)) throw err;
+          rememberN8nSession(err.response?.data);
           const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
           reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${data.reply}`;
         }
