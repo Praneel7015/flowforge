@@ -4,6 +4,7 @@ const router = express.Router();
 const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 const { resolveChatSession, deriveChatKeys } = require('../utils/chatSession');
 
+const IS_PROD = process.env.NODE_ENV === 'production';
 const SESSION_HEADER = 'x-flowforge-chat-session';
 
 // === Chat payload helpers (from main) ===
@@ -104,7 +105,8 @@ router.post('/forward', async (req, res) => {
   } catch (err) {
     res.status(502).json({
       error: 'Failed to forward to n8n webhook',
-      details: err.response?.data || err.message,
+      // Upstream bodies and network errors can name internal hosts.
+      ...(IS_PROD ? {} : { details: err.response?.data || err.message }),
     });
   }
 });
@@ -179,7 +181,7 @@ router.post('/chat', async (req, res) => {
   } catch (err) {
     res.status(502).json({
       error: 'Failed to get response from n8n chat webhook',
-      details: err.response?.data || err.message,
+      ...(IS_PROD ? {} : { details: err.response?.data || err.message }),
       sessionToken: session.token,
     });
   }

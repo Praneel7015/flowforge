@@ -59,3 +59,33 @@ test.describe('Provider settings', () => {
     await expect(page.getByText('Base URL', { exact: true })).toBeVisible();
   });
 });
+
+test.describe('Platform credentials', () => {
+  test('tokens stay in memory; only non-secret fields reach localStorage', async ({ page }) => {
+    await openStudio(page);
+    await waitForBuilder(page);
+    // A token saved by an older build is migrated out of storage.
+    await page.evaluate(() =>
+      localStorage.setItem(
+        'flowforge.platformCredentials.v1',
+        JSON.stringify({ github: { token: 'ghp_legacy_secret', username: 'octo' } })
+      )
+    );
+    await page.reload();
+    await waitForBuilder(page);
+    await openPanel(page, 'Settings');
+    await expect(page.getByRole('heading', { name: 'Platform Integrations' })).toBeVisible();
+
+    await page.getByPlaceholder('glpat-...').first().fill('glpat-typed-secret');
+    await page.getByPlaceholder('https://gitlab.com').first().fill('https://gitlab.example.com');
+
+    const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+    expect(stored).not.toContain('glpat-typed-secret');
+    expect(stored).not.toContain('ghp_legacy_secret');
+    expect(stored).not.toContain('flowforge.platformCredentials.v1');
+    expect(stored).toContain('https://gitlab.example.com');
+    expect(stored).toContain('octo');
+    // The typed token is still there for this tab.
+    await expect(page.getByPlaceholder('glpat-...').first()).toHaveValue('glpat-typed-secret');
+  });
+});

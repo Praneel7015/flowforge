@@ -7,12 +7,39 @@ const gitlabService = require('../services/gitlabService');
  * Currently supports: GitLab pipeline events, push events, merge request events.
  * TODO: Add support for GitHub Actions and other platforms.
  */
+// Delivery ids already accepted. Senders retry a delivery they consider
+// failed with the same id; without this a retry would post a second analysis.
+const SEEN_DELIVERY_LIMIT = 1000;
+const seenDeliveries = new Set();
+
+function isDuplicateDelivery(id) {
+  if (!id) return false;
+  if (seenDeliveries.has(id)) return true;
+  seenDeliveries.add(id);
+  if (seenDeliveries.size > SEEN_DELIVERY_LIMIT) {
+    seenDeliveries.delete(seenDeliveries.values().next().value);
+  }
+  return false;
+}
+
 async function handleWebhook(req, res) {
   // Detect platform from headers
   const gitlabEvent = req.headers['x-gitlab-event'];
   const githubEvent = req.headers['x-github-event'];
+  const deliveryId = String(
+    req.headers['x-gitlab-event-uuid'] || req.headers['idempotency-key'] || req.headers['x-github-delivery'] || ''
+  ).slice(0, 200);
 
   const payload = req.body;
+
+  if (isDuplicateDelivery(deliveryId)) {
+    return res.status(200).json({ status: 'duplicate' });
+  }
+
+  // Answer first: failure analysis fetches logs and calls the AI provider,
+  // which can outlast the sender's webhook timeout (GitLab disables hooks
+  // that keep timing out). The work continues in the background.
+  res.status(202).json({ status: 'received' });
 
   try {
     if (gitlabEvent) {
@@ -22,11 +49,8 @@ async function handleWebhook(req, res) {
     } else {
       console.log('Unknown webhook source');
     }
-
-    res.json({ status: 'received' });
   } catch (err) {
     console.error('Webhook processing error: %s', logSafe(err.message));
-    res.status(500).json({ error: 'Webhook processing failed' });
   }
 }
 
@@ -148,4 +172,4 @@ async function handleGitHubWebhook(event, payload) {
   }
 }
 
-module.exports = { handleWebhook };
+module.exports = { handleWebhook, _seenDeliveries: seenDeliveries };

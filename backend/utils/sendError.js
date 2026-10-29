@@ -13,4 +13,15 @@ function sendError(res, err, summary) {
   return res.status(status).json({ error: showDetail ? `${summary}: ${detail}` : summary });
 }
 
-module.exports = { sendError };
+/**
+ * Keeps the error's own status. A 4xx message is shown (it describes the
+ * caller's request); a 5xx message is shown only outside production, since it
+ * can carry network errors or raw upstream text.
+ */
+function sendStatusError(res, err, fallback) {
+  const status = Number(err && (err.status || err.statusCode)) || 500;
+  const show = err && err.message && (status < 500 || !IS_PROD);
+  return res.status(status).json({ error: show ? err.message : fallback });
+}
+
+module.exports = { sendError, sendStatusError };

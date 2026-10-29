@@ -57,8 +57,21 @@ function isPrivateIPv4(host) {
     inRange('127.0.0.0', 8) || // loopback
     inRange('169.254.0.0', 16) || // link-local (cloud metadata: 169.254.169.254)
     inRange('0.0.0.0', 8) ||
-    inRange('100.64.0.0', 10) // carrier-grade NAT
+    inRange('100.64.0.0', 10) || // carrier-grade NAT
+    inRange('192.0.0.0', 24) || // IETF protocol assignments
+    inRange('192.0.2.0', 24) || // TEST-NET-1
+    inRange('198.18.0.0', 15) || // benchmarking (used inside some cloud networks)
+    inRange('198.51.100.0', 24) || // TEST-NET-2
+    inRange('203.0.113.0', 24) || // TEST-NET-3
+    inRange('224.0.0.0', 3) // multicast, reserved and broadcast (224.0.0.0-255.255.255.255)
   );
+}
+
+// "7f00", "1" -> "127.0.0.1"
+function hexPairToIPv4(highHex, lowHex) {
+  const high = parseInt(highHex, 16);
+  const low = parseInt(lowHex, 16);
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
 }
 
 function normalizeIpv6(host) {
@@ -71,6 +84,12 @@ function isPrivateIPv6(host) {
   if (addr === '::1' || addr === '::') return true;
   if (/^fe[89ab][0-9a-f]:/.test(addr)) return true; // link-local fe80::/10 (fe80–febf)
   if (addr.startsWith('fc') || addr.startsWith('fd')) return true; // unique local
+  if (addr.startsWith('ff')) return true; // multicast ff00::/8
+  // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) embed an IPv4 address.
+  const nat64 = addr.match(/^64:ff9b::(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/);
+  if (nat64) return isPrivateIPv4(nat64[1] || hexPairToIPv4(nat64[2], nat64[3]));
+  const sixToFour = addr.match(/^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?::|$)/);
+  if (sixToFour) return isPrivateIPv4(hexPairToIPv4(sixToFour[1], sixToFour[2]));
   // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
   const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateIPv4(mapped[1]);
@@ -78,11 +97,7 @@ function isPrivateIPv6(host) {
   // the hex form must be decoded too. Deprecated IPv4-compatible addresses
   // (::7f00:1) are treated the same way.
   const hexMapped = addr.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMapped) {
-    const high = parseInt(hexMapped[1], 16);
-    const low = parseInt(hexMapped[2], 16);
-    return isPrivateIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
-  }
+  if (hexMapped) return isPrivateIPv4(hexPairToIPv4(hexMapped[1], hexMapped[2]));
   return false;
 }
 
@@ -110,7 +125,8 @@ function inspectUrl(rawUrl, { requireHttps = false } = {}) {
     return { safe: false, reason: 'custom endpoints must use https://' };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  // "localhost." names the same host as "localhost": strip trailing dots first.
+  const hostname = parsed.hostname.toLowerCase().replace(/\.+$/, '');
 
   if (BLOCKED_HOSTNAMES.has(hostname)) {
     return { safe: false, reason: `Host ${hostname} is not allowed` };

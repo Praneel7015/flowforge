@@ -3,8 +3,8 @@ import axios from 'axios';
 import RepoBrowser from '../components/RepoBrowser';
 import FileTreePicker from '../components/FileTreePicker';
 import PushToRepoModal from '../components/PushToRepoModal';
+import { readPlatformCredentials as readStoredCredentials } from '../utils/platformCredentials';
 
-const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket'];
 const PLATFORM_LABELS = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
 const PLATFORM_NAMES = {
@@ -98,15 +98,6 @@ Constraints:
 - Include rollback behavior and team notification
 - Use meaningful scripts and config values for each advanced node
 - Return robust, clean YAML and matching React Flow nodes/edges`;
-}
-
-function readStoredCredentials() {
-  try {
-    const raw = localStorage.getItem(CREDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
 }
 
 function hasCredentials(creds, platform) {

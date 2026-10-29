@@ -2,17 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import FileTreePicker from './FileTreePicker';
 import RepoBrowser from './RepoBrowser';
+import { readPlatformCredentials as readStoredCredentials } from '../utils/platformCredentials';
 
-const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket'];
 const PLATFORM_LABELS = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
-
-function readStoredCredentials() {
-  try {
-    const raw = localStorage.getItem(CREDS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
 
 function hasCredentials(creds, platform) {
   if (!creds[platform]) return false;

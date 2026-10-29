@@ -22,8 +22,11 @@ function errorHandler(err, req, res, next) {
 
   if (res.headersSent) return next(err);
 
-  const clientMessage =
-    status < 500 || !IS_PROD ? message || 'Request failed' : 'Internal server error';
+  // In production a 4xx message is shown only when the error says it is safe
+  // (our own, or body-parser/http-errors with expose: true); SDK and client
+  // errors can quote upstream details.
+  let clientMessage = status < 500 ? 'Request failed' : 'Internal server error';
+  if (!IS_PROD || (status < 500 && err.expose === true)) clientMessage = message || 'Request failed';
 
   res.status(status).json({ error: clientMessage });
 }

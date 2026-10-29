@@ -1,6 +1,6 @@
 const aiService = require('../services/aiService');
 const { logSafe } = require('../utils/logSafe');
-const { sendError } = require('../utils/sendError');
+const { sendError, sendStatusError } = require('../utils/sendError');
 const workflowService = require('../services/workflowService');
 const gitlabService = require('../services/gitlabService');
 const { buildAIOptions } = require('../utils/aiOptions');
@@ -61,9 +61,8 @@ async function importPipeline(req, res) {
       detectedPlatform: dag.detectedPlatform || cicdPlatform || 'gitlab',
     });
   } catch (err) {
-    const status = err.status || 500;
     console.error('importPipeline error: %s', logSafe(err.message));
-    res.status(status).json({ error: err.message || 'Failed to import pipeline' });
+    sendStatusError(res, err, 'Failed to import pipeline');
   }
 }
 

@@ -8,6 +8,7 @@ const { buildAIOptions } = require('../utils/aiOptions');
 const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 const { getAvailablePlatforms } = require('../providers/cicd');
 const { logSafe } = require('../utils/logSafe');
+const { sendStatusError } = require('../utils/sendError');
 const { trimTrailingSlashes, pathSegment, pathSegments } = require('../utils/url');
 
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -449,8 +450,7 @@ async function listRuns(req, res) {
       return res.json({ platform, runs });
     }
   } catch (err) {
-    const status = err.status || 500;
-    return res.status(status).json({ error: err.message || 'Failed to list runs' });
+    return sendStatusError(res, err, 'Failed to list runs');
   }
 }
 
@@ -598,8 +598,7 @@ async function getRunStatus(req, res) {
       });
     }
   } catch (err) {
-    const status = err.status || 500;
-    return res.status(status).json({ error: err.message || 'Failed to get run status' });
+    return sendStatusError(res, err, 'Failed to get run status');
   }
 }
 
@@ -709,8 +708,7 @@ async function triggerRun(req, res) {
       return res.json(result);
     }
   } catch (err) {
-    const status = err.status || 500;
-    return res.status(status).json({ error: err.message || 'Failed to trigger pipeline run' });
+    return sendStatusError(res, err, 'Failed to trigger pipeline run');
   }
 }
 

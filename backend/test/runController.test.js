@@ -152,23 +152,63 @@ test('runController blocks private/SSRF URLs in credentials and diagnoses provid
   assert.strictEqual(ssrRes.statusCode, 400);
   assert.match(ssrRes.body.error, /safe public HTTP/i);
 
-  // 2. diagnoseAndFix with provided failedLogs + YAML
-  const diagRes = createMockRes();
-  await runController.diagnoseAndFix(
-    {
-      body: {
-        platform: 'github',
-        failedLogs: [{ jobId: 1, jobName: 'test', stage: 'test', log: 'npm ERR! Test failed' }],
-        yaml: 'name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n',
+  // 2. diagnoseAndFix with provided failedLogs + YAML. The AI calls are
+  // stubbed so the test never reaches a real provider and checks both paths.
+  const yamlIn = 'name: CI\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  const diagnose = async () => {
+    const res = createMockRes();
+    await runController.diagnoseAndFix(
+      {
+        body: {
+          platform: 'github',
+          failedLogs: [{ jobId: 1, jobName: 'test', stage: 'test', log: 'npm ERR! Test failed' }],
+          yaml: yamlIn,
+        },
       },
-    },
-    diagRes
-  );
-  assert.strictEqual(diagRes.statusCode, 200);
-  assert.ok(diagRes.body.explanation);
-  assert.strictEqual(diagRes.body.failedJobs.length, 1);
-  assert.ok(diagRes.body.remediation);
-  assert.ok(typeof diagRes.body.remediation.patchedYaml === 'string');
+      res
+    );
+    return res;
+  };
+  const original = {
+    explain: aiService.explainPipelineFailure,
+    remediate: aiService.autoRemediatePipeline,
+  };
+  try {
+    aiService.explainPipelineFailure = async () => ({
+      summary: 'Tests fail',
+      explanation: 'npm test exits 1',
+      rootCause: 'Dependencies not installed',
+      suggestedFixes: ['Run npm ci first'],
+    });
+    aiService.autoRemediatePipeline = async () => ({
+      patchedYaml: yamlIn.replace('- run: npm test', '- run: npm ci\n      - run: npm test'),
+      changeLog: ['Added npm ci'],
+      commitMessage: 'fix: install deps',
+    });
+    const ok = await diagnose();
+    assert.strictEqual(ok.statusCode, 200);
+    assert.strictEqual(ok.body.rootCause, 'Dependencies not installed');
+    assert.strictEqual(ok.body.failedJobs.length, 1);
+    assert.match(ok.body.remediation.patchedYaml, /npm ci/);
+    assert.deepStrictEqual(ok.body.changeLog, ['Added npm ci']);
+    assert.strictEqual(ok.body.warning, undefined);
+
+    // Provider failures fall back to a heuristic diagnosis and the original YAML.
+    aiService.explainPipelineFailure = async () => {
+      throw new Error('provider down');
+    };
+    aiService.autoRemediatePipeline = async () => {
+      throw new Error('provider down');
+    };
+    const fallback = await diagnose();
+    assert.strictEqual(fallback.statusCode, 200);
+    assert.match(fallback.body.rootCause, /job "test"/);
+    assert.strictEqual(fallback.body.remediation.patchedYaml, yamlIn);
+    assert.match(fallback.body.warning, /AI remediation unavailable/);
+  } finally {
+    aiService.explainPipelineFailure = original.explain;
+    aiService.autoRemediatePipeline = original.remediate;
+  }
 });
 
 test('aiService heuristic health report uses 10-rule secretScanner', async () => {

@@ -38,7 +38,10 @@ const echoCommand = (command) => `$ ${command.split('\n').join('\n> ')}`;
 const TOOLCHAINS = [
   {
     name: 'node',
-    needsDeps: /^(npm\s+(test|t|run|run-script)\b|npx\s|yarn\s+(test|run|lint|build)\b|pnpm\s+(test|run|lint|build)\b)/,
+    // npx fetches a missing CLI on demand (npx vercel works in a bare
+    // container), so only project dev tools, which need the project's config
+    // and plugins installed, count.
+    needsDeps: /^(npm\s+(test|t|run|run-script)\b|npx\s+(--no-install\s+|--no\s+)?(jest|vitest|mocha|ava|eslint|prettier|tsc|ts-node|tsx|playwright|cypress|webpack|vite|next|nuxt|react-scripts|nx|turbo|lerna|stylelint|nodemon)\b|yarn\s+(test|run|lint|build)\b|pnpm\s+(test|run|lint|build)\b)/,
     installsDeps: /^(npm\s+(ci|install|i)\b(?!.*\s-g\b)|yarn(\s+install)?\s*$|pnpm\s+(i|install)\b)/,
     installHint: 'npm ci',
     failure: (cmd) => {
