@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { PROVIDER_FIELDS, API_KEY_LABELS, NO_BASE_URL, SECRET_FIELD_NAMES } from '../utils/providerFields';
+import { PROVIDER_FIELDS, API_KEY_LABELS, NO_BASE_URL } from '../utils/providerFields';
 
-const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
+// Older builds could save the API key here ("Remember API key"). Keys are now
+// kept in memory only, so any previously saved key is deleted on load.
+const LEGACY_API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
 const providerHints = {
   groq: {
@@ -39,31 +41,6 @@ const providerHints = {
   },
 };
 
-// "Remember" stores only the provider API key, at the user's request. Cloud
-// credentials (AWS secret keys, service account private keys) are long-lived
-// and high-value, so they are never written to browser storage.
-function readSavedApiKey() {
-  try {
-    const raw = localStorage.getItem(API_KEY_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return typeof parsed?.key === 'string' ? parsed.key : '';
-    }
-  } catch { /* ignore */ }
-  return '';
-}
-
-function persistApiKey(key) {
-  try {
-    if (key) {
-      // Explicit opt-in ("Remember API key"); see the warning next to the checkbox.
-      localStorage.setItem(API_KEY_STORAGE_KEY, JSON.stringify({ key, savedAt: new Date().toISOString() }));
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-    }
-  } catch { /* ignore */ }
-}
-
 export default function BringYourOwnModelPanel({
   selectedProvider,
   value,
@@ -72,17 +49,12 @@ export default function BringYourOwnModelPanel({
 }) {
   const hints = providerHints[selectedProvider] || providerHints.groq;
   const [testState, setTestState] = useState({ status: 'idle', message: '' });
-  const [rememberKey, setRememberKey] = useState(() => Boolean(readSavedApiKey()));
   const abortRef = useRef(null);
 
-  // On mount, restore a saved API key if available
   useEffect(() => {
-    const savedKey = readSavedApiKey();
-    if (savedKey && !value.apiKey) {
-      onChange({ ...value, apiKey: savedKey, enabled: true });
-    }
-    // Only run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    try {
+      localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+    } catch { /* storage unavailable */ }
   }, []);
 
   useEffect(() => {
@@ -92,11 +64,6 @@ export default function BringYourOwnModelPanel({
   useEffect(() => {
     setTestState({ status: 'idle', message: '' });
   }, [selectedProvider, value]);
-
-  // Persist or clear the key when the remember toggle or key changes
-  useEffect(() => {
-    persistApiKey(rememberKey ? value.apiKey : '');
-  }, [rememberKey, value.apiKey]);
 
   const extraFields = PROVIDER_FIELDS[selectedProvider] || [];
   const showBaseUrl = !NO_BASE_URL.has(selectedProvider);
@@ -144,12 +111,6 @@ export default function BringYourOwnModelPanel({
     }
   };
 
-  const handleClearSavedKey = () => {
-    persistApiKey('');
-    setRememberKey(false);
-    onChange({ ...value, apiKey: '', ...Object.fromEntries(SECRET_FIELD_NAMES.map((n) => [n, ''])) });
-  };
-
   const feedbackColor =
     testState.status === 'success'
       ? 'text-[var(--ff-success)]'
@@ -157,17 +118,13 @@ export default function BringYourOwnModelPanel({
         ? 'text-[var(--ff-warning)]'
         : 'text-[var(--ff-danger)]';
 
-  const hasSavedKey = Boolean(readSavedApiKey());
-
   return (
     <div className="rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--ff-text)]">Runtime Overrides</p>
           <p className="text-xs text-[var(--ff-muted)] mt-1">
-            {rememberKey
-              ? 'Your API key is saved unencrypted in this browser. Cloud credentials (AWS keys, service account JSON) are never saved.'
-              : 'Credentials are session-only and cleared on refresh.'}
+            Keys and credentials stay in memory for this tab only and are never saved to the browser.
           </p>
         </div>
 
@@ -248,29 +205,6 @@ export default function BringYourOwnModelPanel({
             </div>
           );
         })}
-      </div>
-
-      {/* Remember key + clear */}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <label className="inline-flex items-center gap-2 text-xs text-[var(--ff-text-secondary)] cursor-pointer">
-          <input
-            type="checkbox"
-            checked={rememberKey}
-            onChange={(e) => setRememberKey(e.target.checked)}
-            disabled={!value.enabled}
-            className="accent-current"
-          />
-          Remember API key in this browser
-        </label>
-
-        {hasSavedKey && (
-          <button
-            onClick={handleClearSavedKey}
-            className="text-xs text-[var(--ff-danger)] hover:underline"
-          >
-            Clear saved key
-          </button>
-        )}
       </div>
 
       {providerSelfTestEnabled && (

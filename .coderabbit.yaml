@@ -23,8 +23,8 @@ reviews:
     - path: "frontend/src/**/*.{js,jsx}"
       instructions: |
         React 18 + React Flow. Flag hook dependency bugs, state rendered as
-        objects in JSX, and credentials written to localStorage without the
-        user opting in ("Remember credentials").
+        objects in JSX, and any API key or credential written to
+        localStorage, sessionStorage or cookies (keys must stay in memory).
     - path: "backend/test/**"
       instructions: Prefer focused node:test cases that cover error paths and security guards.
   auto_review:

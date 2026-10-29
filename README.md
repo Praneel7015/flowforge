@@ -90,7 +90,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | **GitLab webhooks**: token compared in constant time | `backend/routes/webhookRoutes.js` |
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
-| BYOM keys are per request, trimmed/capped, never stored or cached; invalid BYOM input returns 400 | `backend/utils/aiOptions.js` |
+| BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
 | AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames; the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
 
