@@ -173,7 +173,7 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (110 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (109 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
 cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```
