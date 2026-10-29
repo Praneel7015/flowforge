@@ -95,7 +95,7 @@ test('the server exits non-zero when it cannot bind its port', async () => {
         child.kill();
         resolve('timeout');
       }, 15000);
-      child.on('exit', (c) => {
+      child.on('close', (c) => {
         clearTimeout(timer);
         resolve(c);
       });
