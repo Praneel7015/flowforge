@@ -11,7 +11,6 @@ import ImportPipelineModal from './components/ImportPipelineModal';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
 import { buildAiOptions, EXTRA_FIELD_NAMES, SECRET_FIELD_NAMES } from './utils/providerFields';
 const WorkflowEditor = lazy(() => import('./workflow/WorkflowEditor'));
-const PromptPanel = lazy(() => import('./components/PromptPanel'));
 const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
 const HealthAdvisor = lazy(() => import('./components/HealthAdvisor'));
 const PipelineChat = lazy(() => import('./components/PipelineChat'));
@@ -108,8 +107,8 @@ const DEFAULT_BYOM = {
   ...Object.fromEntries(EXTRA_FIELD_NAMES.map((name) => [name, ''])),
 };
 
-// Non-secret BYOM fields saved with workspace settings; keys and other
-// secrets only persist through the "Remember" option in the BYOM panel.
+// Non-secret BYOM fields saved with workspace settings. API keys and cloud
+// credentials are kept in memory only and never written to browser storage.
 const PERSISTED_BYOM_FIELDS = ['model', 'baseUrl', ...EXTRA_FIELD_NAMES.filter((n) => !SECRET_FIELD_NAMES.includes(n))];
 
 function inferLlmType(providerName) {
@@ -449,39 +448,48 @@ export default function App({ onBackToLanding }) {
     persistOnboardingStatus(ONBOARDING_STATUS.limited);
   }, [persistOnboardingStatus]);
 
-  const handleProviderChange = useCallback((type, value) => {
-    setSelectedProviders((prev) => ({ ...prev, [type]: value }));
-    if (type === 'ai') {
-      setLlmType(inferLlmType(value));
-    }
-  }, []);
+  // Every AI-provider change goes through here (provider dropdowns and the
+  // Cloud/Local toggle). The key, model and base URL fields are shared across
+  // providers, so they are cleared whenever the provider actually changes:
+  // an OpenAI key or model must never be sent to Groq, Vertex or Bedrock.
+  const selectAiProvider = useCallback(
+    (nextAi) => {
+      if (!nextAi || nextAi === selectedProviders.ai) return;
+      setSelectedProviders((prev) => ({ ...prev, ai: nextAi }));
+      setByomConfig((prev) => ({ ...prev, apiKey: '', model: '', baseUrl: '' }));
+    },
+    [selectedProviders.ai]
+  );
+
+  const handleProviderChange = useCallback(
+    (type, value) => {
+      if (type === 'ai') {
+        setLlmType(inferLlmType(value));
+        selectAiProvider(value);
+        return;
+      }
+      setSelectedProviders((prev) => ({ ...prev, [type]: value }));
+    },
+    [selectAiProvider]
+  );
 
   const handleLlmTypeChange = useCallback(
     (nextType) => {
       setLlmType(nextType);
+      const current = selectedProviders.ai;
 
-      setSelectedProviders((prev) => {
-        if (nextType === 'local') {
-          const hasOllama = providers.ai.some((provider) => provider.name === 'ollama');
-          if (hasOllama) {
-            return { ...prev, ai: 'ollama' };
-          }
-          return prev;
-        }
+      if (nextType === 'local') {
+        if (providers.ai.some((provider) => provider.name === 'ollama')) selectAiProvider('ollama');
+        return;
+      }
 
-        if (prev.ai !== 'ollama') {
-          return prev;
-        }
-
-        const cloudProvider =
-          providers.ai.find((provider) => provider.name !== 'ollama' && provider.enabled) ||
-          providers.ai.find((provider) => provider.name !== 'ollama') ||
-          providers.ai.find((provider) => provider.name === 'ollama');
-
-        return cloudProvider ? { ...prev, ai: cloudProvider.name } : prev;
-      });
+      if (current !== 'ollama') return;
+      const cloudProvider =
+        providers.ai.find((provider) => provider.name !== 'ollama' && provider.enabled) ||
+        providers.ai.find((provider) => provider.name !== 'ollama');
+      if (cloudProvider) selectAiProvider(cloudProvider.name);
     },
-    [providers.ai]
+    [providers.ai, selectedProviders.ai, selectAiProvider]
   );
 
   const aiOptions = useMemo(
@@ -870,11 +878,12 @@ export default function App({ onBackToLanding }) {
     if (!isOnline) {
       const hasOllama = providers.ai.some((p) => p.name === 'ollama');
       if (hasOllama && selectedProviders.ai !== 'ollama') {
-        setSelectedProviders((prev) => ({ ...prev, ai: 'ollama' }));
+        // Same path as manual switches, so a cloud key/model isn't sent to Ollama.
+        selectAiProvider('ollama');
         setLlmType('local');
       }
     }
-  }, [providers.ai, selectedProviders.ai]);
+  }, [providers.ai, selectedProviders.ai, selectAiProvider]);
 
   return (
     <div className="ff-app-shell">

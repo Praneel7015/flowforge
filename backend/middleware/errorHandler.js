@@ -11,7 +11,6 @@ function notFound(_req, res) {
 }
 
 // Express error middleware MUST keep the 4-arg signature.
-// eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
   const status = err.status || err.statusCode || 500;
 

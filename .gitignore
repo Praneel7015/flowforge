@@ -11,3 +11,5 @@ CONTEXT.md
 .claude/
 .agents/
 skills-lock.json
+playwright-report/
+test-results/

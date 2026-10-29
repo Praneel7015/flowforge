@@ -5,6 +5,10 @@ const bitbucketService = require('../services/bitbucketService');
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
 const { isSafePublicUrl } = require('../utils/ssrf');
+const { getAvailablePlatforms } = require('../providers/cicd');
+const { logSafe } = require('../utils/logSafe');
+
+const IS_PROD = process.env.NODE_ENV === 'production';
 
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'circleci'];
 const CIRCLECI_API = 'https://circleci.com/api/v2';
@@ -201,7 +205,7 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
 
   const runs = await Promise.all(
     pipelines.map(async (p) => {
-      let wf = null;
+      let wf;
       try {
         const { data: wfData } = await client.get(`/pipeline/${p.id}/workflow`);
         wf = (wfData?.items || [])[0] || null;
@@ -231,7 +235,7 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
 
 async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
   const client = makeCircleClient(creds.token, creds.baseUrl);
-  let workflow = null;
+  let workflow;
   let workflowId = runId;
 
   try {
@@ -244,7 +248,7 @@ async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
     workflowId = workflow.id || runId;
   }
 
-  let rawJobs = [];
+  let rawJobs;
   try {
     const { data: jobsData } = await client.get(`/workflow/${encodeURIComponent(workflowId)}/job`);
     rawJobs = Array.isArray(jobsData?.items) ? jobsData.items : [];
@@ -697,6 +701,11 @@ async function diagnoseAndFix(req, res) {
     // The YAML being fixed is in the canvas format, which can differ from the
     // CI provider the run came from (e.g. a Jenkinsfile checked via GitHub).
     const configPlatform = cicdPlatform || platform;
+    if (!getAvailablePlatforms().includes(configPlatform)) {
+      return res.status(400).json({
+        error: `cicdPlatform must be one of: ${getAvailablePlatforms().join(', ')}`,
+      });
+    }
 
     let failedJobs = [];
     const inputLogs = Array.isArray(providedFailedLogs)
@@ -802,6 +811,7 @@ async function diagnoseAndFix(req, res) {
         aiOptions: parsedAIOptions,
       });
     } catch (err) {
+      console.error('[runs] AI failure diagnosis failed:', logSafe(err.message));
       const firstJob = failedJobs[0];
       explanation = {
         summary: `Job "${firstJob.jobName}" failed during ${firstJob.stage || 'execution'}.`,
@@ -812,7 +822,9 @@ async function diagnoseAndFix(req, res) {
           'Add retry or timeout guards if the failure was caused by transient network issues.',
         ],
         hasSecurityIssue: false,
-        warning: err.message,
+        // Provider errors can include upstream details; production gets a
+        // fixed message (the detail is logged above).
+        warning: IS_PROD ? 'AI diagnosis unavailable' : `AI diagnosis unavailable: ${err.message}`,
       };
     }
 
@@ -840,16 +852,19 @@ async function diagnoseAndFix(req, res) {
           changeLog: Array.isArray(remResult?.changeLog) ? remResult.changeLog : [],
           commitMessage: remResult?.commitMessage || 'fix: auto-remediation by FlowForge',
         };
-      } catch {
+      } catch (err) {
+        // Report that no fix was produced instead of returning an annotated
+        // copy of the original YAML that looks like a change.
+        console.error('[runs] auto-remediation failed:', logSafe(err.message));
         remediation = {
-          patchedYaml: `# FlowForge-fix: Reviewed failure in ${failedJobs[0]?.jobName || 'pipeline'}\n${rawYaml}`,
-          changeLog: [
-            {
-              job: failedJobs[0]?.jobName || 'pipeline',
-              change: explanation.suggestedFixes?.[0] || 'Added FlowForge remediation annotation',
-            },
-          ],
-          commitMessage: `fix(ci): remediate ${failedJobs[0]?.jobName || 'pipeline'} failure`,
+          patchedYaml: rawYaml,
+          changeLog: [],
+          commitMessage: 'fix: auto-remediation by FlowForge',
+          // Provider errors can include upstream details; keep them out of
+          // production responses (logged above instead).
+          warning: IS_PROD
+            ? 'AI remediation unavailable'
+            : `AI remediation unavailable: ${err.message}`,
         };
       }
     }
@@ -864,10 +879,24 @@ async function diagnoseAndFix(req, res) {
       patchedYaml: remediation.patchedYaml,
       changeLog: remediation.changeLog,
       commitMessage: remediation.commitMessage,
+      warning: remediation.warning,
     });
   } catch (err) {
     const status = err.status || 500;
-    return res.status(status).json({ error: err.message || 'Failed to diagnose and fix pipeline run' });
+    // 4xx errors describe the caller's own input, which can include values
+    // they typed, so only the status is logged; 5xx keep a cleaned message.
+    if (status >= 500) {
+      console.error('[runs] diagnose-and-fix failed (%d): %s', Number(status) || 500, logSafe(err.message));
+    } else {
+      console.warn('[runs] diagnose-and-fix rejected request (%d)', Number(status));
+    }
+    // 4xx messages are ours or the CI platform's (e.g. bad credentials) and help
+    // the user; server errors only show details outside production.
+    const message =
+      status < 500 || !IS_PROD
+        ? err.message || 'Failed to diagnose and fix pipeline run'
+        : 'Failed to diagnose and fix pipeline run';
+    return res.status(status).json({ error: message });
   }
 }
 

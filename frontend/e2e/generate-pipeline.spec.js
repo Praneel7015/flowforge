@@ -1,43 +1,37 @@
 import { test, expect } from '@playwright/test';
+import { openStudio, waitForBuilder, openPanel } from './helpers';
 
-test.describe('Generate Pipeline', () => {
+test.describe('AI Generator', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => {
-      localStorage.setItem('flowforge.hasVisited.v1', 'true');
-      localStorage.setItem('flowforge.onboarding.v1', JSON.stringify({ status: 'completed' }));
-      localStorage.setItem('flowforge.preferences.v1', JSON.stringify({
-        selectedProviders: { ai: 'ollama', cicd: 'gitlab' },
-        llmType: 'local',
-        byomConfig: { enabled: false, model: '', baseUrl: '' },
-      }));
-    });
-    await page.reload();
+    await openStudio(page, { cicd: 'github' });
+    await waitForBuilder(page);
+    await openPanel(page, 'AI Generator');
   });
 
-  test('should navigate to Generate panel', async ({ page }) => {
-    await page.waitForSelector('text=Workflow Builder', { timeout: 10000 });
-    await page.click('text=Generate');
-    await expect(page.locator('text=Build a pipeline from plain language')).toBeVisible();
+  test('shows the generator for the selected platform', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Generate a GitHub Actions pipeline' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Generate GitHub Actions Pipeline/ })).toBeVisible();
   });
 
-  test('should show example prompts', async ({ page }) => {
-    await page.click('text=Generate');
-    await page.waitForSelector('text=Example prompts', { timeout: 10000 });
-    await expect(page.locator('text=Example prompts')).toBeVisible();
+  test('shows prompt boosters and example prompts', async ({ page }) => {
+    await expect(page.getByText('Quick Prompt Boosters')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /example prompts/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Load Production Template' })).toBeVisible();
   });
 
-  test('should show prompt boosters', async ({ page }) => {
-    await page.click('text=Generate');
-    await expect(page.locator('text=Prompt Boosters')).toBeVisible();
-    await expect(page.locator('text=Load Production Template')).toBeVisible();
-  });
-
-  test('should fill prompt area when clicking Load Production Template', async ({ page }) => {
-    await page.click('text=Generate');
-    await page.click('text=Load Production Template');
-    const textarea = page.locator('textarea');
-    const value = await textarea.inputValue();
+  test('Load Production Template fills the prompt', async ({ page }) => {
+    await page.getByRole('button', { name: 'Load Production Template' }).click();
+    const value = await page.locator('textarea').first().inputValue();
     expect(value.length).toBeGreaterThan(50);
+  });
+
+  test('generating without an AI key still returns an editable pipeline', async ({ page }) => {
+    // The 45s wait below must fit inside the test timeout (default 30s).
+    test.setTimeout(75000);
+    // CI has no provider keys, so this exercises the deterministic fallback.
+    await page.locator('textarea').first().fill('Node.js service with lint, unit tests and a deploy to production');
+    await page.getByRole('button', { name: /Generate GitHub Actions Pipeline/ }).click();
+    await expect(page.locator('.react-flow__node').first()).toBeVisible({ timeout: 45000 });
+    expect(await page.locator('.react-flow__node').count()).toBeGreaterThan(2);
   });
 });

@@ -1,0 +1,52 @@
+language: en-US
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/dist/**"
+  path_instructions:
+    - path: "backend/**/*.js"
+      instructions: |
+        Express API that calls LLM providers and Git hosts with user-supplied
+        URLs and credentials. Flag: any outbound request to a user-controlled
+        URL that skips utils/ssrf.js, server-side API keys reaching a
+        user-chosen host, secrets in logs or error responses, and errors
+        that leak internal details when NODE_ENV=production.
+    - path: "backend/providers/cicd/**"
+      instructions: |
+        Generators must be deterministic: same nodes/edges in, same config out.
+        Check job dependencies through conditional nodes and duplicate job names.
+    - path: "frontend/src/**/*.{js,jsx}"
+      instructions: |
+        React 18 + React Flow. Flag hook dependency bugs, state rendered as
+        objects in JSX, and any API key or credential written to
+        localStorage, sessionStorage or cookies (keys must stay in memory).
+    - path: "backend/test/**"
+      instructions: Prefer focused node:test cases that cover error paths and security guards.
+  pre_merge_checks:
+    # The 80% docstring target is CodeRabbit's default, not a repo rule.
+    docstrings:
+      mode: "off"
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "^main$"
+  tools:
+    eslint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+chat:
+  auto_reply: true

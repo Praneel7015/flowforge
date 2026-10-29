@@ -6,10 +6,17 @@
  * endpoints, localhost admin panels, private ranges) and use the server as a
  * proxy. This performs a literal-address check that blocks the common payloads.
  *
- * Note: this validates the literal host in the URL. It does NOT defend against a
- * public hostname that resolves to a private IP via DNS (DNS rebinding); that
- * needs a pinned-lookup HTTP agent. See BLOCK_DNS_REBINDING in the README TODO.
+ * inspectUrl() validates the literal host in the URL. On its own that does not
+ * stop a public hostname that resolves to a private IP (DNS rebinding), so
+ * outbound clients for user-supplied URLs also use safeLookup / safeAgents,
+ * which validate the addresses at connect time.
  */
+const dns = require('dns');
+const net = require('net');
+const http = require('http');
+const https = require('https');
+const { logSafe } = require('./logSafe');
+const { Agent: UndiciAgent, fetch: undiciFetch } = require('undici');
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -62,19 +69,29 @@ function normalizeIpv6(host) {
 function isPrivateIPv6(host) {
   const addr = normalizeIpv6(host);
   if (addr === '::1' || addr === '::') return true;
-  if (addr.startsWith('fe80')) return true; // link-local
+  if (/^fe[89ab][0-9a-f]:/.test(addr)) return true; // link-local fe80::/10 (fe80–febf)
   if (addr.startsWith('fc') || addr.startsWith('fd')) return true; // unique local
   // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
   const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped) return isPrivateIPv4(mapped[1]);
+  // The WHATWG URL parser rewrites [::ffff:127.0.0.1] to [::ffff:7f00:1], so
+  // the hex form must be decoded too. Deprecated IPv4-compatible addresses
+  // (::7f00:1) are treated the same way.
+  const hexMapped = addr.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexMapped) {
+    const high = parseInt(hexMapped[1], 16);
+    const low = parseInt(hexMapped[2], 16);
+    return isPrivateIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
   return false;
 }
 
 /**
  * @param {string} rawUrl
+ * @param {{ requireHttps?: boolean }} [options] Require TLS for URLs carrying credentials.
  * @returns {{ safe: boolean, reason?: string }}
  */
-function inspectUrl(rawUrl) {
+function inspectUrl(rawUrl, { requireHttps = false } = {}) {
   if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
     return { safe: false, reason: 'URL is empty' };
   }
@@ -88,6 +105,9 @@ function inspectUrl(rawUrl) {
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { safe: false, reason: `Protocol ${parsed.protocol} is not allowed` };
+  }
+  if (requireHttps && parsed.protocol !== 'https:') {
+    return { safe: false, reason: 'custom endpoints must use https://' };
   }
 
   const hostname = parsed.hostname.toLowerCase();
@@ -115,4 +135,69 @@ function isSafePublicUrl(rawUrl) {
   return inspectUrl(rawUrl).safe;
 }
 
-module.exports = { inspectUrl, isSafePublicUrl, isPrivateIPv4, isPrivateIPv6 };
+function isPrivateAddress(address, family) {
+  return family === 6 || net.isIPv6(address) ? isPrivateIPv6(address) : isPrivateIPv4(address);
+}
+
+/**
+ * DNS lookup for sockets that rejects private, loopback and link-local
+ * addresses. Every resolved address is checked and the socket connects only
+ * to those, so there is no second resolution an attacker can rebind. The URL
+ * hostname is unchanged, so TLS SNI and certificate checks still use it.
+ */
+function createSafeLookup(baseLookup = dns.lookup) {
+  return function safeLookup(hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    baseLookup(hostname, { ...options, all: true }, (err, addresses) => {
+      if (err) return callback(err);
+      const list = Array.isArray(addresses) ? addresses : [];
+      const blocked = list.find((a) => isPrivateAddress(a.address, a.family));
+      if (list.length === 0 || blocked) {
+        // Callers can see this message, so it must not reveal internal DNS
+        // answers; the resolved address is only logged server-side.
+        console.warn(`[ssrf] blocked ${logSafe(hostname)} -> ${blocked ? blocked.address : 'no addresses'}`);
+        const error = new Error(`Blocked: ${hostname} does not resolve to a public address`);
+        error.code = 'ESSRFBLOCKED';
+        return callback(error);
+      }
+      if (options.all) return callback(null, list);
+      return callback(null, list[0].address, list[0].family);
+    });
+  };
+}
+
+const safeLookup = createSafeLookup();
+
+/** http/https agents for axios clients that call user-supplied URLs. */
+// proxy: false makes axios ignore HTTP(S)_PROXY env vars; through a proxy the
+// lookup would validate the proxy's address, not the real destination.
+const safeAgents = {
+  httpAgent: new http.Agent({ lookup: safeLookup }),
+  httpsAgent: new https.Agent({ lookup: safeLookup }),
+  proxy: false,
+};
+
+/**
+ * fetch for SDK clients (OpenAI, Groq) calling user-supplied base URLs: the
+ * same connect-time address check as safeAgents, and no redirects. Uses
+ * undici's own fetch so the dispatcher always matches its version.
+ */
+const safeDispatcher = new UndiciAgent({ connect: { lookup: safeLookup } });
+
+function safeFetch(url, init = {}) {
+  return undiciFetch(url, { ...init, redirect: 'error', dispatcher: safeDispatcher });
+}
+
+module.exports = {
+  inspectUrl,
+  isSafePublicUrl,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  createSafeLookup,
+  safeLookup,
+  safeAgents,
+  safeFetch,
+};

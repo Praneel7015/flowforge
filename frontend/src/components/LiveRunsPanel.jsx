@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { BUILT_IN_TEMPLATES } from './NodeTemplates';
-import { simulatePipeline, reviewFix } from '../utils/pipelineChecks';
+import { simulatePipeline, reviewFix, jobsWithoutScripts } from '../utils/pipelineChecks';
 
 const CREDS_KEY = 'flowforge.platformCredentials.v1';
 const RUN_PLATFORMS = [
@@ -90,7 +90,7 @@ export default function LiveRunsPanel({
   );
   const [repoSlug, setRepoSlug] = useState('');
   const [branch, setBranch] = useState('main');
-  const [runs, setRuns] = useState([]);
+  const [, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -270,8 +270,19 @@ export default function LiveRunsPanel({
     onUpdateNodeStatuses?.(buildOverlayMapFromJobs(initialJobs, simNodes));
 
     if (results.length === 0) {
+      setSelectedRun((prev) => (prev ? { ...prev, status: 'failed' } : prev));
+      setRuns((prev) => prev.map((r) => (r.id === simRunId ? { ...r, status: 'failed' } : r)));
+      setNotice('Nothing ran: the canvas has no job nodes. Add stages or load a template, then simulate again.');
       setSimulating(false);
-      return;
+      return { unscripted: 0 };
+    }
+
+    // F: jobs without a script would "pass" without being checked; say so.
+    const unscripted = jobsWithoutScripts(simNodes).length;
+    if (unscripted > 0) {
+      setNotice(
+        `${unscripted} job${unscripted === 1 ? '' : 's'} on the canvas ${unscripted === 1 ? 'has' : 'have'} no script, so the simulator can't verify ${unscripted === 1 ? 'it' : 'them'}.`
+      );
     }
 
     results.forEach((result, idx) => {
@@ -308,6 +319,7 @@ export default function LiveRunsPanel({
       }, idx * 950 + 900);
       simTimersRef.current.push(finishTimer);
     });
+    return { unscripted };
   }, [clearSimTimers, onApplyFixedPipeline, currentYaml, branch, onUpdateNodeStatuses]);
 
   const handleSimulateLiveRun = useCallback(() => {
@@ -322,15 +334,30 @@ export default function LiveRunsPanel({
     setNotice('');
     setWarningsAcknowledged(false);
     try {
+      const simulated = String(selectedRun?.id || '').startsWith('sim_');
+      const [owner, repo] = repoSlug.trim().split('/');
+      // Simulated runs send their generated logs (every failed job, so one fix
+      // covers all of them). Real runs send the run ID so the backend fetches
+      // the actual CI logs instead of a made-up placeholder.
+      const source = simulated || !selectedRun
+        ? {
+            failedLogs: targets.map((j) => ({
+              jobName: j.name,
+              stage: j.stage,
+              log: j.logs || `Job "${j.name}" failed during CI execution (no log captured).`,
+            })),
+          }
+        : {
+            runId: selectedRun.id,
+            credentials: getPlatformCredentials(),
+            owner: owner || '',
+            repo: repo || repoSlug.trim(),
+            projectSlug: repoSlug.trim(),
+          };
       const { data } = await axios.post('/api/runs/diagnose-and-fix', {
         platform,
         yaml: currentYaml,
-        // Send every failed job so one fix covers all of them, not just the first.
-        failedLogs: targets.map((j) => ({
-          jobName: j.name,
-          stage: j.stage,
-          log: j.logs || `Job "${j.name}" failed with exit code 1 during CI execution.`,
-        })),
+        ...source,
         aiProvider,
         cicdPlatform,
         aiOptions,
@@ -347,6 +374,8 @@ export default function LiveRunsPanel({
         changeLog: Array.isArray(changeLog) ? changeLog : [],
         review: reviewFix(currentYaml, patchedYaml),
       });
+      const warning = toText(data?.warning || data?.remediation?.warning);
+      if (warning) setNotice(`${warning}. The diagnosis is shown, but no fix was generated.`);
     } catch (err) {
       setError(err.response?.data?.error || 'AI diagnosis failed. Check the AI provider in Settings and retry.');
     } finally {
@@ -383,8 +412,12 @@ export default function LiveRunsPanel({
       });
 
       if (isSimulatedRun) {
-        runSimulation({ nodes, edges });
-        setNotice('Fix applied. Re-running the pipeline to verify it.');
+        const { unscripted } = runSimulation({ nodes, edges }) || {};
+        setNotice(
+          unscripted
+            ? `Fix applied and re-running, but ${unscripted} job${unscripted === 1 ? '' : 's'} came back without a script (e.g. multi-line Jenkins sh blocks), so this run can't fully verify the fix.`
+            : 'Fix applied. Re-running the pipeline to verify it.'
+        );
       } else {
         const pendingJobs = jobs.map((j) => ({ ...j, status: 'pending', duration: '—' }));
         setJobs(pendingJobs);

@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars -- abstract base class: parameters document the contract subclasses implement */
 /**
  * Abstract base class for AI providers.
  * All AI providers must implement these methods.

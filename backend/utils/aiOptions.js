@@ -30,9 +30,13 @@ function sanitizeBaseUrl(value) {
   if (!url) return undefined;
   // SSRF guard: reject internal/loopback/metadata targets so a caller cannot
   // use the backend to reach hosts it should not.
-  const inspection = inspectUrl(url);
+  // API keys are sent to this URL: never over plain HTTP.
+  const inspection = inspectUrl(url, { requireHttps: true });
   if (!inspection.safe) {
     throw badRequest(`Rejected baseUrl: ${inspection.reason}`);
+  }
+  if (!/^https:\/\//i.test(url)) {
+    throw badRequest('Rejected baseUrl: custom endpoints must use https://');
   }
   return url;
 }
@@ -40,7 +44,9 @@ function sanitizeBaseUrl(value) {
 function sanitizePattern(value, pattern, label) {
   const text = sanitizeText(value, 100);
   if (!text) return undefined;
-  if (!pattern.test(text)) throw badRequest(`Invalid ${label}: ${text}`);
+  // Name the field only: a secret pasted into the wrong field must not be
+  // echoed back in the response or written to logs.
+  if (!pattern.test(text)) throw badRequest(`Invalid ${label}`);
   return text;
 }
 

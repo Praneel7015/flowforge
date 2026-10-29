@@ -1,42 +1,23 @@
 import { test, expect } from '@playwright/test';
+import { openStudio, waitForBuilder, openPanel } from './helpers';
 
-test.describe('Migrate Pipeline', () => {
+test.describe('Migrate', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(() => {
-      localStorage.setItem('flowforge.hasVisited.v1', 'true');
-      localStorage.setItem('flowforge.onboarding.v1', JSON.stringify({ status: 'completed' }));
-      localStorage.setItem('flowforge.preferences.v1', JSON.stringify({
-        selectedProviders: { ai: 'ollama', cicd: 'gitlab' },
-        llmType: 'local',
-        byomConfig: { enabled: false, model: '', baseUrl: '' },
-      }));
-    });
-    await page.reload();
+    await openStudio(page, { cicd: 'github' });
+    await waitForBuilder(page);
+    await openPanel(page, 'Migrate');
   });
 
-  test('should navigate to Migrate panel', async ({ page }) => {
-    await page.waitForSelector('text=Workflow Builder', { timeout: 10000 });
-    await page.click('text=Migrate');
-    await expect(page.locator('text=Convert CI/CD Configurations')).toBeVisible();
+  test('shows the converter with source and target platforms', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Convert CI/CD Configurations' })).toBeVisible();
+    await expect(page.getByText('Source Platform', { exact: true })).toBeVisible();
+    await expect(page.getByText('Target Platform', { exact: true })).toBeVisible();
+    await expect(page.getByText('Conversion: Jenkins Pipeline -> GitHub Actions')).toBeVisible();
   });
 
-  test('should show source and target platform selectors', async ({ page }) => {
-    await page.click('text=Migrate');
-    await expect(page.locator('text=Source Platform')).toBeVisible();
-    await expect(page.locator('text=Target Platform')).toBeVisible();
-  });
-
-  test('should load example config when clicking Load Example', async ({ page }) => {
-    await page.click('text=Migrate');
-    await page.click('text=Load Example');
-    const textarea = page.locator('textarea');
-    const value = await textarea.inputValue();
-    expect(value.length).toBeGreaterThan(20);
-  });
-
-  test('should show conversion direction', async ({ page }) => {
-    await page.click('text=Migrate');
-    await expect(page.locator('text=Conversion:')).toBeVisible();
+  test('Load Example fills the source config', async ({ page }) => {
+    await page.getByRole('button', { name: 'Load Example' }).click();
+    const value = await page.locator('textarea').first().inputValue();
+    expect(value).toContain('stage(');
   });
 });

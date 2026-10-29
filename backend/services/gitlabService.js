@@ -254,7 +254,7 @@ async function pushUserFile(token, instanceUrl, projectId, filePath, content, co
   const encodedPath = encodeURIComponent(filePath);
 
   // Check if file exists to decide create vs update
-  let exists = false;
+  let exists;
   try {
     await client.get(`/projects/${encodedProject}/repository/files/${encodedPath}`, {
       params: { ref: branch },
@@ -295,7 +295,7 @@ async function createUserBranch(token, instanceUrl, projectId, branchName, fromR
     return { name: data.name };
   } catch (err) {
     if (err.response?.status === 400) {
-      throw new Error(`Branch "${branchName}" already exists`);
+      throw new Error(`Branch "${branchName}" already exists`, { cause: err });
     }
     throw toApiError('create branch', err);
   }
@@ -401,7 +401,7 @@ async function getPipelineLogsWithCreds(projectId, pipelineId, { token, instance
 
     const logs = await Promise.all(
       failedJobs.map(async (job) => {
-        let traceText = '';
+        let traceText;
         try {
           const { data: trace } = await client.get(`/projects/${encoded}/jobs/${job.id}/trace`, {
             transformResponse: [(d) => d],

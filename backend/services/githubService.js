@@ -183,7 +183,7 @@ async function createBranch(token, owner, repo, branchName, fromRef) {
     return { name: branchName, sha };
   } catch (err) {
     if (err.response?.status === 422) {
-      throw new Error(`Branch "${branchName}" already exists`);
+      throw new Error(`Branch "${branchName}" already exists`, { cause: err });
     }
     throw toApiError('create branch', err);
   }

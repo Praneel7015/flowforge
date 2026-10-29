@@ -626,6 +626,109 @@ function joinCommands(value) {
   return '';
 }
 
+// Jenkins `sh` steps in the forms people actually write:
+//   sh 'cmd'   sh "echo 'x'"   sh '''multi\nline'''   sh """..."""
+//   sh(script: 'cmd', returnStdout: true)   sh label: 'Build', script: 'cmd'
+// A single forward scan (no regex backtracking, so a crafted Jenkinsfile
+// can't stall the server) that skips Groovy comments and unrelated strings.
+const GROOVY_QUOTES = ["'''", '"""', "'", '"'];
+const isIdentChar = (ch) => ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
+
+/** Reads a Groovy string literal at `i`; returns { value, end } or null. */
+function readGroovyString(src, i) {
+  const quote = GROOVY_QUOTES.find((q) => src.startsWith(q, i));
+  if (!quote) return null;
+  let j = i + quote.length;
+  let value = '';
+  while (j < src.length) {
+    if (src[j] === '\\') {
+      value += src.slice(j, j + 2);
+      j += 2;
+      continue;
+    }
+    if (src.startsWith(quote, j)) return { value, end: j + quote.length };
+    if (quote.length === 1 && src[j] === '\n') return null;
+    value += src[j];
+    j += 1;
+  }
+  return null;
+}
+
+const skipSpaces = (src, j) => {
+  while (j < src.length && /\s/.test(src[j])) j += 1;
+  return j;
+};
+
+/** Parses the arguments after `sh` at `j`; returns { script, end } or null. */
+function readShCall(src, j) {
+  j = skipSpaces(src, j);
+  if (src[j] === '(') j = skipSpaces(src, j + 1);
+
+  const positional = readGroovyString(src, j);
+  if (positional) return { script: positional.value, end: positional.end };
+
+  // Named arguments: name: value, name: value, ... (script: is the command)
+  let script = null;
+  for (;;) {
+    const nameStart = j;
+    while (isIdentChar(src[j])) j += 1;
+    if (j === nameStart) break;
+    const name = src.slice(nameStart, j);
+    j = skipSpaces(src, j);
+    if (src[j] !== ':') break;
+    j = skipSpaces(src, j + 1);
+    const str = readGroovyString(src, j);
+    if (str) {
+      if (name === 'script') script = str.value;
+      j = str.end;
+    } else {
+      const valueStart = j;
+      while (isIdentChar(src[j]) || src[j] === '.') j += 1;
+      if (j === valueStart) break;
+    }
+    j = skipSpaces(src, j);
+    if (src[j] !== ',') break;
+    j = skipSpaces(src, j + 1);
+  }
+  return script === null ? null : { script, end: j };
+}
+
+function extractJenkinsShScripts(stageBody) {
+  const src = String(stageBody || '');
+  const commands = [];
+  let i = 0;
+  while (i < src.length) {
+    if (src.startsWith('//', i)) {
+      const eol = src.indexOf('\n', i);
+      i = eol === -1 ? src.length : eol + 1;
+      continue;
+    }
+    if (src.startsWith('/*', i)) {
+      const close = src.indexOf('*/', i + 2);
+      i = close === -1 ? src.length : close + 2;
+      continue;
+    }
+    if (src[i] === "'" || src[i] === '"') {
+      const str = readGroovyString(src, i);
+      i = str ? str.end : i + 1;
+      continue;
+    }
+    if (src.startsWith('sh', i) && !isIdentChar(src[i - 1]) && !isIdentChar(src[i + 2])) {
+      const call = readShCall(src, i + 2);
+      if (call) {
+        for (const line of call.script.split('\n')) {
+          const command = line.trim();
+          if (command) commands.push(command);
+        }
+        i = call.end;
+        continue;
+      }
+    }
+    i += 1;
+  }
+  return commands;
+}
+
 function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
   const supportedNodeTypes = getSupportedNodeTypes();
   const rawText = typeof configText === 'string' ? stripCodeFences(configText) : '';
@@ -652,13 +755,7 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
       const stageName = match[1].trim();
       const body = match[2] || '';
       const key = `stage_${rawJobs.length + 1}`;
-      const scripts = [];
-      const shRegex = /\bsh\s+(?:script:\s*)?['"]([^'"]+)['"]/g;
-      let shMatch = shRegex.exec(body);
-      while (shMatch) {
-        scripts.push(shMatch[1].trim());
-        shMatch = shRegex.exec(body);
-      }
+      const scripts = extractJenkinsShScripts(body);
 
       const config = { stage: stageName };
       if (scripts.length > 0) config.script = scripts.join('\n');
@@ -675,7 +772,7 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
       match = stageRegex.exec(rawText);
     }
   } else if (rawText) {
-    let doc = null;
+    let doc;
     try {
       doc = yaml.load(rawText);
     } catch {
@@ -1703,34 +1800,30 @@ function extractLatestMessageText(messages, preferredRole = 'user') {
   return preferredRole ? extractLatestMessageText(messages, '') : '';
 }
 
+const N8N_SAFE_AI_OPTION_KEYS = ['model', 'region', 'location', 'projectId'];
+
 function sanitizeN8NAIOptions(aiOptions) {
   if (!aiOptions || typeof aiOptions !== 'object' || Array.isArray(aiOptions)) {
     return null;
   }
 
-  const blockedKeys = new Set([
-    'apikey',
-    'api_key',
-    'token',
-    'auth',
-    'authorization',
-    'authtoken',
-    'access_token',
-  ]);
-
+  // Allowlist, not a blocklist: new credential fields (AWS keys, service
+  // account JSON, ...) must never reach the webhook just because nobody
+  // remembered to block their names.
   const sanitized = {};
 
-  for (const [key, rawValue] of Object.entries(aiOptions)) {
-    if (blockedKeys.has(String(key || '').toLowerCase())) continue;
+  for (const key of N8N_SAFE_AI_OPTION_KEYS) {
+    const rawValue = aiOptions[key];
+    if (typeof rawValue !== 'string' || !rawValue.trim()) continue;
+    sanitized[key] = rawValue.trim().slice(0, 200);
+  }
 
-    if (typeof rawValue === 'string') {
-      const value = rawValue.trim();
-      if (value) sanitized[key] = value.slice(0, 500);
-      continue;
-    }
-
-    if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
-      sanitized[key] = rawValue;
+  // Base URLs can carry secrets in userinfo or the query string; keep the origin only.
+  if (typeof aiOptions.baseUrl === 'string' && aiOptions.baseUrl.trim()) {
+    try {
+      sanitized.baseUrl = new URL(aiOptions.baseUrl.trim()).origin;
+    } catch {
+      // Malformed URLs are dropped.
     }
   }
 
@@ -1866,7 +1959,6 @@ ${currentYaml || '# No pipeline loaded yet — drag nodes onto the canvas or use
   try {
     return await provider.chat(system, messages, { maxTokens: 2048 });
   } catch (err) {
-    const latestMsg = extractLatestMessageText(messages, 'user').toLowerCase();
     const health = buildHeuristicHealthReport(currentYaml || '', metadata.displayName);
     const tips = health.topRecommendations.map((t) => `- ${t}`).join('\n');
     return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Check the AI provider and API key in **Settings**.*`;
@@ -1944,4 +2036,7 @@ module.exports = {
   autoRemediatePipeline,
   pipelineChat,
   parseConfigToDAG,
+  // Exported for tests.
+  sanitizeN8NAIOptions,
+  buildN8NChatPayload,
 };
