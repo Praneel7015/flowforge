@@ -9,17 +9,23 @@ function formatTime(date) {
 
 const CHAT_IDENTITY_STORAGE_KEY = 'flowforge.chatIdentity.v1';
 
+// Ids double as n8n memory/session keys, so use the CSPRNG, never Math.random.
+// getRandomValues also works on non-secure (http) pages, unlike randomUUID.
+function randomHex(bytes = 8) {
+  const values = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(values, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function createRandomId(prefix = 'ff') {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`;
   }
-
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${randomHex(16)}`;
 }
 
 function createConversationId(userId) {
   const userFragment = String(userId || 'anon').replace(/[^a-zA-Z0-9_-]/g, '').slice(-8) || 'anon';
-  return `${userFragment}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${userFragment}-${Date.now().toString(36)}-${randomHex(6)}`;
 }
 
 function readOrCreateChatIdentity() {

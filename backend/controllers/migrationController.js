@@ -1,4 +1,6 @@
 const aiService = require('../services/aiService');
+const { logSafe } = require('../utils/logSafe');
+const { sendError } = require('../utils/sendError');
 const { buildAIOptions } = require('../utils/aiOptions');
 
 async function convertPipeline(req, res) {
@@ -28,8 +30,8 @@ async function convertPipeline(req, res) {
 
     return res.json(result);
   } catch (err) {
-    console.error('convertPipeline error:', err.message);
-    return res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to convert pipeline: ' + err.message });
+    console.error('convertPipeline error: %s', logSafe(err.message));
+    return sendError(res, err, 'Failed to convert pipeline');
   }
 }
 
@@ -48,8 +50,8 @@ async function convertJenkinsfile(req, res) {
     });
     res.json(result);
   } catch (err) {
-    console.error('convertJenkinsfile error:', err.message);
-    res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to convert Jenkinsfile: ' + err.message });
+    console.error('convertJenkinsfile error: %s', logSafe(err.message));
+    sendError(res, err, 'Failed to convert Jenkinsfile');
   }
 }
 

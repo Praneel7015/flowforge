@@ -1,4 +1,6 @@
 const aiService = require('../services/aiService');
+const { logSafe } = require('../utils/logSafe');
+const { sendError } = require('../utils/sendError');
 const { buildAIOptions } = require('../utils/aiOptions');
 const { scanForSecrets } = require('../utils/secretScanner');
 
@@ -61,8 +63,8 @@ async function healthScore(req, res) {
     });
     res.json(report);
   } catch (err) {
-    console.error('healthScore error:', err.message);
-    res.status(err.status === 400 ? 400 : 500).json({ error: 'Health analysis failed: ' + err.message });
+    console.error('healthScore error: %s', logSafe(err.message));
+    sendError(res, err, 'Health analysis failed');
   }
 }
 
@@ -84,8 +86,8 @@ async function remediate(req, res) {
     });
     res.json(result);
   } catch (err) {
-    console.error('remediate error:', err.message);
-    res.status(err.status === 400 ? 400 : 500).json({ error: 'Auto-remediation failed: ' + err.message });
+    console.error('remediate error: %s', logSafe(err.message));
+    sendError(res, err, 'Auto-remediation failed');
   }
 }
 
@@ -117,8 +119,8 @@ async function chat(req, res) {
     });
     res.json({ reply });
   } catch (err) {
-    console.error('chat error:', err.message);
-    res.status(err.status === 400 ? 400 : 500).json({ error: 'Chat failed: ' + err.message });
+    console.error('chat error: %s', logSafe(err.message));
+    sendError(res, err, 'Chat failed');
   }
 }
 

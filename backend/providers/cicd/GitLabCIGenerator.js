@@ -76,7 +76,7 @@ class GitLabCIGenerator extends CICDGenerator {
 
       const jobName = jobNameMap[node.id] || this._getJobName(node);
       const defaultScripts =
-        mapping.template.script || [`echo "Running ${node.data?.label || node.type}..."`];
+        mapping.template.script || [this._echoLabel(node.data?.label || node.type)];
       const job = {
         stage,
         script: this._normalizeScripts(node.data?.config?.script, defaultScripts),
@@ -115,7 +115,7 @@ class GitLabCIGenerator extends CICDGenerator {
           job.script = this._normalizeScripts(
             undefined,
             approver
-              ? `echo "Waiting for approval from ${approver}"`
+              ? `echo 'Waiting for approval from ${this._shellText(approver)}'`
               : 'echo "Waiting for manual approval"'
           );
         }
@@ -132,7 +132,7 @@ class GitLabCIGenerator extends CICDGenerator {
         if (!node.data?.config?.script) {
           job.script = this._normalizeScripts(
             undefined,
-            `echo "Deploying canary with ${trafficPercent}% traffic"`
+            `echo 'Deploying canary with ${this._shellText(trafficPercent)}% traffic'`
           );
         }
       }
@@ -148,7 +148,7 @@ class GitLabCIGenerator extends CICDGenerator {
         if (!node.data?.config?.script) {
           job.script = this._normalizeScripts(
             undefined,
-            `echo "Switching active environment to ${activeColor}"`
+            `echo 'Switching active environment to ${this._shellText(activeColor)}'`
           );
         }
       }

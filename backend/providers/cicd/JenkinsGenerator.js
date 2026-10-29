@@ -4,6 +4,15 @@
  */
 const CICDGenerator = require('./CICDGenerator');
 
+// User text (labels, scripts, approvers, cache keys…) is placed inside
+// single-quoted Groovy strings. Escape backslashes as well as quotes and line
+// breaks in one pass; escaping only quotes lets "\\'" or a newline end the
+// string early and inject Jenkinsfile code.
+const GROOVY_SPECIAL = /[\\'\r\n]/g;
+const GROOVY_ESCAPES = { '\\': '\\\\', "'": "\\'", '\r': '\\r', '\n': '\\n' };
+const escapeGroovyChar = (ch) => GROOVY_ESCAPES[ch];
+const escapeGroovy = (value) => String(value).replace(GROOVY_SPECIAL, escapeGroovyChar);
+
 class JenkinsGenerator extends CICDGenerator {
   constructor() {
     super();
@@ -68,11 +77,10 @@ class JenkinsGenerator extends CICDGenerator {
     jenkinsfile += '    stages {\n';
 
     for (const node of stages) {
-      const stageName = node.data?.label || this._capitalize(node.type);
-      const scripts = this._normalizeScripts(
-        node.data?.config?.script,
-        `echo "Running ${stageName}..."`
-      );
+      const rawLabel = node.data?.label || this._capitalize(node.type);
+      const stageName = escapeGroovy(rawLabel);
+      // Raw label here: scripts are Groovy-escaped once, when they are written out.
+      const scripts = this._normalizeScripts(node.data?.config?.script, this._echoLabel(rawLabel));
 
       if (node.type === 'matrix_build') {
         const matrix = this._parseMatrix(node.data?.config?.matrix, {
@@ -80,9 +88,9 @@ class JenkinsGenerator extends CICDGenerator {
         });
         const axisBlock = Object.entries(matrix)
           .map(([axisName, axisValues]) => {
-            const safeAxisName = String(axisName).replace(/'/g, "\\'");
+            const safeAxisName = String(axisName).replace(GROOVY_SPECIAL, escapeGroovyChar);
             const safeValues = axisValues
-              .map((value) => `'${String(value).replace(/'/g, "\\'")}'`)
+              .map((value) => `'${String(value).replace(GROOVY_SPECIAL, escapeGroovyChar)}'`)
               .join(', ');
 
             return [
@@ -104,7 +112,7 @@ class JenkinsGenerator extends CICDGenerator {
         jenkinsfile += '                        steps {\n';
 
         for (const script of scripts) {
-          const escapedScript = script.replace(/'/g, "\\'");
+          const escapedScript = script.replace(GROOVY_SPECIAL, escapeGroovyChar);
           jenkinsfile += `                            sh '${escapedScript}'\n`;
         }
 
@@ -118,7 +126,7 @@ class JenkinsGenerator extends CICDGenerator {
 
       if (node.type === 'approval_gate') {
         const approver = node.data?.config?.approver
-          ? String(node.data.config.approver).replace(/'/g, "\\'")
+          ? String(node.data.config.approver).replace(GROOVY_SPECIAL, escapeGroovyChar)
           : null;
 
         jenkinsfile += `        stage('${stageName}') {\n`;
@@ -137,35 +145,35 @@ class JenkinsGenerator extends CICDGenerator {
       jenkinsfile += '            steps {\n';
 
       if (node.type === 'cache_restore') {
-        const cacheKey = String(node.data?.config?.cacheKey || 'build-cache').replace(/'/g, "\\'");
+        const cacheKey = String(node.data?.config?.cacheKey || 'build-cache').replace(GROOVY_SPECIAL, escapeGroovyChar);
         jenkinsfile += '                script {\n';
         jenkinsfile += `                    try { unstash '${cacheKey}' } catch (err) { echo 'No cache found for ${cacheKey}' }\n`;
         jenkinsfile += '                }\n';
       }
 
       if (node.type === 'cache_save') {
-        const cacheKey = String(node.data?.config?.cacheKey || 'build-cache').replace(/'/g, "\\'");
+        const cacheKey = String(node.data?.config?.cacheKey || 'build-cache').replace(GROOVY_SPECIAL, escapeGroovyChar);
         const cachePaths = this._parseList(node.data?.config?.cachePaths, ['node_modules/**'])
           .join(', ')
-          .replace(/'/g, "\\'");
+          .replace(GROOVY_SPECIAL, escapeGroovyChar);
         jenkinsfile += `                stash name: '${cacheKey}', includes: '${cachePaths}'\n`;
       }
 
       if (node.type === 'canary_deploy' && !node.data?.config?.script) {
-        const trafficPercent = String(node.data?.config?.trafficPercent || '10').replace(/'/g, "\\'");
+        const trafficPercent = String(node.data?.config?.trafficPercent || '10').replace(GROOVY_SPECIAL, escapeGroovyChar);
         jenkinsfile += `                echo 'Deploying canary with ${trafficPercent}% traffic'\n`;
       }
 
       if (node.type === 'blue_green_deploy' && !node.data?.config?.script) {
         const activeColor = String(node.data?.config?.activeColor || 'green')
           .toLowerCase()
-          .replace(/'/g, "\\'");
+          .replace(GROOVY_SPECIAL, escapeGroovyChar);
         jenkinsfile += `                echo 'Switching active stack to ${activeColor}'\n`;
       }
 
       for (const script of scripts) {
         // Escape single quotes in shell commands
-        const escapedScript = script.replace(/'/g, "\\'");
+        const escapedScript = script.replace(GROOVY_SPECIAL, escapeGroovyChar);
         jenkinsfile += `                sh '${escapedScript}'\n`;
       }
 

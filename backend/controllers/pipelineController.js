@@ -1,4 +1,6 @@
 const aiService = require('../services/aiService');
+const { logSafe } = require('../utils/logSafe');
+const { sendError } = require('../utils/sendError');
 const workflowService = require('../services/workflowService');
 const gitlabService = require('../services/gitlabService');
 const { buildAIOptions } = require('../utils/aiOptions');
@@ -16,8 +18,8 @@ async function generatePipeline(req, res) {
     });
     res.json(result);
   } catch (err) {
-    console.error('generatePipeline error:', err.message);
-    res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to generate pipeline: ' + err.message });
+    console.error('generatePipeline error: %s', logSafe(err.message));
+    sendError(res, err, 'Failed to generate pipeline');
   }
 }
 
@@ -32,8 +34,8 @@ async function exportYaml(req, res) {
       metadata: result.metadata,
     });
   } catch (err) {
-    console.error('exportYaml error:', err.message);
-    res.status(500).json({ error: 'Failed to export: ' + err.message });
+    console.error('exportYaml error: %s', logSafe(err.message));
+    sendError(res, err, 'Failed to export');
   }
 }
 
@@ -60,7 +62,7 @@ async function importPipeline(req, res) {
     });
   } catch (err) {
     const status = err.status || 500;
-    console.error('importPipeline error:', err.message);
+    console.error('importPipeline error: %s', logSafe(err.message));
     res.status(status).json({ error: err.message || 'Failed to import pipeline' });
   }
 }
@@ -71,7 +73,7 @@ async function getPipelineStatus(req, res) {
     const status = await gitlabService.getPipelineStatus(projectId, pipelineId);
     res.json(status);
   } catch (err) {
-    console.error('getPipelineStatus error:', err.message);
+    console.error('getPipelineStatus error: %s', logSafe(err.message));
     res.status(500).json({ error: 'Failed to get pipeline status' });
   }
 }
@@ -91,7 +93,7 @@ async function explainFailure(req, res) {
     const explanation = await aiService.explainPipelineFailure(failedLogs, { aiProvider, aiOptions });
     res.json(explanation);
   } catch (err) {
-    console.error('explainFailure error:', err.message);
+    console.error('explainFailure error: %s', logSafe(err.message));
     res.status(500).json({ error: 'Failed to explain pipeline failure' });
   }
 }
@@ -103,7 +105,7 @@ async function triggerPipeline(req, res) {
     const result = await gitlabService.triggerPipeline(projectId, ref || 'main');
     res.json(result);
   } catch (err) {
-    console.error('triggerPipeline error:', err.message);
+    console.error('triggerPipeline error: %s', logSafe(err.message));
     res.status(500).json({ error: 'Failed to trigger pipeline' });
   }
 }

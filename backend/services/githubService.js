@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { pathSegment, pathSegments } = require('../utils/url');
 
 const GITHUB_API = 'https://api.github.com';
 const DEFAULT_TIMEOUT = Number(process.env.GITHUB_TIMEOUT_MS || 60000);
@@ -17,6 +18,8 @@ function makeClient(token) {
 }
 
 function toApiError(action, err) {
+  // Our own validation errors (e.g. an invalid path segment) keep their 400.
+  if (err.status === 400 && !err.response) return err;
   const status = err.response?.status;
   const detail = err.response?.data?.message || err.message;
   return new Error(`GitHub ${action} failed${status ? ` (${status})` : ''}: ${detail}`);
@@ -55,7 +58,7 @@ async function listBranches(token, owner, repo) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.get(`/repos/${owner}/${repo}/branches`, {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/branches`, {
       params: { per_page: 100 },
     });
     return data.map((b) => ({ name: b.name, sha: b.commit.sha }));
@@ -69,10 +72,10 @@ async function getRepoTree(token, owner, repo, branch) {
   const client = makeClient(token);
   try {
     // Get the branch SHA first
-    const { data: branchData } = await client.get(`/repos/${owner}/${repo}/branches/${branch}`);
+    const { data: branchData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/branches/${pathSegments(branch)}`);
     const sha = branchData.commit.sha;
 
-    const { data } = await client.get(`/repos/${owner}/${repo}/git/trees/${sha}`, {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/trees/${pathSegment(sha)}`, {
       params: { recursive: '1' },
     });
 
@@ -92,7 +95,7 @@ async function getFileContent(token, owner, repo, path, branch) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.get(`/repos/${owner}/${repo}/contents/${path}`, {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, {
       params: branch ? { ref: branch } : {},
     });
 
@@ -125,7 +128,7 @@ async function getDefaultBranch(token, owner, repo) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.get(`/repos/${owner}/${repo}`);
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}`);
     return data.default_branch || 'main';
   } catch (err) {
     throw toApiError('get default branch', err);
@@ -135,7 +138,7 @@ async function getDefaultBranch(token, owner, repo) {
 async function getFileSha(token, owner, repo, path, branch) {
   const client = makeClient(token);
   try {
-    const { data } = await client.get(`/repos/${owner}/${repo}/contents/${path}`, {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, {
       params: branch ? { ref: branch } : {},
     });
     return data.sha || null;
@@ -156,7 +159,7 @@ async function pushFile(token, owner, repo, path, content, commitMessage, branch
     };
     if (existingSha) body.sha = existingSha;
 
-    const { data } = await client.put(`/repos/${owner}/${repo}/contents/${path}`, body);
+    const { data } = await client.put(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, body);
     return {
       path,
       sha: data.content?.sha,
@@ -173,10 +176,10 @@ async function createBranch(token, owner, repo, branchName, fromRef) {
   const client = makeClient(token);
   try {
     // Get the SHA of the source ref
-    const { data: refData } = await client.get(`/repos/${owner}/${repo}/git/ref/heads/${fromRef}`);
+    const { data: refData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/ref/heads/${pathSegments(fromRef)}`);
     const sha = refData.object.sha;
 
-    await client.post(`/repos/${owner}/${repo}/git/refs`, {
+    await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/refs`, {
       ref: `refs/heads/${branchName}`,
       sha,
     });
@@ -193,7 +196,7 @@ async function createPullRequest(token, owner, repo, { title, body, head, base }
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.post(`/repos/${owner}/${repo}/pulls`, {
+    const { data } = await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/pulls`, {
       title,
       body: body || '',
       head,
@@ -230,7 +233,7 @@ async function listWorkflowRuns(token, owner, repo, { branch, perPage = 10 } = {
   try {
     const params = { per_page: perPage };
     if (branch) params.branch = branch;
-    const { data } = await client.get(`/repos/${owner}/${repo}/actions/runs`, { params });
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs`, { params });
     const runs = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
     return runs.map((run) => ({
       id: run.id,
@@ -255,9 +258,9 @@ async function getWorkflowRunStatus(token, owner, repo, runId) {
   const client = makeClient(token);
   try {
     const [runRes, jobsRes] = await Promise.all([
-      client.get(`/repos/${owner}/${repo}/actions/runs/${runId}`),
+      client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}`),
       client
-        .get(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, { params: { per_page: 100 } })
+        .get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}/jobs`, { params: { per_page: 100 } })
         .catch(() => ({ data: { jobs: [] } })),
     ]);
 
@@ -297,7 +300,7 @@ async function getWorkflowRunLogs(token, owner, repo, runId) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data: jobs } = await client.get(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`);
+    const { data: jobs } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}/jobs`);
 
     const failedJobs = (jobs.jobs || []).filter(
       (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out' || j.conclusion === 'startup_failure'
@@ -313,7 +316,7 @@ async function getWorkflowRunLogs(token, owner, repo, runId) {
         let rawLogText = '';
         try {
           const { data: logData } = await client.get(
-            `/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`,
+            `/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/jobs/${pathSegment(job.id)}/logs`,
             {
               responseType: 'text',
               transformResponse: [(d) => d],
@@ -355,7 +358,7 @@ async function postPRComment(token, owner, repo, prNumber, body) {
   ensureToken(token);
   const client = makeClient(token);
   try {
-    const { data } = await client.post(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, { body });
+    const { data } = await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/issues/${pathSegment(prNumber)}/comments`, { body });
     return { id: data.id, url: data.html_url };
   } catch (err) {
     throw toApiError('post PR comment', err);
@@ -368,7 +371,7 @@ async function triggerWorkflowDispatch(token, owner, repo, workflowId, ref = 'ma
   try {
     let resolvedWorkflowId = workflowId;
     if (!resolvedWorkflowId) {
-      const { data: wfData } = await client.get(`/repos/${owner}/${repo}/actions/workflows`);
+      const { data: wfData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/workflows`);
       const workflows = Array.isArray(wfData?.workflows) ? wfData.workflows : [];
       const activeWf = workflows.find((w) => w.state === 'active') || workflows[0];
       if (!activeWf) {
@@ -377,7 +380,7 @@ async function triggerWorkflowDispatch(token, owner, repo, workflowId, ref = 'ma
       resolvedWorkflowId = activeWf.id;
     }
 
-    await client.post(`/repos/${owner}/${repo}/actions/workflows/${resolvedWorkflowId}/dispatches`, {
+    await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/workflows/${pathSegment(resolvedWorkflowId)}/dispatches`, {
       ref,
       inputs,
     });

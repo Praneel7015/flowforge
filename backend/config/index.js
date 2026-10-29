@@ -146,7 +146,7 @@ const config = {
  * @returns {object|null}
  */
 function getAIConfig(name) {
-  return config.ai[name] || null;
+  return Object.prototype.hasOwnProperty.call(config.ai, name) ? config.ai[name] : null;
 }
 
 /**
@@ -155,7 +155,7 @@ function getAIConfig(name) {
  * @returns {object|null}
  */
 function getCICDConfig(name) {
-  return config.cicd[name] || null;
+  return Object.prototype.hasOwnProperty.call(config.cicd, name) ? config.cicd[name] : null;
 }
 
 /**

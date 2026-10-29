@@ -1,4 +1,6 @@
 const axios = require('axios');
+const { safeAgents } = require('../utils/ssrf');
+const { trimTrailingSlashes, pathSegment } = require('../utils/url');
 
 const GITLAB_URL = process.env.GITLAB_URL || 'https://gitlab.com';
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN;
@@ -17,6 +19,8 @@ function ensureGitLabConfigured() {
 }
 
 function toApiError(action, err) {
+  // Our own validation errors (e.g. an invalid path segment) keep their 400.
+  if (err.status === 400 && !err.response) return err;
   const status = err.response?.status;
   const detail = err.response?.data?.message || err.response?.data?.error || err.message;
   return new Error(`${action} failed${status ? ` (${status})` : ''}: ${detail}`);
@@ -29,7 +33,7 @@ async function getPipelineStatus(projectId, pipelineId) {
   ensureGitLabConfigured();
   try {
     const encodedProjectId = encodeURIComponent(projectId);
-    const { data } = await gitlab.get(`/projects/${encodedProjectId}/pipelines/${pipelineId}`);
+    const { data } = await gitlab.get(`/projects/${encodedProjectId}/pipelines/${pathSegment(pipelineId)}`);
     return data;
   } catch (err) {
     throw toApiError('Get pipeline status', err);
@@ -44,7 +48,7 @@ async function getPipelineLogs(projectId, pipelineId) {
   try {
     const encodedProjectId = encodeURIComponent(projectId);
     const { data: jobs } = await gitlab.get(
-      `/projects/${encodedProjectId}/pipelines/${pipelineId}/jobs`
+      `/projects/${encodedProjectId}/pipelines/${pathSegment(pipelineId)}/jobs`
     );
 
     const logs = await Promise.all(
@@ -52,7 +56,7 @@ async function getPipelineLogs(projectId, pipelineId) {
         .filter((job) => job.status === 'failed')
         .map(async (job) => {
           const { data: trace } = await gitlab.get(
-            `/projects/${encodedProjectId}/jobs/${job.id}/trace`,
+            `/projects/${encodedProjectId}/jobs/${pathSegment(job.id)}/trace`,
             { transformResponse: [(d) => d] }
           );
           return {
@@ -110,7 +114,7 @@ async function commentOnMergeRequest(projectId, mergeRequestIid, body) {
   try {
     const encodedProjectId = encodeURIComponent(projectId);
     const { data } = await gitlab.post(
-      `/projects/${encodedProjectId}/merge_requests/${mergeRequestIid}/notes`,
+      `/projects/${encodedProjectId}/merge_requests/${pathSegment(mergeRequestIid)}/notes`,
       { body }
     );
     return data;
@@ -127,7 +131,7 @@ async function commentOnCommit(projectId, sha, note) {
   try {
     const encodedProjectId = encodeURIComponent(projectId);
     const { data } = await gitlab.post(
-      `/projects/${encodedProjectId}/repository/commits/${sha}/comments`,
+      `/projects/${encodedProjectId}/repository/commits/${pathSegment(sha)}/comments`,
       { note }
     );
     return data;
@@ -141,11 +145,15 @@ async function commentOnCommit(projectId, sha, note) {
 const MAX_FILE_SIZE = 100 * 1024;
 
 function makeUserClient(token, instanceUrl) {
-  const base = (instanceUrl || 'https://gitlab.com').replace(/\/+$/, '');
+  const base = trimTrailingSlashes(instanceUrl || 'https://gitlab.com');
   return axios.create({
     baseURL: `${base}/api/v4`,
     headers: { 'PRIVATE-TOKEN': token },
     timeout: GITLAB_TIMEOUT_MS,
+    // instanceUrl is user-supplied (self-hosted GitLab): no redirects, and
+    // resolved addresses are checked at connect time (DNS rebinding).
+    maxRedirects: 0,
+    ...safeAgents,
   });
 }
 
@@ -356,9 +364,9 @@ async function getPipelineStatusWithJobs(projectId, pipelineId, { token, instanc
   try {
     const encoded = encodeURIComponent(projectId);
     const [pipelineRes, jobsRes] = await Promise.all([
-      client.get(`/projects/${encoded}/pipelines/${pipelineId}`),
+      client.get(`/projects/${encoded}/pipelines/${pathSegment(pipelineId)}`),
       client
-        .get(`/projects/${encoded}/pipelines/${pipelineId}/jobs`, { params: { per_page: 100 } })
+        .get(`/projects/${encoded}/pipelines/${pathSegment(pipelineId)}/jobs`, { params: { per_page: 100 } })
         .catch(() => ({ data: [] })),
     ]);
 
@@ -395,7 +403,7 @@ async function getPipelineLogsWithCreds(projectId, pipelineId, { token, instance
   const client = resolveGitLabClient(token, instanceUrl);
   try {
     const encoded = encodeURIComponent(projectId);
-    const { data: jobs } = await client.get(`/projects/${encoded}/pipelines/${pipelineId}/jobs`);
+    const { data: jobs } = await client.get(`/projects/${encoded}/pipelines/${pathSegment(pipelineId)}/jobs`);
     const jobList = Array.isArray(jobs) ? jobs : [];
     const failedJobs = jobList.filter((j) => j.status === 'failed');
 
@@ -403,7 +411,7 @@ async function getPipelineLogsWithCreds(projectId, pipelineId, { token, instance
       failedJobs.map(async (job) => {
         let traceText;
         try {
-          const { data: trace } = await client.get(`/projects/${encoded}/jobs/${job.id}/trace`, {
+          const { data: trace } = await client.get(`/projects/${encoded}/jobs/${pathSegment(job.id)}/trace`, {
             transformResponse: [(d) => d],
           });
           traceText = typeof trace === 'string' ? trace : JSON.stringify(trace);

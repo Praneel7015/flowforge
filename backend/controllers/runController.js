@@ -4,9 +4,10 @@ const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
 const aiService = require('../services/aiService');
 const { buildAIOptions } = require('../utils/aiOptions');
-const { isSafePublicUrl } = require('../utils/ssrf');
+const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 const { getAvailablePlatforms } = require('../providers/cicd');
 const { logSafe } = require('../utils/logSafe');
+const { trimTrailingSlashes, pathSegment, pathSegments } = require('../utils/url');
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -118,8 +119,20 @@ function resolveCredentials(platform, credentials = {}) {
   if (customUrl && !isSafePublicUrl(customUrl)) {
     const err = new Error('Invalid credentials URL: must be a safe public HTTP(S) URL');
     err.status = 400;
+    err.expose = true;
     throw err;
   }
+  // Tokens are sent to this host, so a custom one must use TLS.
+  if (customUrl && !/^https:\/\//i.test(String(customUrl).trim())) {
+    const err = new Error('Invalid credentials URL: custom hosts must use https://');
+    err.status = 400;
+    err.expose = true;
+    throw err;
+  }
+  // Server tokens (GITLAB_TOKEN, CIRCLECI_TOKEN) belong to the server's own
+  // configured host. A request that picks its own host must bring its own
+  // token, or the server's token would be sent to a host the caller chose.
+  const serverToken = (name) => (customUrl ? undefined : process.env[name]);
 
   if (platform === 'github') {
     const token = creds.token || process.env.GITHUB_TOKEN;
@@ -132,10 +145,14 @@ function resolveCredentials(platform, credentials = {}) {
   }
 
   if (platform === 'gitlab') {
-    const token = creds.token || process.env.GITLAB_TOKEN;
+    const token = creds.token || serverToken('GITLAB_TOKEN');
     const instanceUrl = creds.url || creds.instanceUrl || process.env.GITLAB_URL || 'https://gitlab.com';
     if (!token) {
-      const err = new Error('GitLab token is required (in credentials.token or GITLAB_TOKEN)');
+      const err = new Error(
+        customUrl
+          ? 'A custom GitLab URL needs your own token (credentials.token)'
+          : 'GitLab token is required (in credentials.token or GITLAB_TOKEN)'
+      );
       err.status = 400;
       throw err;
     }
@@ -155,10 +172,14 @@ function resolveCredentials(platform, credentials = {}) {
   }
 
   if (platform === 'circleci') {
-    const token = creds.token || process.env.CIRCLECI_TOKEN;
-    const baseUrl = (creds.url || CIRCLECI_API).replace(/\/+$/, '');
+    const token = creds.token || serverToken('CIRCLECI_TOKEN');
+    const baseUrl = trimTrailingSlashes(creds.url || CIRCLECI_API);
     if (!token) {
-      const err = new Error('CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)');
+      const err = new Error(
+        customUrl
+          ? 'A custom CircleCI URL needs your own token (credentials.token)'
+          : 'CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)'
+      );
       err.status = 400;
       throw err;
     }
@@ -175,6 +196,9 @@ function makeCircleClient(token, baseUrl = CIRCLECI_API) {
     baseURL: baseUrl,
     headers: { 'Circle-Token': token },
     timeout: CIRCLECI_TIMEOUT_MS,
+    // The CircleCI URL can be user-supplied: no redirects, connect-time checks.
+    maxRedirects: 0,
+    ...safeAgents,
   });
 }
 
@@ -200,14 +224,14 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
   const params = {};
   if (branch) params.branch = branch;
 
-  const { data } = await client.get(`/project/${slug}/pipeline`, { params });
+  const { data } = await client.get(`/project/${pathSegments(slug)}/pipeline`, { params });
   const pipelines = (data?.items || []).slice(0, perPage);
 
   const runs = await Promise.all(
     pipelines.map(async (p) => {
       let wf;
       try {
-        const { data: wfData } = await client.get(`/pipeline/${p.id}/workflow`);
+        const { data: wfData } = await client.get(`/pipeline/${pathSegment(p.id)}/workflow`);
         wf = (wfData?.items || [])[0] || null;
       } catch {
         wf = null;
@@ -295,7 +319,7 @@ async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
 async function triggerCircleRun(creds, { projectId, owner, repo, branch = 'main', inputs = {} }) {
   const client = makeCircleClient(creds.token, creds.baseUrl);
   const slug = resolveCircleProjectSlug({ projectId, owner, repo });
-  const { data } = await client.post(`/project/${slug}/pipeline`, {
+  const { data } = await client.post(`/project/${pathSegments(slug)}/pipeline`, {
     branch,
     parameters: inputs && typeof inputs === 'object' ? inputs : {},
   });
@@ -907,4 +931,6 @@ module.exports = {
   getRunStatus,
   triggerRun,
   diagnoseAndFix,
+  // Exported for tests.
+  resolveCredentials,
 };
