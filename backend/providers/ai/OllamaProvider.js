@@ -3,10 +3,14 @@
  * Communicates with a local Ollama server via HTTP.
  */
 const axios = require('axios');
-
-// The Ollama base URL can be user-supplied; never follow redirects off it.
-const http = axios.create({ maxRedirects: 0 });
 const AIProvider = require('./AIProvider');
+const { safeAgents } = require('../../utils/ssrf');
+
+// Server-configured Ollama (OLLAMA_BASE_URL) may legitimately be localhost.
+// A base URL from a user's request is untrusted: no redirects, and every
+// resolved address must be public (blocks DNS rebinding to internal hosts).
+const serverClient = axios.create({ maxRedirects: 0 });
+const userClient = axios.create({ maxRedirects: 0, ...safeAgents });
 
 class OllamaProvider extends AIProvider {
   constructor(config) {
@@ -14,6 +18,7 @@ class OllamaProvider extends AIProvider {
     this.name = 'ollama';
     this.baseUrl = config.baseUrl || 'http://localhost:11434';
     this.model = config.model || 'llama3';
+    this.http = config.userSuppliedEndpoint ? userClient : serverClient;
   }
 
   getMetadata() {
@@ -28,7 +33,7 @@ class OllamaProvider extends AIProvider {
   async validateConfig() {
     try {
       // Check if Ollama server is running
-      const response = await http.get(`${this.baseUrl}/api/tags`, {
+      const response = await this.http.get(`${this.baseUrl}/api/tags`, {
         timeout: 5000,
       });
       const models = response.data.models || [];
@@ -49,7 +54,7 @@ class OllamaProvider extends AIProvider {
   }
 
   async complete(systemPrompt, userMessage, options = {}) {
-    const response = await http.post(`${this.baseUrl}/api/generate`, {
+    const response = await this.http.post(`${this.baseUrl}/api/generate`, {
       model: this.model,
       prompt: userMessage,
       system: systemPrompt,
@@ -73,7 +78,7 @@ class OllamaProvider extends AIProvider {
       })),
     ];
 
-    const response = await http.post(`${this.baseUrl}/api/chat`, {
+    const response = await this.http.post(`${this.baseUrl}/api/chat`, {
       model: this.model,
       messages: ollamaMessages,
       stream: false,

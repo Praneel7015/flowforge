@@ -147,6 +147,8 @@ function getAIProvider(name, runtimeConfig = {}) {
     ...serverConfig,
     ...requestConfig,
     enabled: config.enabled || useRuntimeConfig,
+    // Lets providers apply connect-time SSRF checks to request-supplied URLs.
+    userSuppliedEndpoint: Boolean(requestConfig.baseUrl),
   };
 
   if (!hasCredentials(resolvedName, mergedConfig)) {

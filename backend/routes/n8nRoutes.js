@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
-const { isSafePublicUrl } = require('../utils/ssrf');
+const { isSafePublicUrl, safeAgents } = require('../utils/ssrf');
 
 // === Chat payload helpers (from main) ===
 function sanitizeText(value, maxLen = 200) {
@@ -110,6 +110,7 @@ router.post('/forward', async (req, res) => {
     const { data } = await axios.post(webhookUrl, payload || {}, {
       timeout: 15000,
       maxRedirects: 0,
+      ...safeAgents,
       headers: { 'Content-Type': 'application/json' },
     });
     res.json({ success: true, response: data });
@@ -159,6 +160,7 @@ router.post('/chat', async (req, res) => {
       const response = await axios.post(chatWebhookUrl, payload, {
         timeout: 30000,
         maxRedirects: 0,
+        ...safeAgents,
         headers: { 'Content-Type': 'application/json' },
       });
       data = response.data;
@@ -171,6 +173,7 @@ router.post('/chat', async (req, res) => {
       const fallbackResponse = await axios.post(fallbackUrl, payload, {
         timeout: 30000,
         maxRedirects: 0,
+        ...safeAgents,
         headers: { 'Content-Type': 'application/json' },
       });
       data = fallbackResponse.data;

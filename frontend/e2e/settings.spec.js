@@ -47,6 +47,13 @@ test.describe('Provider settings', () => {
     await expect(page.getByPlaceholder(/openrouter/)).toHaveValue('');
   });
 
+  test('the Cloud/Local toggle also clears the previous model', async ({ page }) => {
+    await page.getByPlaceholder('openai/gpt-oss-120b').fill('openai/gpt-oss-20b');
+    await page.getByRole('button', { name: /^Local LLM/ }).click();
+    await expect(providerSelect(page)).toHaveValue('ollama');
+    await expect(page.getByPlaceholder('llama3')).toHaveValue('');
+  });
+
   test('OpenAI-compatible requires a base URL', async ({ page }) => {
     await providerSelect(page).selectOption('openai_compatible');
     await expect(page.getByText('Base URL', { exact: true })).toBeVisible();

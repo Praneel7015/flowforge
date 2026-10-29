@@ -34,6 +34,10 @@ function sanitizeBaseUrl(value) {
   if (!inspection.safe) {
     throw badRequest(`Rejected baseUrl: ${inspection.reason}`);
   }
+  // API keys are sent to this URL: never over plain HTTP.
+  if (!/^https:\/\//i.test(url)) {
+    throw badRequest('Rejected baseUrl: custom endpoints must use https://');
+  }
   return url;
 }
 

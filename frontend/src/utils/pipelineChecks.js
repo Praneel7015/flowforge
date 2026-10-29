@@ -81,6 +81,14 @@ export function checkJob(node) {
   return null;
 }
 
+/**
+ * Job nodes with no script. The simulator can only check commands it can
+ * see, so these pass without being verified.
+ */
+export function jobsWithoutScripts(nodes = []) {
+  return nodes.filter((node) => isJobNode(node) && scriptLines(node).length === 0);
+}
+
 /** Nearest upstream job nodes, looking through triggers and conditionals. */
 function jobParents(nodeId, nodesById, sourcesByTarget, seen = new Set()) {
   const parents = [];

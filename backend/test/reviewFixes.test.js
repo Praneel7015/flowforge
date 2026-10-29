@@ -110,3 +110,60 @@ test('OpenAI-compatible clients refuse to follow redirects from the base URL', a
     server.close();
   }
 });
+
+const { createSafeLookup } = require('../utils/ssrf');
+const { buildAIOptions } = require('../utils/aiOptions');
+const OllamaProvider = require('../providers/ai/OllamaProvider');
+
+const fakeDns = (addresses) => (_host, _opts, cb) => cb(null, addresses);
+const lookupAsync = (lookup, options) =>
+  new Promise((resolve, reject) =>
+    lookup('rebind.example', options, (err, ...rest) => (err ? reject(err) : resolve(rest)))
+  );
+
+test('safe lookup rejects hostnames that resolve to private addresses (DNS rebinding)', async () => {
+  for (const addresses of [
+    [{ address: '10.0.0.5', family: 4 }],
+    [{ address: '169.254.169.254', family: 4 }],
+    [{ address: '::1', family: 6 }],
+    // One public + one private answer must still be rejected.
+    [{ address: '93.184.216.34', family: 4 }, { address: '127.0.0.1', family: 4 }],
+  ]) {
+    await assert.rejects(lookupAsync(createSafeLookup(fakeDns(addresses)), {}), { code: 'ESSRFBLOCKED' });
+  }
+
+  const ok = await lookupAsync(createSafeLookup(fakeDns([{ address: '93.184.216.34', family: 4 }])), {});
+  assert.deepStrictEqual(ok, ['93.184.216.34', 4]);
+  const all = await lookupAsync(createSafeLookup(fakeDns([{ address: '93.184.216.34', family: 4 }])), { all: true });
+  assert.deepStrictEqual(all, [[{ address: '93.184.216.34', family: 4 }]]);
+});
+
+test('a user-supplied Ollama URL cannot reach a server that resolves to loopback', async () => {
+  let hit = false;
+  const server = http.createServer((req, res) => {
+    hit = true;
+    res.end('{"models":[]}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  try {
+    // "localhost" resolves to loopback; the connect-time check must refuse it.
+    const user = new OllamaProvider({ baseUrl: `http://localhost:${port}`, userSuppliedEndpoint: true });
+    const result = await user.validateConfig();
+    assert.strictEqual(result.valid, false);
+    assert.strictEqual(hit, false, 'request reached the loopback server');
+
+    // A server-configured Ollama (OLLAMA_BASE_URL) on localhost still works.
+    const operator = new OllamaProvider({ baseUrl: `http://localhost:${port}` });
+    assert.strictEqual((await operator.validateConfig()).valid, true);
+  } finally {
+    server.close();
+  }
+});
+
+test('custom base URLs must use https (keys never sent over plain HTTP)', () => {
+  assert.throws(() => buildAIOptions({ baseUrl: 'http://openrouter.ai/api/v1' }), /must use https/);
+  assert.deepStrictEqual(buildAIOptions({ baseUrl: 'https://openrouter.ai/api/v1' }), {
+    baseUrl: 'https://openrouter.ai/api/v1',
+  });
+});

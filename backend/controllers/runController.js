@@ -7,6 +7,8 @@ const { buildAIOptions } = require('../utils/aiOptions');
 const { isSafePublicUrl } = require('../utils/ssrf');
 const { getAvailablePlatforms } = require('../providers/cicd');
 
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 const SUPPORTED_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'circleci'];
 const CIRCLECI_API = 'https://circleci.com/api/v2';
 const CIRCLECI_TIMEOUT_MS = Number(process.env.CIRCLECI_TIMEOUT_MS || 30000);
@@ -849,11 +851,16 @@ async function diagnoseAndFix(req, res) {
       } catch (err) {
         // Report that no fix was produced instead of returning an annotated
         // copy of the original YAML that looks like a change.
+        console.error('[runs] auto-remediation failed:', err.message);
         remediation = {
           patchedYaml: rawYaml,
           changeLog: [],
           commitMessage: 'fix: auto-remediation by FlowForge',
-          warning: `AI remediation unavailable: ${err.message}`,
+          // Provider errors can include upstream details; keep them out of
+          // production responses (logged above instead).
+          warning: IS_PROD
+            ? 'AI remediation unavailable'
+            : `AI remediation unavailable: ${err.message}`,
         };
       }
     }

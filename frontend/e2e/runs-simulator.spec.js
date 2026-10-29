@@ -50,3 +50,12 @@ test.describe('Live run simulator', () => {
     }
   });
 });
+
+test('says so when jobs have no script instead of claiming they were verified', async ({ page }) => {
+  const workflow = pipeline('npm ci\nnpm test -- --ci');
+  workflow.nodes[3].data.config.script = '';
+  await openStudio(page, { workflow });
+  await waitForBuilder(page);
+  await simulate(page);
+  await expect(page.getByText(/1 job on the canvas has no script/)).toBeVisible({ timeout: 15000 });
+});

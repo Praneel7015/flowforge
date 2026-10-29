@@ -448,44 +448,48 @@ export default function App({ onBackToLanding }) {
     persistOnboardingStatus(ONBOARDING_STATUS.limited);
   }, [persistOnboardingStatus]);
 
-  const handleProviderChange = useCallback((type, value) => {
-    setSelectedProviders((prev) => ({ ...prev, [type]: value }));
-    if (type === 'ai') {
-      setLlmType(inferLlmType(value));
-      // Key, model and base URL are shared across providers in the form; an
-      // OpenAI key or model must not be sent to Groq after switching.
-      if (value !== selectedProviders.ai) {
-        setByomConfig((prev) => ({ ...prev, apiKey: '', model: '', baseUrl: '' }));
+  // Every AI-provider change goes through here (provider dropdowns and the
+  // Cloud/Local toggle). The key, model and base URL fields are shared across
+  // providers, so they are cleared whenever the provider actually changes:
+  // an OpenAI key or model must never be sent to Groq, Vertex or Bedrock.
+  const selectAiProvider = useCallback(
+    (nextAi) => {
+      if (!nextAi || nextAi === selectedProviders.ai) return;
+      setSelectedProviders((prev) => ({ ...prev, ai: nextAi }));
+      setByomConfig((prev) => ({ ...prev, apiKey: '', model: '', baseUrl: '' }));
+    },
+    [selectedProviders.ai]
+  );
+
+  const handleProviderChange = useCallback(
+    (type, value) => {
+      if (type === 'ai') {
+        setLlmType(inferLlmType(value));
+        selectAiProvider(value);
+        return;
       }
-    }
-  }, [selectedProviders.ai]);
+      setSelectedProviders((prev) => ({ ...prev, [type]: value }));
+    },
+    [selectAiProvider]
+  );
 
   const handleLlmTypeChange = useCallback(
     (nextType) => {
       setLlmType(nextType);
+      const current = selectedProviders.ai;
 
-      setSelectedProviders((prev) => {
-        if (nextType === 'local') {
-          const hasOllama = providers.ai.some((provider) => provider.name === 'ollama');
-          if (hasOllama) {
-            return { ...prev, ai: 'ollama' };
-          }
-          return prev;
-        }
+      if (nextType === 'local') {
+        if (providers.ai.some((provider) => provider.name === 'ollama')) selectAiProvider('ollama');
+        return;
+      }
 
-        if (prev.ai !== 'ollama') {
-          return prev;
-        }
-
-        const cloudProvider =
-          providers.ai.find((provider) => provider.name !== 'ollama' && provider.enabled) ||
-          providers.ai.find((provider) => provider.name !== 'ollama') ||
-          providers.ai.find((provider) => provider.name === 'ollama');
-
-        return cloudProvider ? { ...prev, ai: cloudProvider.name } : prev;
-      });
+      if (current !== 'ollama') return;
+      const cloudProvider =
+        providers.ai.find((provider) => provider.name !== 'ollama' && provider.enabled) ||
+        providers.ai.find((provider) => provider.name !== 'ollama');
+      if (cloudProvider) selectAiProvider(cloudProvider.name);
     },
-    [providers.ai]
+    [providers.ai, selectedProviders.ai, selectAiProvider]
   );
 
   const aiOptions = useMemo(

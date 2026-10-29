@@ -6,10 +6,15 @@
  * endpoints, localhost admin panels, private ranges) and use the server as a
  * proxy. This performs a literal-address check that blocks the common payloads.
  *
- * Note: this validates the literal host in the URL. It does NOT defend against a
- * public hostname that resolves to a private IP via DNS (DNS rebinding); that
- * needs a pinned-lookup HTTP agent. See BLOCK_DNS_REBINDING in the README TODO.
+ * inspectUrl() validates the literal host in the URL. On its own that does not
+ * stop a public hostname that resolves to a private IP (DNS rebinding), so
+ * outbound clients for user-supplied URLs also use safeLookup / safeAgents,
+ * which validate the addresses at connect time.
  */
+const dns = require('dns');
+const net = require('net');
+const http = require('http');
+const https = require('https');
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -115,4 +120,53 @@ function isSafePublicUrl(rawUrl) {
   return inspectUrl(rawUrl).safe;
 }
 
-module.exports = { inspectUrl, isSafePublicUrl, isPrivateIPv4, isPrivateIPv6 };
+function isPrivateAddress(address, family) {
+  return family === 6 || net.isIPv6(address) ? isPrivateIPv6(address) : isPrivateIPv4(address);
+}
+
+/**
+ * DNS lookup for sockets that rejects private, loopback and link-local
+ * addresses. Every resolved address is checked and the socket connects only
+ * to those, so there is no second resolution an attacker can rebind. The URL
+ * hostname is unchanged, so TLS SNI and certificate checks still use it.
+ */
+function createSafeLookup(baseLookup = dns.lookup) {
+  return function safeLookup(hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    baseLookup(hostname, { ...options, all: true }, (err, addresses) => {
+      if (err) return callback(err);
+      const list = Array.isArray(addresses) ? addresses : [];
+      const blocked = list.find((a) => isPrivateAddress(a.address, a.family));
+      if (list.length === 0 || blocked) {
+        const error = new Error(
+          `Blocked: ${hostname} resolves to a non-public address${blocked ? ` (${blocked.address})` : ''}`
+        );
+        error.code = 'ESSRFBLOCKED';
+        return callback(error);
+      }
+      if (options.all) return callback(null, list);
+      return callback(null, list[0].address, list[0].family);
+    });
+  };
+}
+
+const safeLookup = createSafeLookup();
+
+/** http/https agents for axios clients that call user-supplied URLs. */
+const safeAgents = {
+  httpAgent: new http.Agent({ lookup: safeLookup }),
+  httpsAgent: new https.Agent({ lookup: safeLookup }),
+};
+
+module.exports = {
+  inspectUrl,
+  isSafePublicUrl,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  createSafeLookup,
+  safeLookup,
+  safeAgents,
+};
