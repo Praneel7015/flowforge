@@ -9,6 +9,7 @@ import OfflineBanner from './components/OfflineBanner';
 import ThemeToggleButton from './components/ThemeToggleButton';
 import ImportPipelineModal from './components/ImportPipelineModal';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
+import { buildAiOptions, EXTRA_FIELD_NAMES, SECRET_FIELD_NAMES } from './utils/providerFields';
 const WorkflowEditor = lazy(() => import('./workflow/WorkflowEditor'));
 const PromptPanel = lazy(() => import('./components/PromptPanel'));
 const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
@@ -104,7 +105,12 @@ const DEFAULT_BYOM = {
   apiKey: '',
   model: '',
   baseUrl: '',
+  ...Object.fromEntries(EXTRA_FIELD_NAMES.map((name) => [name, ''])),
 };
+
+// Non-secret BYOM fields saved with workspace settings; keys and other
+// secrets only persist through the "Remember" option in the BYOM panel.
+const PERSISTED_BYOM_FIELDS = ['model', 'baseUrl', ...EXTRA_FIELD_NAMES.filter((n) => !SECRET_FIELD_NAMES.includes(n))];
 
 function inferLlmType(providerName) {
   return providerName === 'ollama' ? 'local' : 'cloud';
@@ -173,6 +179,9 @@ function getFallbackProviders() {
       { name: 'anthropic', displayName: 'Claude (claude-sonnet-5-5)', enabled: false },
       { name: 'gemini', displayName: 'Gemini (gemini-3.8-flash)', enabled: false },
       { name: 'openai', displayName: 'OpenAI (gpt-6-luna)', enabled: false },
+      { name: 'vertex', displayName: 'Vertex AI (gemini-3.8-flash)', enabled: false },
+      { name: 'bedrock', displayName: 'AWS Bedrock (us.anthropic.claude-sonnet-4-6)', enabled: false },
+      { name: 'openai_compatible', displayName: 'OpenAI-compatible endpoint', enabled: false },
       { name: 'ollama', displayName: 'Ollama (Local)', enabled: true },
     ],
     cicd: [
@@ -228,14 +237,12 @@ function pickInitialSelection(providerData, storedPreferences) {
     byomConfig: {
       ...DEFAULT_BYOM,
       enabled: Boolean(storedPreferences?.byomConfig?.enabled),
-      model:
-        typeof storedPreferences?.byomConfig?.model === 'string'
-          ? storedPreferences.byomConfig.model
-          : '',
-      baseUrl:
-        typeof storedPreferences?.byomConfig?.baseUrl === 'string'
-          ? storedPreferences.byomConfig.baseUrl
-          : '',
+      ...Object.fromEntries(
+        PERSISTED_BYOM_FIELDS.map((name) => [
+          name,
+          typeof storedPreferences?.byomConfig?.[name] === 'string' ? storedPreferences.byomConfig[name] : '',
+        ])
+      ),
     },
   };
 }
@@ -348,8 +355,7 @@ export default function App({ onBackToLanding }) {
           llmType,
           byomConfig: {
             enabled: byomConfig.enabled,
-            model: byomConfig.model,
-            baseUrl: byomConfig.baseUrl,
+            ...Object.fromEntries(PERSISTED_BYOM_FIELDS.map((name) => [name, byomConfig[name] || ''])),
           },
         })
       );
@@ -357,9 +363,7 @@ export default function App({ onBackToLanding }) {
       // Ignore localStorage write failures.
     }
   }, [
-    byomConfig.baseUrl,
-    byomConfig.enabled,
-    byomConfig.model,
+    byomConfig,
     llmType,
     providersLoaded,
     selectedProviders,
@@ -480,18 +484,10 @@ export default function App({ onBackToLanding }) {
     [providers.ai]
   );
 
-  const hasRuntimeAiOptions =
-    byomConfig.enabled ||
-    byomConfig.model.trim().length > 0 ||
-    byomConfig.baseUrl.trim().length > 0;
-
-  const aiOptions = hasRuntimeAiOptions
-    ? {
-        apiKey: byomConfig.enabled ? byomConfig.apiKey : '',
-        model: byomConfig.model,
-        baseUrl: byomConfig.baseUrl,
-      }
-    : undefined;
+  const aiOptions = useMemo(
+    () => buildAiOptions(selectedProviders.ai, byomConfig),
+    [selectedProviders.ai, byomConfig]
+  );
 
   // Get current CI/CD platform metadata
   const currentCICDPlatform = providers.cicd.find((p) => p.name === selectedProviders.cicd) || {

@@ -33,6 +33,9 @@ const MODEL_PRESETS = {
   openai: ['gpt-6-luna', 'gpt-5.6-sol'],
   anthropic: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'],
   gemini: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
+  vertex: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
+  bedrock: ['us.anthropic.claude-sonnet-4-6'],
+  openai_compatible: [],
   ollama: ['llama3', 'mistral', 'codellama'],
 };
 
@@ -85,7 +88,7 @@ function LlmAndProviderStep({
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <RuntimeCard
           title="Cloud LLM"
-          description="Use hosted APIs like Groq (default, no key needed), Claude, Gemini, or OpenAI. Bring your own key and model any time."
+          description="Use hosted APIs: Groq (default, no key needed), Claude, Gemini, OpenAI, Google Vertex AI, AWS Bedrock, or any OpenAI-compatible endpoint. Bring your own key and model any time."
           selected={llmType === 'cloud'}
           onSelect={() => onLlmTypeChange('cloud')}
         />

@@ -9,6 +9,9 @@ const OpenAIProvider = require('./OpenAIProvider');
 const OllamaProvider = require('./OllamaProvider');
 const FeatherlessProvider = require('./FeatherlessProvider');
 const GroqProvider = require('./GroqProvider');
+const VertexProvider = require('./VertexProvider');
+const BedrockProvider = require('./BedrockProvider');
+const OpenAICompatibleProvider = require('./OpenAICompatibleProvider');
 
 // Provider registry
 const providers = {
@@ -16,9 +19,37 @@ const providers = {
   anthropic: AnthropicProvider,
   gemini: GeminiProvider,
   openai: OpenAIProvider,
+  vertex: VertexProvider,
+  bedrock: BedrockProvider,
+  openai_compatible: OpenAICompatibleProvider,
   ollama: OllamaProvider,
   featherless: FeatherlessProvider,
 };
+
+const CREDENTIAL_FIELDS = ['apiKey', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'serviceAccountJson'];
+
+const CREDENTIAL_HINTS = {
+  vertex: 'Add a Vertex API key (express mode) or a service account JSON key in Settings.',
+  bedrock: 'Add a Bedrock API key, or an AWS access key ID and secret access key, in Settings.',
+  openai_compatible: 'Set the base URL and model of your OpenAI-compatible endpoint in Settings.',
+};
+
+/** Whether a merged provider config has enough to authenticate. */
+function hasCredentials(name, cfg) {
+  switch (name) {
+    case 'ollama':
+      return true;
+    case 'bedrock':
+      return Boolean(cfg.apiKey || (cfg.accessKeyId && cfg.secretAccessKey));
+    case 'vertex':
+      return Boolean(cfg.apiKey || cfg.serviceAccountJson);
+    case 'openai_compatible':
+      // Key is optional for self-hosted endpoints.
+      return Boolean(cfg.baseUrl && cfg.model);
+    default:
+      return Boolean(cfg.apiKey);
+  }
+}
 
 // Cached provider instances
 const instances = {};
@@ -103,18 +134,28 @@ function getAIProvider(name, runtimeConfig = {}) {
     );
   }
 
-  const providerRequiresApiKey = resolvedName !== 'ollama';
-  if (!config.enabled && providerRequiresApiKey && !requestConfig.apiKey) {
-    throw new Error(
-      `AI provider '${resolvedName}' requires an API key. Provide aiOptions.apiKey when using a custom key.`
-    );
-  }
+  // Server credentials must never be sent anywhere the user chose: if the
+  // request brings its own credentials or points the provider at its own base
+  // URL, drop every server-side secret before merging.
+  const userBringsCredentials = CREDENTIAL_FIELDS.some((field) => requestConfig[field]);
+  const userChangesEndpoint = Boolean(requestConfig.baseUrl) && requestConfig.baseUrl !== config.baseUrl;
+  const serverConfig = userBringsCredentials || userChangesEndpoint
+    ? Object.fromEntries(Object.entries(config).filter(([key]) => !CREDENTIAL_FIELDS.includes(key)))
+    : config;
 
   const mergedConfig = {
-    ...config,
+    ...serverConfig,
     ...requestConfig,
     enabled: config.enabled || useRuntimeConfig,
   };
+
+  if (!hasCredentials(resolvedName, mergedConfig)) {
+    throw new Error(
+      userChangesEndpoint && !userBringsCredentials && hasCredentials(resolvedName, { ...config, ...requestConfig })
+        ?`A custom base URL needs your own API key: the server's key is only sent to the provider's default endpoint.`
+        : `AI provider '${resolvedName}' is missing credentials. ${CREDENTIAL_HINTS[resolvedName] || 'Add an API key in Settings -> Bring Your Own Model.'}`
+    );
+  }
 
   const instance = new ProviderClass(mergedConfig);
 

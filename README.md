@@ -40,9 +40,12 @@ Live at **[flowforge.highcortisol.xyz](https://flowforge.highcortisol.xyz)**: fr
 | Anthropic (Claude) | `claude-sonnet-5-5` | |
 | Google Gemini | `gemini-3.8-flash` | |
 | OpenAI | `gpt-6-luna` | |
+| **Google Vertex AI** | `gemini-3.8-flash` | Vertex API key (express mode), or a service account JSON key + project ID + location (`global`, `us-central1`, …). |
+| **AWS Bedrock** | `us.anthropic.claude-sonnet-4-6` | Bedrock API key (bearer), or IAM access key ID + secret (+ session token), signed with SigV4. Any Converse-capable model ID / inference profile works. |
+| **OpenAI-compatible** | – (you set it) | Any Chat Completions endpoint: OpenRouter, Together, Fireworks, DeepSeek, Mistral, a public vLLM/LM Studio server… Base URL + model required, key optional. |
 | Ollama (local) | `llama3` | No key needed. |
 
-If the requested provider has no server key and the user hasn't supplied one, the backend falls back to the first configured provider (Groq → Gemini → OpenAI → Anthropic → Ollama).
+Users pick a provider and enter their own credentials in **Settings → Model and Overrides**; only the selected provider's fields are sent with a request. If no provider is specified, the backend uses the first configured one (Groq → Gemini → OpenAI → Anthropic → Ollama). A provider the user explicitly picked never silently falls back to another.
 
 ## Architecture
 
@@ -65,7 +68,7 @@ Browser ──► Vercel (React + Vite SPA)
               ├─ CI/CD generator factory  (GitHub | GitLab | Jenkins | CircleCI | Bitbucket)
               │     shared base: dependency map, collision-free job names,
               │     traversal through conditional nodes, cycle-safe topo sort
-              └─ AI provider factory      (Groq | Anthropic | Gemini | OpenAI | Ollama)
+              └─ AI provider factory      (Groq | Anthropic | Gemini | OpenAI | Vertex | Bedrock | OpenAI-compatible | Ollama)
                     one complete(system, user) interface, per-request BYOM config
 ```
 
@@ -85,6 +88,8 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
 | BYOM keys are per request, trimmed/capped, never stored or cached; invalid BYOM input returns 400 | `backend/utils/aiOptions.js` |
+| **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
+| AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames; the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
 
 Known limits: the SSRF guard checks literal hosts, so it doesn't stop DNS rebinding (the fix would be a pinned-lookup HTTP agent). The rate limiter is in memory, so it resets on restart and isn't shared across instances.
 
@@ -120,6 +125,11 @@ Or with Docker: `docker-compose up`.
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | – / `claude-sonnet-5-5` | |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | – / `gemini-3.8-flash` | |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | – / `gpt-6-luna` | |
+| `VERTEX_API_KEY` or `VERTEX_SERVICE_ACCOUNT_JSON` | – | Server-side Vertex AI credentials (optional) |
+| `VERTEX_PROJECT_ID`, `VERTEX_LOCATION`, `VERTEX_MODEL` | – / `global` / `gemini-3.8-flash` | |
+| `AWS_BEARER_TOKEN_BEDROCK` or `BEDROCK_ACCESS_KEY_ID` + `BEDROCK_SECRET_ACCESS_KEY` (+ `BEDROCK_SESSION_TOKEN`) | – | Server-side Bedrock credentials (optional) |
+| `BEDROCK_REGION`, `BEDROCK_MODEL` | `us-east-1` / `us.anthropic.claude-sonnet-4-6` | |
+| `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_MODEL`, `OPENAI_COMPATIBLE_API_KEY` | – | Server-side OpenAI-compatible endpoint (optional) |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | – / `llama3` | Local models |
 | `FRONTEND_URL` | – | Comma-separated CORS origins (`*.highcortisol.xyz` is always allowed) |
 | `NODE_ENV` | `development` | `production` hides internal errors and makes webhooks fail closed |
@@ -174,7 +184,7 @@ flowforge/
 │   ├── routes/ controllers/  pipelines, migration, advisor, repo, runs, platforms, n8n, webhooks, config
 │   ├── services/             aiService (prompts, parsing, fallbacks), workflowService,
 │   │                         importService, github/gitlab/bitbucketService
-│   ├── providers/ai/         Groq, Anthropic, Gemini, OpenAI, Ollama
+│   ├── providers/ai/         Groq, Anthropic, Gemini, OpenAI, Vertex, Bedrock, OpenAI-compatible, Ollama
 │   ├── providers/cicd/       GitHub, GitLab, Jenkins, CircleCI, Bitbucket generators
 │   ├── utils/                ssrf, secretScanner, aiOptions (BYOM sanitiser)
 │   └── test/
