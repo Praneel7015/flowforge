@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 
 const PLATFORM_LABELS = {
@@ -33,7 +33,6 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
   const [repoSearch, setRepoSearch] = useState('');
 
   const allCreds = readStoredCredentials();
-  const creds = allCreds[platform] || {};
   const isConnected = hasCredentials(allCreds, platform);
 
   const fetchRepos = useCallback(async () => {
@@ -43,7 +42,7 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
     try {
       const { data } = await axios.post('/api/repo/list-repos', {
         platform,
-        credentials: creds,
+        credentials: readStoredCredentials()[platform] || {},
       });
       setRepos(data.repos || []);
     } catch (err) {
@@ -58,6 +57,7 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
     setLoadingBranches(true);
     setBranches([]);
     try {
+      const creds = readStoredCredentials()[platform] || {};
       const repo = repos.find((r) => r.name === repoName || r.fullName === repoName);
       const owner = repo?.owner || creds.username || '';
       const { data } = await axios.post('/api/repo/list-branches', {
@@ -77,14 +77,23 @@ export default function RepoBrowser({ platform, onRepoSelect, onBranchSelect, se
     } finally {
       setLoadingBranches(false);
     }
-  }, [platform, repos, creds, isConnected, onBranchSelect]);
+  }, [platform, repos, isConnected, onBranchSelect]);
 
   useEffect(() => {
     if (isConnected) fetchRepos();
   }, [fetchRepos, isConnected]);
 
+  // Branches are fetched only when the selected repo changes. fetchBranches
+  // itself changes whenever repos or the parent's onBranchSelect do (some
+  // parents pass an inline callback), so call the latest one through a ref
+  // instead of re-fetching on every such change.
+  const fetchBranchesRef = useRef(fetchBranches);
   useEffect(() => {
-    if (selectedRepo) fetchBranches(selectedRepo);
+    fetchBranchesRef.current = fetchBranches;
+  });
+
+  useEffect(() => {
+    if (selectedRepo) fetchBranchesRef.current(selectedRepo);
   }, [selectedRepo]);
 
   const handleRepoChange = (e) => {

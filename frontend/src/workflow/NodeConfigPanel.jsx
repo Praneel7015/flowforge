@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 const STAGE_CONFIGS = {
   build: ['image', 'stage', 'script'],
@@ -71,13 +71,18 @@ const SCRIPT_PRESETS = {
 export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDelete }) {
   const [config, setConfig] = useState(node.data.config || {});
   const [label, setLabel] = useState(node.data.label || '');
+  const [editingNodeId, setEditingNodeId] = useState(node.id);
   const fields = STAGE_CONFIGS[node.type] || ['image', 'stage', 'script'];
   const presets = SCRIPT_PRESETS[node.type] || [];
 
-  useEffect(() => {
+  // Reset the local edit buffer only when a different node is selected, not
+  // whenever node.data changes (our own onUpdate calls change it on every
+  // keystroke). Done during render so the new node never shows stale fields.
+  if (node.id !== editingNodeId) {
+    setEditingNodeId(node.id);
     setConfig(node.data.config || {});
     setLabel(node.data.label || '');
-  }, [node.id]);
+  }
 
   const handleLabelChange = (nextLabel) => {
     setLabel(nextLabel);
