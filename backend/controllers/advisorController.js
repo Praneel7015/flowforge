@@ -3,50 +3,9 @@ const { logSafe } = require('../utils/logSafe');
 const { sendError } = require('../utils/sendError');
 const { buildAIOptions } = require('../utils/aiOptions');
 const { scanForSecrets } = require('../utils/secretScanner');
+const { resolveChatSession, deriveChatKeys } = require('../utils/chatSession');
 
-function sanitizeText(value, maxLen = 200) {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  return trimmed.slice(0, maxLen);
-}
-
-function readHeaderValue(headers, name) {
-  const value = headers?.[name];
-  if (Array.isArray(value)) return value[0];
-  return value;
-}
-
-function buildChatUserContext(reqBody, reqHeaders) {
-  const rawContext =
-    reqBody?.userContext && typeof reqBody.userContext === 'object' ? reqBody.userContext : {};
-
-  const userId =
-    sanitizeText(rawContext.userId, 120) ||
-    sanitizeText(reqBody?.userId, 120) ||
-    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-user-id'), 120) ||
-    sanitizeText(readHeaderValue(reqHeaders, 'x-user-id'), 120);
-
-  const username =
-    sanitizeText(rawContext.username, 120) ||
-    sanitizeText(reqBody?.username, 120) ||
-    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-username'), 120);
-
-  const conversationId =
-    sanitizeText(rawContext.conversationId, 160) || sanitizeText(reqBody?.conversationId, 160);
-
-  const chatId =
-    sanitizeText(rawContext.chatId, 160) ||
-    sanitizeText(reqBody?.chatId, 160) ||
-    sanitizeText(readHeaderValue(reqHeaders, 'x-flowforge-chat-id'), 160);
-
-  return {
-    userId,
-    username,
-    conversationId,
-    chatId,
-  };
-}
+const SESSION_HEADER = 'x-flowforge-chat-session';
 
 /**
  * Score the health of a CI/CD configuration submitted in the request body.
@@ -98,8 +57,13 @@ async function remediate(req, res) {
  *   currentYaml: "...",
  *   aiProvider,
  *   cicdPlatform,
- *   userContext: { userId, username, chatId, conversationId }
+ *   useN8n,                            // opt in to the server's n8n webhook
+ *   userContext: { conversationId }    // optional label, scoped to the session
  * }
+ * Header: X-FlowForge-Chat-Session: <token from a previous response>
+ *
+ * With useN8n, the n8n memory keys come from the server-signed anonymous
+ * session (see utils/chatSession.js); ids in the body or headers are ignored.
  */
 async function chat(req, res) {
   try {
@@ -108,16 +72,25 @@ async function chat(req, res) {
       return res.status(400).json({ error: 'messages array is required' });
     }
 
-    const userContext = buildChatUserContext(req.body, req.headers);
+    const wantsN8n = useN8n === true;
+    let session = null;
+    let userContext = {};
+    if (wantsN8n) {
+      session = resolveChatSession(req.get(SESSION_HEADER));
+      const rawContext = req.body.userContext;
+      const conversationLabel =
+        rawContext && typeof rawContext === 'object' ? rawContext.conversationId : undefined;
+      userContext = deriveChatKeys(session.sessionId, conversationLabel);
+    }
 
     const reply = await aiService.pipelineChat(messages, currentYaml || '', {
       aiProvider,
       cicdPlatform,
       aiOptions: buildAIOptions(aiOptions),
       userContext,
-      useN8n: useN8n === true,
+      useN8n: wantsN8n,
     });
-    res.json({ reply });
+    res.json(session ? { reply, sessionToken: session.token } : { reply });
   } catch (err) {
     console.error('chat error: %s', logSafe(err.message));
     sendError(res, err, 'Chat failed');

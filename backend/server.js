@@ -13,6 +13,10 @@ const repoRoutes = require('./routes/repoRoutes');
 const runRoutes = require('./routes/runRoutes');
 const { securityHeaders, createRateLimiter } = require('./middleware/security');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
+const { getSessionSecret } = require('./utils/chatSession');
+
+// Resolve the chat session secret now so a missing SESSION_SECRET warns at startup.
+getSessionSecret();
 
 const app = express();
 const PORT = process.env.PORT || 3001;

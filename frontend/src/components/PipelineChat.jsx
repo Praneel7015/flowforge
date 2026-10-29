@@ -9,6 +9,17 @@ function formatTime(date) {
 
 const CHAT_IDENTITY_STORAGE_KEY = 'flowforge.chatIdentity.v1';
 
+// Server-signed anonymous session for n8n chat memory. Held in memory only
+// (like BYOM keys): a reload starts a new n8n session.
+const N8N_SESSION_HEADER = 'X-FlowForge-Chat-Session';
+let n8nSessionToken = null;
+
+function rememberN8nSession(data) {
+  if (typeof data?.sessionToken === 'string' && data.sessionToken) {
+    n8nSessionToken = data.sessionToken;
+  }
+}
+
 // Ids double as n8n memory/session keys, so use the CSPRNG, never Math.random.
 // getRandomValues also works on non-secure (http) pages, unlike randomUUID.
 function randomHex(bytes = 8) {
@@ -256,12 +267,19 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         aiProvider,
         cicdPlatform,
         aiOptions,
-        userContext: {
-          userId: chatIdentity.userId,
-          username: chatIdentity.username,
-          chatId: conversationId,
-          conversationId,
-        },
+        // The server derives n8n memory keys from the signed session; only the
+        // conversation label is sent.
+        userContext: { conversationId },
+      };
+      // Read the token at call time: an earlier call in this send may issue one.
+      const requestConfig = () => ({
+        signal: controller.signal,
+        headers: n8nSessionToken ? { [N8N_SESSION_HEADER]: n8nSessionToken } : undefined,
+      });
+      const askAdvisor = async () => {
+        const { data } = await axios.post('/api/advisor/chat', payload, requestConfig());
+        rememberN8nSession(data);
+        return data.reply;
       };
 
       let reply;
@@ -270,17 +288,17 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
           const { data } = await axios.post(
             '/api/n8n/chat',
             { ...payload, chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() },
-            { signal: controller.signal }
+            requestConfig()
           );
+          rememberN8nSession(data);
           reply = data.reply;
         } catch (err) {
           if (axios.isCancel(err)) throw err;
-          const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
-          reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${data.reply}`;
+          rememberN8nSession(err.response?.data);
+          reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${await askAdvisor()}`;
         }
       } else {
-        const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
-        reply = data.reply;
+        reply = await askAdvisor();
       }
       setMessages((prev) => [...prev, { role: 'assistant', content: reply, timestamp: new Date() }]);
     } catch (err) {
