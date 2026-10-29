@@ -146,7 +146,9 @@ function resolveCredentials(platform, credentials = {}) {
 
   if (platform === 'gitlab') {
     const token = creds.token || serverToken('GITLAB_TOKEN');
-    const instanceUrl = creds.url || creds.instanceUrl || process.env.GITLAB_URL || 'https://gitlab.com';
+    // Only the caller's URL is passed on; gitlabService falls back to the
+    // operator's GITLAB_URL itself, so it knows which one it can trust.
+    const instanceUrl = customUrl || undefined;
     if (!token) {
       const err = new Error(
         customUrl

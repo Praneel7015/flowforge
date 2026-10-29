@@ -144,16 +144,17 @@ async function commentOnCommit(projectId, sha, note) {
 
 const MAX_FILE_SIZE = 100 * 1024;
 
-function makeUserClient(token, instanceUrl) {
+function makeUserClient(token, instanceUrl, { trusted = false } = {}) {
   const base = trimTrailingSlashes(instanceUrl || 'https://gitlab.com');
   return axios.create({
     baseURL: `${base}/api/v4`,
     headers: { 'PRIVATE-TOKEN': token },
     timeout: GITLAB_TIMEOUT_MS,
-    // instanceUrl is user-supplied (self-hosted GitLab): no redirects, and
-    // resolved addresses are checked at connect time (DNS rebinding).
     maxRedirects: 0,
-    ...safeAgents,
+    // A request-supplied instanceUrl has its resolved addresses checked at
+    // connect time (DNS rebinding). The operator's own GITLAB_URL is trusted,
+    // so a self-hosted GitLab on a private network keeps working.
+    ...(trusted ? {} : safeAgents),
   });
 }
 
@@ -326,13 +327,18 @@ async function createUserMergeRequest(token, instanceUrl, projectId, { title, de
   }
 }
 
+// instanceUrl is only ever the caller's URL; without one, the operator's
+// GITLAB_URL is used and trusted. Trust follows the source, never the value.
 function resolveGitLabClient(token, instanceUrl) {
+  if (instanceUrl) {
+    if (!token) throw new Error('GitLab token is required');
+    return makeUserClient(token, instanceUrl);
+  }
   const effectiveToken = token || process.env.GITLAB_TOKEN || GITLAB_TOKEN;
-  const effectiveUrl = instanceUrl || process.env.GITLAB_URL || GITLAB_URL;
   if (!effectiveToken) {
     throw new Error('GitLab token is required');
   }
-  return makeUserClient(effectiveToken, effectiveUrl);
+  return makeUserClient(effectiveToken, process.env.GITLAB_URL || GITLAB_URL, { trusted: true });
 }
 
 async function listPipelines(projectId, { branch, perPage = 10, token, instanceUrl } = {}) {

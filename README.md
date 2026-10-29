@@ -86,7 +86,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | Security headers, fixed-window rate limiting (general + tighter AI limit) | `backend/middleware/security.js` |
 | Central error handler, no internal error strings leaked in production | `backend/middleware/errorHandler.js` |
 | **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, self-hosted GitLab and custom CircleCI hosts. Blocks localhost, cloud metadata, private/loopback/link-local (full `fe80::/10`)/CGNAT ranges, including IPv4-mapped IPv6 in both dotted and hex form (`[::ffff:7f00:1]`) | `backend/utils/ssrf.js` |
-| **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects | `backend/utils/ssrf.js` |
+| **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects. The operator's own `GITLAB_URL` is trusted, so a self-hosted GitLab on a private network works; a request-supplied URL never is | `backend/utils/ssrf.js` |
 | **Path traversal**: user-supplied owner/repo/branch/path/id values in GitHub, GitLab, Bitbucket and CircleCI API URLs are encoded per segment, and `.` / `..` are rejected before any request is sent | `backend/utils/url.js` |
 | **Server CI tokens stay with the server's host**: a request that picks its own GitLab/CircleCI URL must bring its own token; custom hosts must be HTTPS | `backend/controllers/runController.js` |
 | **Generated configs can't run user text**: Jenkinsfile strings escape backslashes, quotes and line breaks in one pass; default step commands single-quote the label for the shell, so `$(...)` in a node label is printed, not executed | `backend/providers/cicd/` |
@@ -148,7 +148,7 @@ Or with Docker: `docker-compose up`.
 | `AI_RATE_LIMIT_WINDOW_MS`, `AI_RATE_LIMIT_MAX` | `60000`, `20` | AI routes |
 | `GITHUB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the secret set on the GitHub webhook |
 | `GITLAB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the GitLab webhook "Secret token" |
-| `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger |
+| `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger (may be a private-network instance) |
 | `N8N_CHAT_WEBHOOK_URL` | – | Server-side n8n webhook, used only when a chat request opts in (`useN8n`); falls back to the AI provider on failure |
 | `N8N_WEBHOOK_AUTH_HEADER`, `N8N_WEBHOOK_AUTH_TOKEN` | `X-FlowForge-Token` | Optional n8n auth |
 | `N8N_CHAT_TIMEOUT_MS` | `30000` | |
@@ -168,7 +168,7 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (63 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (84 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
 cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```
