@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { PROVIDER_FIELDS, API_KEY_LABELS, NO_BASE_URL, SECRET_FIELD_NAMES } from '../utils/providerFields';
 
 const API_KEY_STORAGE_KEY = 'flowforge.apikey.v1';
 
@@ -20,32 +21,59 @@ const providerHints = {
     model: 'gemini-3.8-flash',
     baseUrl: '',
   },
+  vertex: {
+    model: 'gemini-3.8-flash',
+    baseUrl: '',
+  },
+  bedrock: {
+    model: 'us.anthropic.claude-sonnet-4-6',
+    baseUrl: '',
+  },
+  openai_compatible: {
+    model: 'e.g. deepseek/deepseek-chat (required)',
+    baseUrl: 'https://openrouter.ai/api/v1 (required)',
+  },
   ollama: {
     model: 'llama3',
     baseUrl: 'http://localhost:11434',
   },
 };
 
-function readSavedApiKey() {
+// "Remember" stores the API key plus provider secrets (Vertex JSON, AWS keys).
+function readSavedCredentials() {
   try {
     const raw = localStorage.getItem(API_KEY_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return typeof parsed?.key === 'string' ? parsed.key : '';
+      return {
+        key: typeof parsed?.key === 'string' ? parsed.key : '',
+        secrets: parsed?.secrets && typeof parsed.secrets === 'object' ? parsed.secrets : {},
+      };
     }
   } catch { /* ignore */ }
-  return '';
+  return { key: '', secrets: {} };
 }
 
-function persistApiKey(key) {
+function hasSavedCredentials() {
+  const { key, secrets } = readSavedCredentials();
+  return Boolean(key) || Object.values(secrets).some(Boolean);
+}
+
+function persistCredentials(key, secrets = {}) {
   try {
-    if (key) {
-      localStorage.setItem(API_KEY_STORAGE_KEY, JSON.stringify({ key, savedAt: new Date().toISOString() }));
+    const kept = Object.fromEntries(Object.entries(secrets).filter(([, v]) => v));
+    if (key || Object.keys(kept).length > 0) {
+      localStorage.setItem(
+        API_KEY_STORAGE_KEY,
+        JSON.stringify({ key, secrets: kept, savedAt: new Date().toISOString() })
+      );
     } else {
       localStorage.removeItem(API_KEY_STORAGE_KEY);
     }
   } catch { /* ignore */ }
 }
+
+const pickSecrets = (value) => Object.fromEntries(SECRET_FIELD_NAMES.map((n) => [n, value[n] || '']));
 
 export default function BringYourOwnModelPanel({
   selectedProvider,
@@ -55,14 +83,15 @@ export default function BringYourOwnModelPanel({
 }) {
   const hints = providerHints[selectedProvider] || providerHints.groq;
   const [testState, setTestState] = useState({ status: 'idle', message: '' });
-  const [rememberKey, setRememberKey] = useState(() => Boolean(readSavedApiKey()));
+  const [rememberKey, setRememberKey] = useState(() => hasSavedCredentials());
   const abortRef = useRef(null);
 
-  // On mount, restore saved API key if available
+  // On mount, restore saved credentials if available
   useEffect(() => {
-    const savedKey = readSavedApiKey();
-    if (savedKey && !value.apiKey) {
-      onChange({ ...value, apiKey: savedKey, enabled: true });
+    const { key, secrets } = readSavedCredentials();
+    const hasSecrets = Object.values(secrets).some(Boolean);
+    if ((key && !value.apiKey) || hasSecrets) {
+      onChange({ ...value, ...secrets, apiKey: value.apiKey || key, enabled: true });
     }
     // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,16 +103,35 @@ export default function BringYourOwnModelPanel({
 
   useEffect(() => {
     setTestState({ status: 'idle', message: '' });
-  }, [selectedProvider, value.enabled, value.apiKey, value.model, value.baseUrl]);
+  }, [selectedProvider, value]);
 
-  // Persist or clear key when remember toggle changes
+  // Persist or clear credentials when the remember toggle or values change
+  const secretsSignature = JSON.stringify(pickSecrets(value));
   useEffect(() => {
-    if (rememberKey && value.apiKey) {
-      persistApiKey(value.apiKey);
-    } else if (!rememberKey) {
-      persistApiKey('');
+    if (rememberKey) {
+      persistCredentials(value.apiKey, pickSecrets(value));
+    } else {
+      persistCredentials('');
     }
-  }, [rememberKey, value.apiKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rememberKey, value.apiKey, secretsSignature]);
+
+  const extraFields = PROVIDER_FIELDS[selectedProvider] || [];
+  const showBaseUrl = !NO_BASE_URL.has(selectedProvider);
+  const apiKeyLabel = API_KEY_LABELS[selectedProvider] || 'API key (optional)';
+
+  // Same rule as real requests: only this provider's fields, secrets only when enabled.
+  const buildSelfTestOptions = () => {
+    const options = {
+      model: value.model,
+      apiKey: value.enabled ? value.apiKey : '',
+      ...(showBaseUrl ? { baseUrl: value.baseUrl } : {}),
+    };
+    for (const field of extraFields) {
+      if (!field.secret || value.enabled) options[field.name] = value[field.name] || '';
+    }
+    return options;
+  };
 
   const handleSelfTest = async () => {
     if (!selectedProvider) return;
@@ -95,7 +143,7 @@ export default function BringYourOwnModelPanel({
       abortRef.current = controller;
       const { data } = await axios.post(
         `/api/config/providers/ai/${selectedProvider}/self-test`,
-        { aiOptions: value },
+        { aiOptions: buildSelfTestOptions() },
         { signal: controller.signal }
       );
 
@@ -115,9 +163,9 @@ export default function BringYourOwnModelPanel({
   };
 
   const handleClearSavedKey = () => {
-    persistApiKey('');
+    persistCredentials('');
     setRememberKey(false);
-    onChange({ ...value, apiKey: '' });
+    onChange({ ...value, apiKey: '', ...Object.fromEntries(SECRET_FIELD_NAMES.map((n) => [n, ''])) });
   };
 
   const feedbackColor =
@@ -127,7 +175,7 @@ export default function BringYourOwnModelPanel({
         ? 'text-[var(--ff-warning)]'
         : 'text-[var(--ff-danger)]';
 
-  const hasSavedKey = Boolean(readSavedApiKey());
+  const hasSavedKey = hasSavedCredentials();
 
   return (
     <div className="rounded-2xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-4 md:p-5">
@@ -136,8 +184,8 @@ export default function BringYourOwnModelPanel({
           <p className="text-sm font-semibold text-[var(--ff-text)]">Runtime Overrides</p>
           <p className="text-xs text-[var(--ff-muted)] mt-1">
             {rememberKey
-              ? 'API key is saved locally and will persist across refreshes.'
-              : 'API key is session-only and will be cleared on refresh.'}
+              ? 'Credentials are saved in this browser and persist across refreshes.'
+              : 'Credentials are session-only and cleared on refresh.'}
           </p>
         </div>
 
@@ -149,7 +197,7 @@ export default function BringYourOwnModelPanel({
             onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
             className="accent-current"
           />
-          Use custom API key
+          Use custom credentials
         </label>
       </div>
 
@@ -167,9 +215,10 @@ export default function BringYourOwnModelPanel({
           />
         </div>
 
+        {showBaseUrl && (
         <div>
           <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
-            Base URL (optional)
+            {selectedProvider === 'openai_compatible' ? 'Base URL' : 'Base URL (optional)'}
           </label>
           <input
             type="text"
@@ -179,20 +228,44 @@ export default function BringYourOwnModelPanel({
             className="ff-input px-3 py-2 text-sm ff-code"
           />
         </div>
+        )}
 
         <div>
           <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
-            API key (optional)
+            {apiKeyLabel}
           </label>
           <input
             type="password"
             value={value.apiKey}
             onChange={(e) => onChange({ ...value, apiKey: e.target.value })}
             disabled={!value.enabled}
-            placeholder={value.enabled ? 'Paste your key' : 'Enable custom key to edit'}
+            placeholder={value.enabled ? 'Paste your key' : 'Enable custom credentials to edit'}
             className="ff-input px-3 py-2 text-sm disabled:opacity-40"
           />
         </div>
+
+        {extraFields.map((field) => {
+          const locked = field.secret && !value.enabled;
+          const common = {
+            value: value[field.name] || '',
+            onChange: (e) => onChange({ ...value, [field.name]: e.target.value }),
+            disabled: locked,
+            placeholder: locked ? 'Enable custom credentials to edit' : field.placeholder,
+            className: `ff-input px-3 py-2 text-sm disabled:opacity-40 ${field.password ? '' : 'ff-code'}`,
+          };
+          return (
+            <div key={field.name} className={field.span === 2 ? 'md:col-span-2' : ''}>
+              <label className="text-xs uppercase tracking-[0.14em] text-[var(--ff-muted)] block mb-1.5">
+                {field.label}
+              </label>
+              {field.multiline ? (
+                <textarea rows={4} spellCheck={false} {...common} />
+              ) : (
+                <input type={field.password ? 'password' : 'text'} autoComplete="off" {...common} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Remember key + clear */}
@@ -205,7 +278,7 @@ export default function BringYourOwnModelPanel({
             disabled={!value.enabled}
             className="accent-current"
           />
-          Remember API key across sessions
+          Remember credentials in this browser
         </label>
 
         {hasSavedKey && (
@@ -213,7 +286,7 @@ export default function BringYourOwnModelPanel({
             onClick={handleClearSavedKey}
             className="text-xs text-[var(--ff-danger)] hover:underline"
           >
-            Clear saved key
+            Clear saved credentials
           </button>
         )}
       </div>

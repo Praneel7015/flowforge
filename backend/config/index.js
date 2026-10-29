@@ -10,6 +10,9 @@ const GROQ_MODEL = resolveGroqModel(process.env.GROQ_MODEL);
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-6-luna';
+const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-3.8-flash';
+const BEDROCK_MODEL = process.env.BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-6';
+const OPENAI_COMPATIBLE_MODEL = process.env.OPENAI_COMPATIBLE_MODEL || '';
 
 function readFeatureFlag(name, defaultValue = true) {
   const value = process.env[name];
@@ -52,6 +55,40 @@ const config = {
       enabled: !!process.env.OPENAI_API_KEY,
       apiKey: process.env.OPENAI_API_KEY,
       model: OPENAI_MODEL,
+    },
+    vertex: {
+      name: 'vertex',
+      displayName: `Vertex AI (${VERTEX_MODEL})`,
+      enabled: !!(process.env.VERTEX_API_KEY || process.env.VERTEX_SERVICE_ACCOUNT_JSON),
+      apiKey: process.env.VERTEX_API_KEY,
+      serviceAccountJson: process.env.VERTEX_SERVICE_ACCOUNT_JSON,
+      projectId: process.env.VERTEX_PROJECT_ID,
+      location: process.env.VERTEX_LOCATION || 'global',
+      model: VERTEX_MODEL,
+    },
+    bedrock: {
+      name: 'bedrock',
+      displayName: `AWS Bedrock (${BEDROCK_MODEL})`,
+      enabled: !!(
+        process.env.AWS_BEARER_TOKEN_BEDROCK ||
+        (process.env.BEDROCK_ACCESS_KEY_ID && process.env.BEDROCK_SECRET_ACCESS_KEY)
+      ),
+      apiKey: process.env.AWS_BEARER_TOKEN_BEDROCK,
+      accessKeyId: process.env.BEDROCK_ACCESS_KEY_ID,
+      secretAccessKey: process.env.BEDROCK_SECRET_ACCESS_KEY,
+      sessionToken: process.env.BEDROCK_SESSION_TOKEN,
+      region: process.env.BEDROCK_REGION || 'us-east-1',
+      model: BEDROCK_MODEL,
+    },
+    openai_compatible: {
+      name: 'openai_compatible',
+      displayName: OPENAI_COMPATIBLE_MODEL
+        ? `OpenAI-compatible (${OPENAI_COMPATIBLE_MODEL})`
+        : 'OpenAI-compatible endpoint',
+      enabled: !!(process.env.OPENAI_COMPATIBLE_BASE_URL && OPENAI_COMPATIBLE_MODEL),
+      apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
+      baseUrl: process.env.OPENAI_COMPATIBLE_BASE_URL,
+      model: OPENAI_COMPATIBLE_MODEL,
     },
     ollama: {
       name: 'ollama',
