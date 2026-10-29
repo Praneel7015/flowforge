@@ -220,7 +220,8 @@ test('Jenkins import keeps sh scripts in all common forms', () => {
   const dag = aiService.parseConfigToDAG(jenkinsfile, 'jenkins');
   const scriptOf = (label) => dag.nodes.find((n) => n.data?.label === label)?.data?.config?.script;
   assert.strictEqual(scriptOf('Build'), "npm ci\necho 'building' && npm run build");
-  assert.strictEqual(scriptOf('Test'), 'npm ci\nnpm test -- --ci\nnpm run lint\nnpm audit --audit-level=high');
+  // A ''' block is one sh step, so it stays one (dedented) command.
+  assert.deepStrictEqual(scriptOf('Test'), ['npm ci\nnpm test -- --ci', 'npm run lint', 'npm audit --audit-level=high']);
 });
 
 const { inspectUrl } = require('../utils/ssrf');

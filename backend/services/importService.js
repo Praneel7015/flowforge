@@ -6,6 +6,7 @@
  * it on the canvas.
  */
 const yaml = require('js-yaml');
+const { toScriptConfig } = require('../utils/scriptCommands');
 
 const SUPPORTED_NODE_TYPES = [
   'trigger_push', 'trigger_mr', 'build', 'matrix_build', 'lint', 'test',
@@ -51,9 +52,10 @@ function classifyType(value) {
   return 'build';
 }
 
+// Each entry stays one command, so a multi-line block isn't split into lines.
 function joinScript(value) {
-  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string').join('\n');
-  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return toScriptConfig(value.filter((v) => typeof v === 'string'));
+  if (typeof value === 'string') return toScriptConfig([value]);
   return '';
 }
 

@@ -1,4 +1,6 @@
 /* eslint-disable no-unused-vars -- abstract base class: parameters document the contract subclasses implement */
+const { toCommandList } = require('../../utils/scriptCommands');
+
 /**
  * Abstract base class for CI/CD configuration generators.
  * Converts workflow nodes/edges to platform-specific YAML/config.
@@ -289,35 +291,19 @@ class CICDGenerator {
   }
 
   /**
-   * Normalize script config to an array of commands.
+   * Normalize script config to an array of commands. A multi-line array entry
+   * stays one command; a legacy string is one command per line.
    * @param {string|string[]|undefined} input
    * @param {string|string[]} fallback
    * @returns {string[]}
    */
   _normalizeScripts(input, fallback = 'echo "Running job..."') {
-    const normalize = (value) => {
-      if (Array.isArray(value)) {
-        return value
-          .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-          .filter(Boolean);
-      }
-
-      if (typeof value === 'string') {
-        return value
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean);
-      }
-
-      return [];
-    };
-
-    const normalized = normalize(input);
+    const normalized = toCommandList(input);
     if (normalized.length > 0) {
       return normalized;
     }
 
-    const fallbackNormalized = normalize(fallback);
+    const fallbackNormalized = toCommandList(fallback);
     if (fallbackNormalized.length > 0) {
       return fallbackNormalized;
     }

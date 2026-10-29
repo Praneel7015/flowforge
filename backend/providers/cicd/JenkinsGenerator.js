@@ -13,6 +13,18 @@ const GROOVY_ESCAPES = { '\\': '\\\\', "'": "\\'", '\r': '\\r', '\n': '\\n' };
 const escapeGroovyChar = (ch) => GROOVY_ESCAPES[ch];
 const escapeGroovy = (value) => String(value).replace(GROOVY_SPECIAL, escapeGroovyChar);
 
+// A multi-line command goes into a ''' block so the shell gets it as one script
+// (an if/fi or a heredoc keeps working). Line breaks stay literal there; quotes
+// and backslashes are still escaped, so the block can't be closed early.
+const GROOVY_BLOCK_SPECIAL = /[\\'\r]/g;
+const escapeGroovyBlock = (value) => String(value).replace(GROOVY_BLOCK_SPECIAL, escapeGroovyChar);
+
+/** One `sh` step: inline for a one-line command, a ''' block otherwise. */
+const shStep = (command, indent) =>
+  command.includes('\n')
+    ? `${indent}sh '''\\\n${escapeGroovyBlock(command)}\n${indent}'''\n`
+    : `${indent}sh '${escapeGroovy(command)}'\n`;
+
 class JenkinsGenerator extends CICDGenerator {
   constructor() {
     super();
@@ -112,8 +124,7 @@ class JenkinsGenerator extends CICDGenerator {
         jenkinsfile += '                        steps {\n';
 
         for (const script of scripts) {
-          const escapedScript = script.replace(GROOVY_SPECIAL, escapeGroovyChar);
-          jenkinsfile += `                            sh '${escapedScript}'\n`;
+          jenkinsfile += shStep(script, '                            ');
         }
 
         jenkinsfile += '                        }\n';
@@ -172,9 +183,7 @@ class JenkinsGenerator extends CICDGenerator {
       }
 
       for (const script of scripts) {
-        // Escape single quotes in shell commands
-        const escapedScript = script.replace(GROOVY_SPECIAL, escapeGroovyChar);
-        jenkinsfile += `                sh '${escapedScript}'\n`;
+        jenkinsfile += shStep(script, '                ');
       }
 
       jenkinsfile += '            }\n';

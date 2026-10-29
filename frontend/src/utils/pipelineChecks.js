@@ -6,20 +6,31 @@
  * one keeps failing for a reason that is shown in the job log.
  */
 
+import { toCommandList } from './scriptCommands';
+
 const NON_JOB_TYPES = new Set(['conditional']);
 
 function isJobNode(node) {
   return node && !node.type?.startsWith('trigger_') && !NON_JOB_TYPES.has(node.type);
 }
 
-function scriptLines(node) {
-  const script = node?.data?.config?.script;
-  const text = Array.isArray(script) ? script.join('\n') : String(script || '');
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+function scriptCommands(node) {
+  return toCommandList(node?.data?.config?.script);
 }
+
+// The checks look at every line of every command, so an `npm test` inside a
+// multi-line `if ...; then ... fi` command is still checked.
+function scriptLines(node) {
+  return scriptCommands(node).flatMap((command) =>
+    command
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+}
+
+/** Shell-style echo of a command: `$ ` on the first line, `> ` on continuations. */
+const echoCommand = (command) => `$ ${command.split('\n').join('\n> ')}`;
 
 // Each CI job starts in a fresh container, so project tooling only works if
 // the same job installed dependencies first. Caches can be empty on a cold
@@ -153,7 +164,9 @@ export function simulatePipeline(nodes = [], edges = []) {
       node,
       status,
       reason: failure?.reason,
-      log: failure ? failure.log : `$ ${scriptLines(node).join('\n$ ') || 'true'}\nJob succeeded (exit code 0).`,
+      log: failure
+        ? failure.log
+        : `${scriptCommands(node).map(echoCommand).join('\n') || '$ true'}\nJob succeeded (exit code 0).`,
     };
   });
 }

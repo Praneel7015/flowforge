@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toCommandList } from '../utils/scriptCommands';
 
 const STAGE_CONFIGS = {
   build: ['image', 'stage', 'script'],
@@ -67,6 +68,44 @@ const SCRIPT_PRESETS = {
   security_scan: ['npm audit --audit-level=high', 'trivy fs --exit-code 1 .', 'semgrep ci'],
   deploy: ['npx vercel --prod --token=$VERCEL_TOKEN', 'kubectl rollout restart deployment/app', './scripts/deploy.sh production'],
 };
+
+/**
+ * Editor for a script stored as a list of commands. Each command gets its own
+ * box, so the line breaks inside an `if ...; then ... fi` block stay part of
+ * that one command instead of being read as separate commands.
+ */
+function ScriptCommandList({ commands, onChange, placeholder }) {
+  const update = (index, value) => onChange(commands.map((cmd, i) => (i === index ? value : cmd)));
+  const remove = (index) => {
+    const next = commands.filter((_, i) => i !== index);
+    onChange(next.length > 0 ? next : '');
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {commands.map((command, index) => (
+        <div key={index} className="flex items-start gap-1">
+          <textarea
+            value={typeof command === 'string' ? command : ''}
+            onChange={(e) => update(index, e.target.value)}
+            rows={Math.min(8, Math.max(2, String(command).split('\n').length))}
+            aria-label={`Command ${index + 1}`}
+            className="ff-input px-3 py-2 text-xs ff-code leading-relaxed resize-y"
+            placeholder={placeholder}
+          />
+          <button
+            type="button"
+            onClick={() => remove(index)}
+            aria-label={`Remove command ${index + 1}`}
+            className="w-6 h-6 mt-1 shrink-0 rounded-sm flex items-center justify-center text-[var(--ff-muted)] hover:text-red-400 hover:bg-red-500/10 text-xs transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDelete }) {
   const [config, setConfig] = useState(node.data.config || {});
@@ -148,13 +187,34 @@ export default function NodeConfigPanel({ node, onUpdate, onSave, onClose, onDel
             </label>
             {field === 'script' ? (
               <div className="space-y-1.5">
-                <textarea
-                  value={config[field] || ''}
-                  onChange={(e) => handleFieldChange(field, e.target.value)}
-                  rows={4}
-                  className="ff-input px-3 py-2 text-xs ff-code leading-relaxed resize-y"
-                  placeholder={`echo "Running ${label || node.data.label}"`}
-                />
+                {Array.isArray(config.script) ? (
+                  <ScriptCommandList
+                    commands={config.script}
+                    onChange={(next) => handleFieldChange('script', next)}
+                    placeholder={`echo "Running ${label || node.data.label}"`}
+                  />
+                ) : (
+                  <textarea
+                    value={config[field] || ''}
+                    onChange={(e) => handleFieldChange(field, e.target.value)}
+                    rows={4}
+                    className="ff-input px-3 py-2 text-xs ff-code leading-relaxed resize-y"
+                    placeholder={`echo "Running ${label || node.data.label}"`}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    // A one-command-per-line string becomes a list first, so its
+                    // commands keep their meaning next to the new multi-line one.
+                    const current = Array.isArray(config.script) ? config.script : toCommandList(config.script);
+                    handleFieldChange('script', [...current, '']);
+                  }}
+                  className="text-[10px] ff-code px-2 py-0.5 rounded-sm border border-dashed border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
+                  title="Add a command that can span several lines, such as an if/fi block"
+                >
+                  + Multi-line command
+                </button>
                 {presets.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5">
                     {presets.map((preset, idx) => (
