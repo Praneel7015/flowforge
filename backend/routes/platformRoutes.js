@@ -104,7 +104,7 @@ async function validateGitHub(creds) {
 }
 
 async function validateBitbucket(creds) {
-  const { username, appPassword, workspace } = creds;
+  const { username, appPassword } = creds;
   if (!username || !appPassword) {
     return { valid: false, error: 'Username and App Password are both required.' };
   }

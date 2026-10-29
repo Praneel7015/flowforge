@@ -1,5 +1,8 @@
 # FlowForge
 
+[![CI](https://github.com/Praneel7015/flowforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Praneel7015/flowforge/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Praneel7015/flowforge/actions/workflows/codeql.yml/badge.svg)](https://github.com/Praneel7015/flowforge/actions/workflows/codeql.yml)
+
 **Visual CI/CD pipeline builder with an AI layer on top.**
 
 Draw a pipeline as a graph (trigger → build → test → security scan → approval → canary deploy → rollback) and export it deterministically to GitHub Actions, GitLab CI, Jenkins, CircleCI or Bitbucket Pipelines. Or describe it in plain English, migrate an existing config, grade its health, chat about it, and push it to your repo as a pull request.
@@ -158,9 +161,24 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && node --test test/*.test.js     # unit: SSRF guard, secret scanner, import, run controller
-cd frontend && npm run test:e2e              # Playwright: generate, export, import/edit, migrate, node library, settings, theme
+cd backend && npm run lint && npm test       # ESLint + node:test (SSRF guard, secret scanner, providers, SigV4, import, runs)
+cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
+cd frontend && npm run test:e2e              # Playwright; starts the API and Vite dev server itself
 ```
+
+## Development workflow
+
+Every pull request to `main` goes through:
+
+| Check | What it does | Config |
+|---|---|---|
+| **CI** (GitHub Actions) | Backend lint + unit tests, frontend lint + build, then Playwright E2E against a real API + Vite server | `.github/workflows/ci.yml` |
+| **CodeQL** | GitHub code scanning with the `security-extended` query suite, on PRs, pushes and weekly | `.github/workflows/codeql.yml` |
+| **CodeRabbit** | AI code review on each PR, with repo-specific instructions (SSRF, key handling, deterministic generators) plus ESLint, gitleaks, actionlint, yamllint and markdownlint | `.coderabbit.yaml` |
+| **Dependabot** | Weekly grouped npm updates for backend and frontend, monthly GitHub Actions updates | `.github/dependabot.yml` |
+| **Vercel** | Preview deployment of the frontend for each PR | Vercel GitHub app |
+
+PRs use the template in `.github/pull_request_template.md`; `CODEOWNERS` requests a review from the maintainer.
 
 ## Project structure
 

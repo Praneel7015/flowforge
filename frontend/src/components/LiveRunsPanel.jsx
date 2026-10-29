@@ -90,7 +90,7 @@ export default function LiveRunsPanel({
   );
   const [repoSlug, setRepoSlug] = useState('');
   const [branch, setBranch] = useState('main');
-  const [runs, setRuns] = useState([]);
+  const [, setRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);

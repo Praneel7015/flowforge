@@ -308,7 +308,7 @@ function importPipeline(content, platformHint = 'auto') {
 
   // A Jenkinsfile signature always wins — it can never be valid YAML for another
   // platform, even if a hint says otherwise or js-yaml half-parses it.
-  let platform = looksLikeJenkins(text)
+  const platform = looksLikeJenkins(text)
     ? 'jenkins'
     : platformHint && platformHint !== 'auto'
       ? platformHint

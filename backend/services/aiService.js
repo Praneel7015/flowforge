@@ -675,7 +675,7 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
       match = stageRegex.exec(rawText);
     }
   } else if (rawText) {
-    let doc = null;
+    let doc;
     try {
       doc = yaml.load(rawText);
     } catch {
@@ -1866,7 +1866,6 @@ ${currentYaml || '# No pipeline loaded yet — drag nodes onto the canvas or use
   try {
     return await provider.chat(system, messages, { maxTokens: 2048 });
   } catch (err) {
-    const latestMsg = extractLatestMessageText(messages, 'user').toLowerCase();
     const health = buildHeuristicHealthReport(currentYaml || '', metadata.displayName);
     const tips = health.topRecommendations.map((t) => `- ${t}`).join('\n');
     return `**FlowForge Assistant (Offline Diagnostic Mode)**\n\nI analyzed your **${metadata.displayName}** pipeline locally (Current Health Grade: **${health.grade}** — ${health.overallScore}/100).\n\n**Top actionable improvements for your pipeline:**\n${tips || '- Add parallel test stages and dependency caching.'}\n\n*Note: Live LLM chat encountered an issue (${err.message}). Check the AI provider and API key in **Settings**.*`;

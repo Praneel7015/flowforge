@@ -11,7 +11,6 @@ import ImportPipelineModal from './components/ImportPipelineModal';
 import { getClientFeatureFlags, mergeFeatureFlags } from './utils/featureFlags';
 import { buildAiOptions, EXTRA_FIELD_NAMES, SECRET_FIELD_NAMES } from './utils/providerFields';
 const WorkflowEditor = lazy(() => import('./workflow/WorkflowEditor'));
-const PromptPanel = lazy(() => import('./components/PromptPanel'));
 const JenkinsConverter = lazy(() => import('./components/JenkinsConverter'));
 const HealthAdvisor = lazy(() => import('./components/HealthAdvisor'));
 const PipelineChat = lazy(() => import('./components/PipelineChat'));

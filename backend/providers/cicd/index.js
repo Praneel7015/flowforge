@@ -2,7 +2,7 @@
  * CI/CD Generator Factory
  * Returns the appropriate CI/CD generator based on platform name.
  */
-const { getCICDConfig, getDefaults } = require('../../config');
+const { getDefaults } = require('../../config');
 const GitLabCIGenerator = require('./GitLabCIGenerator');
 const GitHubActionsGenerator = require('./GitHubActionsGenerator');
 const JenkinsGenerator = require('./JenkinsGenerator');

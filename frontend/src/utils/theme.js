@@ -9,7 +9,7 @@ function getStoredTheme() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
-  } catch {}
+  } catch { /* storage unavailable */ }
   const domTheme = document.documentElement?.dataset?.theme;
   if (domTheme === 'light' || domTheme === 'dark') return domTheme;
   return DEFAULT_THEME;
@@ -27,7 +27,7 @@ function applyTheme(theme, animate = false) {
 
   try {
     localStorage.setItem(STORAGE_KEY, theme);
-  } catch {}
+  } catch { /* storage unavailable */ }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: { theme } }));

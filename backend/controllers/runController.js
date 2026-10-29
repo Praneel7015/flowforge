@@ -201,7 +201,7 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
 
   const runs = await Promise.all(
     pipelines.map(async (p) => {
-      let wf = null;
+      let wf;
       try {
         const { data: wfData } = await client.get(`/pipeline/${p.id}/workflow`);
         wf = (wfData?.items || [])[0] || null;
@@ -231,7 +231,7 @@ async function listCircleRuns(creds, { projectId, owner, repo, branch, perPage =
 
 async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
   const client = makeCircleClient(creds.token, creds.baseUrl);
-  let workflow = null;
+  let workflow;
   let workflowId = runId;
 
   try {
@@ -244,7 +244,7 @@ async function getCircleRunStatus(creds, { projectId, owner, repo, runId }) {
     workflowId = workflow.id || runId;
   }
 
-  let rawJobs = [];
+  let rawJobs;
   try {
     const { data: jobsData } = await client.get(`/workflow/${encodeURIComponent(workflowId)}/job`);
     rawJobs = Array.isArray(jobsData?.items) ? jobsData.items : [];

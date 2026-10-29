@@ -234,7 +234,7 @@ function readValidationState() {
 }
 
 function writeValidationState(state) {
-  try { localStorage.setItem(VALIDATION_STORAGE_KEY, JSON.stringify(state)); } catch {}
+  try { localStorage.setItem(VALIDATION_STORAGE_KEY, JSON.stringify(state)); } catch { /* storage unavailable */ }
 }
 
 function getRequiredFields(platform) {
@@ -471,7 +471,7 @@ function N8nSettingsStep() {
   const update = useCallback((field, value) => {
     setConfig((prev) => {
       const next = { ...prev, [field]: value };
-      try { localStorage.setItem(N8N_CONFIG_KEY, JSON.stringify(next)); } catch {}
+      try { localStorage.setItem(N8N_CONFIG_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
       return next;
     });
     // Reset test status when URL changes
@@ -491,7 +491,7 @@ function N8nSettingsStep() {
 
     setter({ status: 'testing', message: '' });
     try {
-      const { data } = await axios.post('/api/n8n/forward', {
+      await axios.post('/api/n8n/forward', {
         webhookUrl: url,
         payload: { test: true, source: 'flowforge', timestamp: new Date().toISOString() },
       });

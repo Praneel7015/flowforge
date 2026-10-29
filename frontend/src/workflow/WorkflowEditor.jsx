@@ -1070,18 +1070,6 @@ function WorkflowEditorInner({
     [nodes, handleNodeInlineUpdate, nodeRunStatuses]
   );
 
-  const exportWorkflow = useCallback(
-    async ({ signal } = {}) => {
-      const { data } = await axios.post(
-        '/api/pipelines/export',
-        { nodes, edges, cicdPlatform },
-        signal ? { signal } : undefined
-      );
-      return data.yaml;
-    },
-    [nodes, edges, cicdPlatform]
-  );
-
   const handleExport = useCallback(async () => {
     setSyncState('syncing');
     try {
