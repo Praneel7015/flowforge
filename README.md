@@ -86,7 +86,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | Security headers, fixed-window rate limiting (general + tighter AI limit) | `backend/middleware/security.js` |
 | Central error handler, no internal error strings leaked in production | `backend/middleware/errorHandler.js` |
 | **SSRF guard** on every user-supplied URL: BYOM base URL, n8n webhooks, GitLab verify, self-hosted GitLab and custom CircleCI hosts. Blocks localhost, cloud metadata, private/loopback/link-local (full `fe80::/10`)/CGNAT ranges, including IPv4-mapped IPv6 in both dotted and hex form (`[::ffff:7f00:1]`) | `backend/utils/ssrf.js` |
-| **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects | `backend/utils/ssrf.js` |
+| **DNS rebinding blocked at connect time**: outbound clients for user-supplied hosts (Ollama, OpenAI-compatible, Groq overrides, n8n, GitLab, CircleCI) resolve the name once, refuse it if *any* address is private, and connect only to the checked addresses (`safeLookup` / `safeAgents` / `safeFetch` via `undici`). They also ignore `HTTP(S)_PROXY` and never follow redirects. The operator's own `GITLAB_URL` is trusted, so a self-hosted GitLab on a private network works; a request-supplied URL never is | `backend/utils/ssrf.js` |
 | **Path traversal**: user-supplied owner/repo/branch/path/id values in GitHub, GitLab, Bitbucket and CircleCI API URLs are encoded per segment, and `.` / `..` are rejected before any request is sent | `backend/utils/url.js` |
 | **Server CI tokens stay with the server's host**: a request that picks its own GitLab/CircleCI URL must bring its own token; custom hosts must be HTTPS | `backend/controllers/runController.js` |
 | **Generated configs can't run user text**: Jenkinsfile strings escape backslashes, quotes and line breaks in one pass; default step commands single-quote the label for the shell, so `$(...)` in a node label is printed, not executed | `backend/providers/cicd/` |
@@ -95,6 +95,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
 | BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
+| **Server CI tokens need the operator key**: `/api/runs` has no accounts, so `GITHUB_TOKEN`, `GITLAB_TOKEN`, `BITBUCKET_*` and `CIRCLECI_TOKEN` are used only for requests carrying `RUNS_OPERATOR_KEY` (constant-time compare); anyone else must bring their own token | `backend/controllers/runController.js` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
 | AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames (validation errors never echo the typed value); the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
 | **n8n memory keys are server-derived**: both n8n chat paths (`/api/n8n/chat` and `/api/advisor/chat` with `useN8n`) ignore `userId`/`chatId`/`username` from the body and headers and derive them from an HMAC-signed anonymous session token, so callers can't pick another visitor's n8n memory | `backend/utils/chatSession.js`, `backend/routes/n8nRoutes.js`, `backend/controllers/advisorController.js` |
@@ -149,7 +150,8 @@ Or with Docker: `docker-compose up`.
 | `AI_RATE_LIMIT_WINDOW_MS`, `AI_RATE_LIMIT_MAX` | `60000`, `20` | AI routes |
 | `GITHUB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the secret set on the GitHub webhook |
 | `GITLAB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the GitLab webhook "Secret token" |
-| `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger |
+| `RUNS_OPERATOR_KEY` | — | Lets a request use the server's CI tokens for live runs by sending it in `X-FlowForge-Operator-Key`. Unset: every caller brings their own token |
+| `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger (may be a private-network instance; must be https://, http only for localhost) |
 | `SESSION_SECRET` | random per process | HMAC key (32+ chars) that signs the anonymous n8n chat sessions; set it in production so n8n memory survives restarts and works across instances (a warning is logged when unset) |
 | `N8N_CHAT_WEBHOOK_URL` | – | Server-side n8n webhook, used only when a chat request opts in (`useN8n`); falls back to the AI provider on failure |
 | `N8N_WEBHOOK_AUTH_HEADER`, `N8N_WEBHOOK_AUTH_TOKEN` | `X-FlowForge-Token` | Optional n8n auth |
@@ -170,7 +172,7 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (63 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (99 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
 cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```

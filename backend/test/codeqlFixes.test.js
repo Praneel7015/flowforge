@@ -108,14 +108,14 @@ test('server CI tokens are never paired with a caller-chosen host', () => {
   try {
     const { resolveCredentials } = runController;
     // Default hosts may use the server tokens.
-    assert.strictEqual(resolveCredentials('gitlab', {}).token, 'server-gitlab-token');
-    assert.strictEqual(resolveCredentials('circleci', {}).token, 'server-circle-token');
+    assert.strictEqual(resolveCredentials('gitlab', {}, { operator: true }).token, 'server-gitlab-token');
+    assert.strictEqual(resolveCredentials('circleci', {}, { operator: true }).token, 'server-circle-token');
     // A custom host without the caller's own token is refused, not given ours.
-    assert.throws(() => resolveCredentials('gitlab', { url: 'https://gitlab.attacker.example' }), {
+    assert.throws(() => resolveCredentials('gitlab', { url: 'https://gitlab.attacker.example' }, { operator: true }), {
       status: 400,
       message: /needs your own token/,
     });
-    assert.throws(() => resolveCredentials('circleci', { url: 'https://circle.attacker.example' }), {
+    assert.throws(() => resolveCredentials('circleci', { url: 'https://circle.attacker.example' }, { operator: true }), {
       status: 400,
       message: /needs your own token/,
     });

@@ -10,12 +10,34 @@ const gitlab = axios.create({
   baseURL: `${GITLAB_URL}/api/v4`,
   headers: { 'PRIVATE-TOKEN': GITLAB_TOKEN },
   timeout: GITLAB_TIMEOUT_MS,
+  maxRedirects: 0,
+  proxy: false,
 });
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The operator's GITLAB_URL is trusted to be on a private network, but the
+ * server token travels to it, so it must use https:// (plain http only for a
+ * loopback dev instance).
+ */
+function assertTrustedGitLabUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('GITLAB_URL is not a valid URL');
+  }
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'http:' && LOOPBACK_HOSTS.has(parsed.hostname)) return;
+  throw new Error('GITLAB_URL must use https:// (http is allowed only for localhost)');
+}
 
 function ensureGitLabConfigured() {
   if (!GITLAB_TOKEN) {
     throw new Error('GITLAB_TOKEN is missing. Configure it in backend/.env');
   }
+  assertTrustedGitLabUrl(GITLAB_URL);
 }
 
 function toApiError(action, err) {
@@ -144,16 +166,20 @@ async function commentOnCommit(projectId, sha, note) {
 
 const MAX_FILE_SIZE = 100 * 1024;
 
-function makeUserClient(token, instanceUrl) {
+function makeUserClient(token, instanceUrl, { trusted = false } = {}) {
   const base = trimTrailingSlashes(instanceUrl || 'https://gitlab.com');
   return axios.create({
     baseURL: `${base}/api/v4`,
     headers: { 'PRIVATE-TOKEN': token },
     timeout: GITLAB_TIMEOUT_MS,
-    // instanceUrl is user-supplied (self-hosted GitLab): no redirects, and
-    // resolved addresses are checked at connect time (DNS rebinding).
     maxRedirects: 0,
-    ...safeAgents,
+    // Never through an env proxy: it could not reach a private instance, and
+    // for a request-supplied host it would bypass the address checks.
+    proxy: false,
+    // A request-supplied instanceUrl has its resolved addresses checked at
+    // connect time (DNS rebinding). The operator's own GITLAB_URL is trusted,
+    // so a self-hosted GitLab on a private network keeps working.
+    ...(trusted ? {} : safeAgents),
   });
 }
 
@@ -326,13 +352,21 @@ async function createUserMergeRequest(token, instanceUrl, projectId, { title, de
   }
 }
 
+// instanceUrl is only ever the caller's URL; without one, the operator's
+// GITLAB_URL is used and trusted. Trust follows the source, never the value.
 function resolveGitLabClient(token, instanceUrl) {
-  const effectiveToken = token || process.env.GITLAB_TOKEN || GITLAB_TOKEN;
-  const effectiveUrl = instanceUrl || process.env.GITLAB_URL || GITLAB_URL;
-  if (!effectiveToken) {
+  if (instanceUrl) {
+    if (!token) throw new Error('GitLab token is required');
+    return makeUserClient(token, instanceUrl);
+  }
+  // No silent GITLAB_TOKEN fallback: the caller (runController) decides
+  // whether a request may use the server's token.
+  if (!token) {
     throw new Error('GitLab token is required');
   }
-  return makeUserClient(effectiveToken, effectiveUrl);
+  const operatorUrl = process.env.GITLAB_URL || GITLAB_URL;
+  assertTrustedGitLabUrl(operatorUrl);
+  return makeUserClient(token, operatorUrl, { trusted: true });
 }
 
 async function listPipelines(projectId, { branch, perPage = 10, token, instanceUrl } = {}) {

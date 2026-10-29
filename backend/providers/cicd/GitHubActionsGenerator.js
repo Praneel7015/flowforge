@@ -188,7 +188,7 @@ class GitHubActionsGenerator extends CICDGenerator {
       jobs,
     };
 
-    return yaml.dump(workflow, { lineWidth: 120, noRefs: true, quotingType: '"' });
+    return yaml.dump(workflow, { lineWidth: 120, noRefs: true, quoteStyle: 'double' });
   }
 }
 

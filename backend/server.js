@@ -107,7 +107,13 @@ app.get('/api/health', (_req, res) => {
 app.use('/api', notFound);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
+// Express 5 hands bind errors (port in use, no permission) to this callback.
+const server = app.listen(PORT, (err) => {
+  if (err) {
+    // Exit only once the message is flushed: stderr to a pipe is async on POSIX.
+    process.stderr.write(`Failed to start on port ${PORT}: ${err.message}\n`, () => process.exit(1));
+    return;
+  }
   console.log(`FlowForge backend running on port ${PORT}`);
 });
 
