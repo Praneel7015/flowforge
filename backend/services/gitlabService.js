@@ -10,12 +10,34 @@ const gitlab = axios.create({
   baseURL: `${GITLAB_URL}/api/v4`,
   headers: { 'PRIVATE-TOKEN': GITLAB_TOKEN },
   timeout: GITLAB_TIMEOUT_MS,
+  maxRedirects: 0,
+  proxy: false,
 });
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The operator's GITLAB_URL is trusted to be on a private network, but the
+ * server token travels to it, so it must use https:// (plain http only for a
+ * loopback dev instance).
+ */
+function assertTrustedGitLabUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('GITLAB_URL is not a valid URL');
+  }
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'http:' && LOOPBACK_HOSTS.has(parsed.hostname)) return;
+  throw new Error('GITLAB_URL must use https:// (http is allowed only for localhost)');
+}
 
 function ensureGitLabConfigured() {
   if (!GITLAB_TOKEN) {
     throw new Error('GITLAB_TOKEN is missing. Configure it in backend/.env');
   }
+  assertTrustedGitLabUrl(GITLAB_URL);
 }
 
 function toApiError(action, err) {
@@ -151,6 +173,9 @@ function makeUserClient(token, instanceUrl, { trusted = false } = {}) {
     headers: { 'PRIVATE-TOKEN': token },
     timeout: GITLAB_TIMEOUT_MS,
     maxRedirects: 0,
+    // Never through an env proxy: it could not reach a private instance, and
+    // for a request-supplied host it would bypass the address checks.
+    proxy: false,
     // A request-supplied instanceUrl has its resolved addresses checked at
     // connect time (DNS rebinding). The operator's own GITLAB_URL is trusted,
     // so a self-hosted GitLab on a private network keeps working.
@@ -338,7 +363,9 @@ function resolveGitLabClient(token, instanceUrl) {
   if (!effectiveToken) {
     throw new Error('GitLab token is required');
   }
-  return makeUserClient(effectiveToken, process.env.GITLAB_URL || GITLAB_URL, { trusted: true });
+  const operatorUrl = process.env.GITLAB_URL || GITLAB_URL;
+  assertTrustedGitLabUrl(operatorUrl);
+  return makeUserClient(effectiveToken, operatorUrl, { trusted: true });
 }
 
 async function listPipelines(projectId, { branch, perPage = 10, token, instanceUrl } = {}) {

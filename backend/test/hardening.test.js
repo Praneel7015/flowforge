@@ -107,3 +107,36 @@ test('the server exits non-zero when it cannot bind its port', async () => {
     blocker.close();
   }
 });
+
+test('GitLab: env proxies are never used, and the operator URL must be https (or loopback)', async () => {
+  const saved = { url: process.env.GITLAB_URL, token: process.env.GITLAB_TOKEN };
+  process.env.GITLAB_TOKEN = 'server-token';
+  const originalCreate = axios.create;
+  const configs = [];
+  axios.create = (config) => {
+    configs.push(config);
+    return { get: async () => ({ data: [] }) };
+  };
+  try {
+    const gitlabService = require('../services/gitlabService');
+
+    process.env.GITLAB_URL = 'https://gitlab.internal.corp';
+    await gitlabService.listPipelines('group/app');
+    await gitlabService.listPipelines('group/app', { token: 'mine', instanceUrl: 'https://gitlab.example.com' });
+    for (const config of configs.slice(-2)) assert.strictEqual(config.proxy, false);
+
+    // The server token would travel in cleartext.
+    process.env.GITLAB_URL = 'http://gitlab.internal.corp';
+    await assert.rejects(() => gitlabService.listPipelines('group/app'), /must use https/);
+
+    process.env.GITLAB_URL = 'http://localhost:8080';
+    await gitlabService.listPipelines('group/app');
+    assert.strictEqual(configs.at(-1).baseURL, 'http://localhost:8080/api/v4');
+  } finally {
+    axios.create = originalCreate;
+    for (const [key, value] of [['GITLAB_URL', saved.url], ['GITLAB_TOKEN', saved.token]]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
