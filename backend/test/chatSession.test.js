@@ -4,8 +4,10 @@ const express = require('express');
 const axios = require('axios');
 const chatSession = require('../utils/chatSession');
 const n8nRoutes = require('../routes/n8nRoutes');
+const advisorRoutes = require('../routes/advisorRoutes');
 
 const WEBHOOK = 'https://n8n.example.com/webhook/flowforge';
+const SERVER_WEBHOOK = 'https://n8n.example.com/webhook/server-side';
 const SESSION_HEADER = 'X-FlowForge-Chat-Session';
 
 let server;
@@ -13,11 +15,14 @@ let baseUrl;
 let sentPayloads;
 const originalPost = axios.post;
 
+const savedServerWebhook = process.env.N8N_CHAT_WEBHOOK_URL;
+
 beforeEach(async () => {
   sentPayloads = [];
+  process.env.N8N_CHAT_WEBHOOK_URL = SERVER_WEBHOOK;
   // Capture what would be sent to n8n instead of making a network call.
   axios.post = async (url, payload) => {
-    if (url === WEBHOOK) {
+    if (url === WEBHOOK || url === SERVER_WEBHOOK) {
       sentPayloads.push(payload);
       return { data: { reply: 'ok' } };
     }
@@ -27,6 +32,7 @@ beforeEach(async () => {
   const app = express();
   app.use(express.json());
   app.use('/api/n8n', n8nRoutes);
+  app.use('/api/advisor', advisorRoutes);
   await new Promise((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -35,13 +41,15 @@ beforeEach(async () => {
 
 afterEach(async () => {
   axios.post = originalPost;
+  if (savedServerWebhook === undefined) delete process.env.N8N_CHAT_WEBHOOK_URL;
+  else process.env.N8N_CHAT_WEBHOOK_URL = savedServerWebhook;
   await new Promise((resolve) => server.close(resolve));
 });
 
-async function chat(body, token) {
+async function chat(body, token, path = '/api/n8n/chat') {
   const headers = { 'Content-Type': 'application/json' };
   if (token !== undefined) headers[SESSION_HEADER] = token;
-  const res = await fetch(`${baseUrl}/api/n8n/chat`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -172,4 +180,82 @@ test('webhook failures still return the session token', async () => {
   const { status, body } = await chat({});
   assert.strictEqual(status, 502);
   assert.ok(chatSession.verifySessionToken(body.sessionToken));
+});
+
+// /api/advisor/chat with useN8n posts to the server's N8N_CHAT_WEBHOOK_URL and
+// must derive its memory keys the same way.
+function advisorChat(body, token) {
+  return chat({ chatWebhookUrl: undefined, useN8n: true, ...body }, token, '/api/advisor/chat');
+}
+
+const VICTIM_IDS = {
+  userId: 'user-victim',
+  username: 'victim',
+  chatId: 'victim-chat',
+  conversationId: 'victim-conversation',
+};
+
+test('advisor useN8n ignores ids from the body and headers', async () => {
+  const res = await fetch(`${baseUrl}/api/advisor/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-FlowForge-User-Id': 'user-victim',
+      'X-User-Id': 'user-victim',
+      'X-FlowForge-Chat-Id': 'victim-chat',
+      'X-FlowForge-Username': 'victim',
+    },
+    body: JSON.stringify({
+      useN8n: true,
+      messages: [{ role: 'user', content: 'hi' }],
+      ...VICTIM_IDS,
+      userContext: VICTIM_IDS,
+    }),
+  });
+  const body = await res.json();
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(body.reply, 'ok');
+  const sessionId = chatSession.verifySessionToken(body.sessionToken);
+  assert.ok(sessionId);
+
+  const [payload] = sentPayloads;
+  const serialized = JSON.stringify(payload);
+  assert.ok(!serialized.includes('victim'), `payload leaked caller ids: ${serialized}`);
+  assert.strictEqual(payload.userId, chatSession.deriveChatKeys(sessionId).userId);
+});
+
+test('advisor useN8n keeps keys for a valid token and reissues for a forged one', async () => {
+  const first = await advisorChat({ userContext: { conversationId: 'conv-1' } });
+  const again = await advisorChat({ userContext: { conversationId: 'conv-1' } }, first.body.sessionToken);
+  assert.strictEqual(again.body.sessionToken, first.body.sessionToken);
+  assert.strictEqual(sentPayloads[1].userId, sentPayloads[0].userId);
+  assert.strictEqual(sentPayloads[1].chatId, sentPayloads[0].chatId);
+
+  const sig = first.body.sessionToken.split('.')[1];
+  const forged = await advisorChat({ userContext: { conversationId: 'conv-1' } }, `${crypto.randomUUID()}.${sig}`);
+  assert.notStrictEqual(forged.body.sessionToken, first.body.sessionToken);
+  assert.notStrictEqual(sentPayloads[2].userId, sentPayloads[0].userId);
+  assert.notStrictEqual(sentPayloads[2].chatId, sentPayloads[0].chatId);
+});
+
+test('both chat routes map the same session and label to the same n8n keys', async () => {
+  const viaProxy = await chat({ userContext: { conversationId: 'conv-1' } });
+  await advisorChat({ userContext: { conversationId: 'conv-1' } }, viaProxy.body.sessionToken);
+  assert.strictEqual(sentPayloads[1].userId, sentPayloads[0].userId);
+  assert.strictEqual(sentPayloads[1].chatId, sentPayloads[0].chatId);
+});
+
+test('advisor chat without useN8n never calls n8n or issues a session', async () => {
+  axios.post = async (url, payload) => {
+    if (url === SERVER_WEBHOOK) sentPayloads.push(payload);
+    return originalPost(url, payload);
+  };
+  const { body } = await chat(
+    { chatWebhookUrl: undefined, aiProvider: 'not-a-provider', userContext: VICTIM_IDS },
+    undefined,
+    '/api/advisor/chat'
+  );
+  assert.strictEqual(sentPayloads.length, 0);
+  assert.strictEqual(body.sessionToken, undefined);
 });

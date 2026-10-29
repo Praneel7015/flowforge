@@ -267,12 +267,19 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         aiProvider,
         cicdPlatform,
         aiOptions,
-        userContext: {
-          userId: chatIdentity.userId,
-          username: chatIdentity.username,
-          chatId: conversationId,
-          conversationId,
-        },
+        // The server derives n8n memory keys from the signed session; only the
+        // conversation label is sent.
+        userContext: { conversationId },
+      };
+      // Read the token at call time: an earlier call in this send may issue one.
+      const requestConfig = () => ({
+        signal: controller.signal,
+        headers: n8nSessionToken ? { [N8N_SESSION_HEADER]: n8nSessionToken } : undefined,
+      });
+      const askAdvisor = async () => {
+        const { data } = await axios.post('/api/advisor/chat', payload, requestConfig());
+        rememberN8nSession(data);
+        return data.reply;
       };
 
       let reply;
@@ -280,29 +287,18 @@ export default function PipelineChat({ currentYaml, aiProvider, cicdPlatform, ai
         try {
           const { data } = await axios.post(
             '/api/n8n/chat',
-            {
-              ...payload,
-              chatWebhookUrl: n8nConfig.chatWebhookUrl.trim(),
-              // The server derives n8n memory keys from the signed session;
-              // only the conversation label is sent.
-              userContext: { conversationId },
-            },
-            {
-              signal: controller.signal,
-              headers: n8nSessionToken ? { [N8N_SESSION_HEADER]: n8nSessionToken } : undefined,
-            }
+            { ...payload, chatWebhookUrl: n8nConfig.chatWebhookUrl.trim() },
+            requestConfig()
           );
           rememberN8nSession(data);
           reply = data.reply;
         } catch (err) {
           if (axios.isCancel(err)) throw err;
           rememberN8nSession(err.response?.data);
-          const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
-          reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${data.reply}`;
+          reply = `_Your n8n webhook didn't respond, so this answer comes from the AI provider directly._\n\n${await askAdvisor()}`;
         }
       } else {
-        const { data } = await axios.post('/api/advisor/chat', payload, { signal: controller.signal });
-        reply = data.reply;
+        reply = await askAdvisor();
       }
       setMessages((prev) => [...prev, { role: 'assistant', content: reply, timestamp: new Date() }]);
     } catch (err) {
