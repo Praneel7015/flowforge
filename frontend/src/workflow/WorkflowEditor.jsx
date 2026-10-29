@@ -15,7 +15,7 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import ConditionalNode from './nodes/ConditionalNode';
 import NodeConfigPanel from './NodeConfigPanel';
-import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/NodeTemplates';
+import { saveCurrentAsTemplate, BUILT_IN_TEMPLATES } from '../components/templateStore';
 import { buildBlueprintShareUrl, readBlueprintFromLocationHash } from '../utils/blueprintShare';
 
 const nodeTypes = {
