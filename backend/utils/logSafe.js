@@ -11,6 +11,8 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
 
 function logSafe(value, maxLength = 300) {
   return String(value ?? '')
+    // Explicit CR/LF step first: static analysers (CodeQL) recognise this form.
+    .replace(/[\r\n]+/g, ' ')
     .replace(ANSI_SEQUENCE, '')
     .replace(CONTROL_CHARS, ' ')
     .slice(0, maxLength);
