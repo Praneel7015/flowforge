@@ -1,4 +1,5 @@
 const axios = require('axios');
+const crypto = require('node:crypto');
 const githubService = require('../services/githubService');
 const gitlabService = require('../services/gitlabService');
 const bitbucketService = require('../services/bitbucketService');
@@ -112,7 +113,23 @@ function normalizeExecutionStatus(rawStatus, rawConclusion) {
   return status === 'completed' ? 'passed' : 'queued';
 }
 
-function resolveCredentials(platform, credentials = {}) {
+const OPERATOR_HEADER = 'x-flowforge-operator-key';
+
+/**
+ * /api/runs has no user accounts, so the server's own CI tokens (GITHUB_TOKEN,
+ * GITLAB_TOKEN, BITBUCKET_*, CIRCLECI_TOKEN) are used only for a request that
+ * presents RUNS_OPERATOR_KEY. Without that env var set, every caller brings
+ * their own token.
+ */
+function isOperatorRequest(req) {
+  const expected = process.env.RUNS_OPERATOR_KEY;
+  const given = req?.get?.(OPERATOR_HEADER);
+  if (!expected || typeof given !== 'string' || !given) return false;
+  const digest = (value) => crypto.createHash('sha256').update(value).digest();
+  return crypto.timingSafeEqual(digest(given), digest(expected));
+}
+
+function resolveCredentials(platform, credentials = {}, { operator = false } = {}) {
   const creds = credentials && typeof credentials === 'object' ? credentials : {};
   const customUrl = creds.url || creds.instanceUrl;
 
@@ -129,15 +146,15 @@ function resolveCredentials(platform, credentials = {}) {
     err.expose = true;
     throw err;
   }
-  // Server tokens (GITLAB_TOKEN, CIRCLECI_TOKEN) belong to the server's own
-  // configured host. A request that picks its own host must bring its own
-  // token, or the server's token would be sent to a host the caller chose.
-  const serverToken = (name) => (customUrl ? undefined : process.env[name]);
+  // Server tokens are for operator requests only (see isOperatorRequest), and
+  // only for the server's own configured host: a request that picks its own
+  // host must bring its own token, or ours would go to a host it chose.
+  const serverToken = (name) => (operator && !customUrl ? process.env[name] : undefined);
 
   if (platform === 'github') {
-    const token = creds.token || process.env.GITHUB_TOKEN;
+    const token = creds.token || serverToken('GITHUB_TOKEN');
     if (!token) {
-      const err = new Error('GitHub token is required (in credentials.token or GITHUB_TOKEN)');
+      const err = new Error('GitHub token is required (credentials.token)');
       err.status = 400;
       throw err;
     }
@@ -153,7 +170,7 @@ function resolveCredentials(platform, credentials = {}) {
       const err = new Error(
         customUrl
           ? 'A custom GitLab URL needs your own token (credentials.token)'
-          : 'GitLab token is required (in credentials.token or GITLAB_TOKEN)'
+          : 'GitLab token is required (credentials.token)'
       );
       err.status = 400;
       throw err;
@@ -162,8 +179,8 @@ function resolveCredentials(platform, credentials = {}) {
   }
 
   if (platform === 'bitbucket') {
-    const username = creds.username || process.env.BITBUCKET_USERNAME;
-    const appPassword = creds.appPassword || creds.token || process.env.BITBUCKET_APP_PASSWORD;
+    const username = creds.username || serverToken('BITBUCKET_USERNAME');
+    const appPassword = creds.appPassword || creds.token || serverToken('BITBUCKET_APP_PASSWORD');
     const workspace = creds.workspace;
     if (!username || !appPassword) {
       const err = new Error('Bitbucket username and appPassword are required');
@@ -180,7 +197,7 @@ function resolveCredentials(platform, credentials = {}) {
       const err = new Error(
         customUrl
           ? 'A custom CircleCI URL needs your own token (credentials.token)'
-          : 'CircleCI token is required (in credentials.token or CIRCLECI_TOKEN)'
+          : 'CircleCI token is required (credentials.token)'
       );
       err.status = 400;
       throw err;
@@ -361,7 +378,7 @@ async function listRuns(req, res) {
       });
     }
 
-    const creds = resolveCredentials(platform, credentials);
+    const creds = resolveCredentials(platform, credentials, { operator: isOperatorRequest(req) });
 
     if (platform === 'github') {
       if (!owner || !repo) {
@@ -455,7 +472,7 @@ async function getRunStatus(req, res) {
       return res.status(400).json({ error: 'runId is required' });
     }
 
-    const creds = resolveCredentials(platform, credentials);
+    const creds = resolveCredentials(platform, credentials, { operator: isOperatorRequest(req) });
 
     if (platform === 'github') {
       if (!owner || !repo) {
@@ -614,7 +631,7 @@ async function triggerRun(req, res) {
     }
 
     const targetBranch = branch || ref || 'main';
-    const creds = resolveCredentials(platform, credentials);
+    const creds = resolveCredentials(platform, credentials, { operator: isOperatorRequest(req) });
 
     if (platform === 'github') {
       if (!owner || !repo) {
@@ -758,7 +775,7 @@ async function diagnoseAndFix(req, res) {
         });
       }
 
-      const creds = resolveCredentials(platform, credentials);
+      const creds = resolveCredentials(platform, credentials, { operator: isOperatorRequest(req) });
 
       if (platform === 'github') {
         if (!owner || !repo) {
@@ -935,4 +952,5 @@ module.exports = {
   diagnoseAndFix,
   // Exported for tests.
   resolveCredentials,
+  isOperatorRequest,
 };

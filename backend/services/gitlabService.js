@@ -359,13 +359,14 @@ function resolveGitLabClient(token, instanceUrl) {
     if (!token) throw new Error('GitLab token is required');
     return makeUserClient(token, instanceUrl);
   }
-  const effectiveToken = token || process.env.GITLAB_TOKEN || GITLAB_TOKEN;
-  if (!effectiveToken) {
+  // No silent GITLAB_TOKEN fallback: the caller (runController) decides
+  // whether a request may use the server's token.
+  if (!token) {
     throw new Error('GitLab token is required');
   }
   const operatorUrl = process.env.GITLAB_URL || GITLAB_URL;
   assertTrustedGitLabUrl(operatorUrl);
-  return makeUserClient(effectiveToken, operatorUrl, { trusted: true });
+  return makeUserClient(token, operatorUrl, { trusted: true });
 }
 
 async function listPipelines(projectId, { branch, perPage = 10, token, instanceUrl } = {}) {

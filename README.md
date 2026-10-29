@@ -95,6 +95,7 @@ Both the CI/CD generators and the AI providers use a **strategy + factory** patt
 | Webhooks **fail closed in production**: if `GITHUB_WEBHOOK_SECRET` / `GITLAB_WEBHOOK_SECRET` is unset, requests get 503 | `backend/routes/webhookRoutes.js` |
 | Secret scanner blocks pushing pipelines that contain credentials (`422 SECRETS_DETECTED`, override with `allowSecrets: true`) | `backend/utils/secretScanner.js` |
 | BYOM keys are per request, trimmed/capped, never stored or cached on the server; in the browser they live in memory only (never localStorage). Invalid BYOM input returns 400 | `backend/utils/aiOptions.js`, `BringYourOwnModelPanel.jsx` |
+| **Server CI tokens need the operator key**: `/api/runs` has no accounts, so `GITHUB_TOKEN`, `GITLAB_TOKEN`, `BITBUCKET_*` and `CIRCLECI_TOKEN` are used only for requests carrying `RUNS_OPERATOR_KEY` (constant-time compare); anyone else must bring their own token | `backend/controllers/runController.js` |
 | **Server keys never leave for user-chosen hosts**: if a request brings its own credentials or a custom base URL, all server-side secrets are dropped before the call | `backend/providers/ai/index.js` |
 | AWS region, Vertex location and GCP project are pattern-validated before being placed in hostnames (validation errors never echo the typed value); the service-account `token_uri` is ignored (token always from `oauth2.googleapis.com`) | `backend/utils/aiOptions.js`, `backend/providers/ai/VertexProvider.js` |
 | n8n payloads use an **allowlist** of non-secret fields (model, region, location, project), so new credential fields can't leak to the webhook | `backend/services/aiService.js` |
@@ -148,6 +149,7 @@ Or with Docker: `docker-compose up`.
 | `AI_RATE_LIMIT_WINDOW_MS`, `AI_RATE_LIMIT_MAX` | `60000`, `20` | AI routes |
 | `GITHUB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the secret set on the GitHub webhook |
 | `GITLAB_WEBHOOK_SECRET` | – | **Required in production** for `/api/webhooks`; must match the GitLab webhook "Secret token" |
+| `RUNS_OPERATOR_KEY` | — | Lets a request use the server's CI tokens for live runs by sending it in `X-FlowForge-Operator-Key`. Unset: every caller brings their own token |
 | `GITLAB_URL`, `GITLAB_TOKEN` | `https://gitlab.com` | Server-side GitLab access for pipeline status/trigger (may be a private-network instance; must be https://, http only for localhost) |
 | `N8N_CHAT_WEBHOOK_URL` | – | Server-side n8n webhook, used only when a chat request opts in (`useN8n`); falls back to the AI provider on failure |
 | `N8N_WEBHOOK_AUTH_HEADER`, `N8N_WEBHOOK_AUTH_TOKEN` | `X-FlowForge-Token` | Optional n8n auth |
@@ -168,7 +170,7 @@ With `N8N_CHAT_WEBHOOK_URL` set, chat requests are POSTed as JSON with `text`/`i
 ## Testing
 
 ```bash
-cd backend && npm run lint && npm test       # ESLint + node:test (85 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
+cd backend && npm run lint && npm test       # ESLint + node:test (86 tests: SSRF/DNS rebinding, path traversal, provider factory, SigV4 vectors, Jenkins escaping, log safety, runs)
 cd frontend && npm run lint && npm run build # ESLint (incl. React hooks rules) + production build
 cd frontend && npm run test:e2e              # Playwright (30 tests); starts the API and Vite dev server itself
 ```

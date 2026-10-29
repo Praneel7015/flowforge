@@ -12,7 +12,7 @@ test('GitLab: only a caller-supplied URL is passed on to the service', () => {
   const saved = process.env.GITLAB_TOKEN;
   process.env.GITLAB_TOKEN = 'server-token';
   try {
-    assert.strictEqual(resolveCredentials('gitlab', {}).instanceUrl, undefined);
+    assert.strictEqual(resolveCredentials('gitlab', {}, { operator: true }).instanceUrl, undefined);
     assert.strictEqual(
       resolveCredentials('gitlab', { url: 'https://gitlab.example.com', token: 'mine' }).instanceUrl,
       'https://gitlab.example.com'
@@ -35,7 +35,7 @@ test("GitLab: the operator's GITLAB_URL is trusted, a caller's URL keeps the SSR
   };
   try {
     const gitlabService = require('../services/gitlabService');
-    await gitlabService.listPipelines('group/app');
+    await gitlabService.listPipelines('group/app', { token: 'server-token' });
     await gitlabService.listPipelines('group/app', { token: 'mine', instanceUrl: 'https://gitlab.example.com' });
 
     const [operator, caller] = configs.slice(-2);
@@ -121,22 +121,68 @@ test('GitLab: env proxies are never used, and the operator URL must be https (or
     const gitlabService = require('../services/gitlabService');
 
     process.env.GITLAB_URL = 'https://gitlab.internal.corp';
-    await gitlabService.listPipelines('group/app');
+    await gitlabService.listPipelines('group/app', { token: 'server-token' });
     await gitlabService.listPipelines('group/app', { token: 'mine', instanceUrl: 'https://gitlab.example.com' });
     for (const config of configs.slice(-2)) assert.strictEqual(config.proxy, false);
 
     // The server token would travel in cleartext.
     process.env.GITLAB_URL = 'http://gitlab.internal.corp';
-    await assert.rejects(() => gitlabService.listPipelines('group/app'), /must use https/);
+    await assert.rejects(() => gitlabService.listPipelines('group/app', { token: 'server-token' }), /must use https/);
 
     process.env.GITLAB_URL = 'http://localhost:8080';
-    await gitlabService.listPipelines('group/app');
+    await gitlabService.listPipelines('group/app', { token: 'server-token' });
     assert.strictEqual(configs.at(-1).baseURL, 'http://localhost:8080/api/v4');
   } finally {
     axios.create = originalCreate;
     for (const [key, value] of [['GITLAB_URL', saved.url], ['GITLAB_TOKEN', saved.token]]) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
+    }
+  }
+});
+
+test('runs: server CI tokens are used only for requests with the operator key', () => {
+  const { resolveCredentials, isOperatorRequest } = require('../controllers/runController');
+  const keys = ['RUNS_OPERATOR_KEY', 'GITHUB_TOKEN', 'GITLAB_TOKEN', 'CIRCLECI_TOKEN', 'BITBUCKET_USERNAME', 'BITBUCKET_APP_PASSWORD'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, {
+    GITHUB_TOKEN: 'srv-gh',
+    GITLAB_TOKEN: 'srv-gl',
+    CIRCLECI_TOKEN: 'srv-cc',
+    BITBUCKET_USERNAME: 'srv-user',
+    BITBUCKET_APP_PASSWORD: 'srv-pass',
+  });
+  const req = (key) => ({ get: (name) => (name.toLowerCase() === 'x-flowforge-operator-key' ? key : undefined) });
+  try {
+    // An anonymous visitor never gets the server's tokens, on any platform.
+    for (const platform of ['github', 'gitlab', 'circleci', 'bitbucket']) {
+      assert.throws(() => resolveCredentials(platform, {}), { status: 400 }, platform);
+    }
+    // Their own token still works.
+    assert.strictEqual(resolveCredentials('github', { token: 'mine' }).token, 'mine');
+
+    // No RUNS_OPERATOR_KEY configured: nobody is an operator.
+    delete process.env.RUNS_OPERATOR_KEY;
+    assert.strictEqual(isOperatorRequest(req('anything')), false);
+
+    process.env.RUNS_OPERATOR_KEY = 'op-secret';
+    assert.strictEqual(isOperatorRequest(req('op-secret')), true);
+    assert.strictEqual(isOperatorRequest(req('op-secreT')), false);
+    assert.strictEqual(isOperatorRequest(req(undefined)), false);
+    assert.strictEqual(isOperatorRequest({}), false);
+
+    const operator = { operator: true };
+    assert.strictEqual(resolveCredentials('github', {}, operator).token, 'srv-gh');
+    assert.strictEqual(resolveCredentials('gitlab', {}, operator).token, 'srv-gl');
+    assert.strictEqual(resolveCredentials('circleci', {}, operator).token, 'srv-cc');
+    assert.deepStrictEqual(
+      { ...resolveCredentials('bitbucket', {}, operator), workspace: undefined },
+      { username: 'srv-user', appPassword: 'srv-pass', workspace: undefined }
+    );
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
     }
   }
 });
