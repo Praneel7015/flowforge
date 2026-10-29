@@ -1,0 +1,127 @@
+stages:
+  - build
+  - test
+  - security
+  - deploy
+  - post_deploy
+
+variables:
+  NODE_IMAGE: node:18-alpine
+  DOCKER_IMAGE: docker:24.0.5
+  FEATHERLESS_MODEL: Qwen/Qwen2.5-Coder-1.5B-Instruct
+  N8N_DEPLOY_WEBHOOK: https://your-n8n-instance/webhook/flowforge-deploy
+
+# ----------------------------
+# Build Stage
+# ----------------------------
+install_dependencies:
+  stage: build
+  image: $NODE_IMAGE
+  script:
+    - npm ci --cache .npm
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .npm/
+      - node_modules/
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+
+build_app:
+  stage: build
+  image: $NODE_IMAGE
+  needs:
+    - install_dependencies
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+
+# ----------------------------
+# Test Stage
+# ----------------------------
+unit_tests:
+  stage: test
+  image: $NODE_IMAGE
+  needs:
+    - install_dependencies
+  script:
+    - npm test -- --coverage
+  coverage: '/Lines\s*:\s*(\d+\.?\d*)%/'
+  artifacts:
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+
+lint:
+  stage: test
+  image: $NODE_IMAGE
+  needs:
+    - install_dependencies
+  script:
+    - npx eslint . --format json --output-file eslint-report.json
+  artifacts:
+    reports:
+      codequality: eslint-report.json
+  allow_failure: true
+
+# ----------------------------
+# Security Stage
+# ----------------------------
+dependency_scanning:
+  stage: security
+  image: $NODE_IMAGE
+  needs:
+    - install_dependencies
+  script:
+    - npx audit-ci --moderate
+  artifacts:
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  allow_failure: true
+
+# ----------------------------
+# Deploy Stage
+# ----------------------------
+docker_build_and_push:
+  stage: deploy
+  image: $DOCKER_IMAGE
+  services:
+    - docker:24.0.5-dind
+  needs:
+    - build_app
+    - unit_tests
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA -t $CI_REGISTRY_IMAGE:latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+notify_n8n:
+  stage: post_deploy
+  image: curlimages/curl:8.10.1
+  needs:
+    - docker_build_and_push
+  script:
+    - |
+      curl -X POST "$N8N_DEPLOY_WEBHOOK" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "source": "flowforge",
+          "event": "deploy_success",
+          "pipelineId": "'$CI_PIPELINE_ID'",
+          "commit": "'$CI_COMMIT_SHA'",
+          "assistantModel": "'$FEATHERLESS_MODEL'"
+        }'
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

@@ -1,0 +1,452 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+/* Tailwind 3 defaults that v4 changed: borders were gray-200, buttons had a pointer. */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--color-gray-200, currentColor); }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME (default)
+   Professional dark with warm neutral tones — no neon, no glow.
+   ═══════════════════════════════════════════════════════════════ */
+:root,
+[data-theme="dark"] {
+  --ff-bg: #101012;
+  --ff-bg-soft: #18181B;
+  --ff-surface: #1A1A1E;
+  --ff-surface-solid: #1A1A1E;
+  --ff-surface-2: #141416;
+  --ff-glass: rgba(16, 16, 18, 0.85);
+  --ff-border: rgba(255, 255, 255, 0.07);
+  --ff-border-strong: rgba(255, 255, 255, 0.12);
+  --ff-text: #F0F0F2;
+  --ff-text-secondary: #9E9EA8;
+  --ff-muted: #6B6B76;
+  --ff-accent: #737AE6;
+  --ff-accent-soft: rgba(115, 122, 230, 0.08);
+  --ff-accent-glow: rgba(115, 122, 230, 0.15);
+  --ff-accent-text: #B0B5F6;
+  --ff-accent-text-muted: rgba(176, 181, 246, 0.65);
+  --ff-danger: #E5534B;
+  --ff-danger-soft: rgba(229, 83, 75, 0.08);
+  --ff-warning: #D4A72C;
+  --ff-warning-soft: rgba(212, 167, 44, 0.08);
+  --ff-success: #3FB950;
+  --ff-info: #4C8EDA;
+  --ff-info-soft: rgba(76, 142, 218, 0.08);
+  --ff-card-bg: rgba(255, 255, 255, 0.025);
+  --ff-card-bg-hover: rgba(255, 255, 255, 0.05);
+  --ff-card-border: rgba(255, 255, 255, 0.06);
+  --ff-card-border-hover: rgba(255, 255, 255, 0.1);
+  --ff-card-border-strong: rgba(255, 255, 255, 0.08);
+  --ff-sidebar-bg: #131315;
+  --ff-header-bg: rgba(16, 16, 18, 0.75);
+  --ff-code-bg: rgba(0, 0, 0, 0.35);
+  --ff-code-bg-inline: rgba(255, 255, 255, 0.05);
+  --ff-overlay: rgba(0, 0, 0, 0.55);
+  --ff-modal-bg: #1E1E22;
+  --ff-ring-offset: #101012;
+  --ff-select-bg: #1A1A1E;
+  --ff-btn-secondary-bg: rgba(39, 39, 44, 0.5);
+  --ff-btn-secondary-bg-hover: rgba(39, 39, 44, 0.8);
+  --ff-btn-primary-text: #FFFFFF;
+  --ff-nav-hover: rgba(255, 255, 255, 0.04);
+  --ff-avatar-bg: #27272C;
+  --ff-bubble-bot-bg: rgba(255, 255, 255, 0.035);
+  --ff-bubble-bot-border: rgba(255, 255, 255, 0.07);
+  --ff-minimap-bg: #18181B;
+  --ff-node-counter-bg: rgba(24, 24, 28, 0.92);
+  --ff-scrollbar-thumb: rgba(150, 150, 160, 0.15);
+  --ff-scrollbar-thumb-hover: rgba(150, 150, 160, 0.3);
+  --ff-edge-stroke: rgba(150, 150, 160, 0.22);
+  --ff-dots-color: rgba(150, 150, 160, 0.07);
+  --ff-surface-inset: rgba(255, 255, 255, 0.02);
+  --ff-radius-sm: 8px;
+  --ff-radius-md: 10px;
+  --ff-radius-lg: 14px;
+  --ff-radius-xl: 18px;
+  --ff-blur: 16px;
+  --ff-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIGHT THEME
+   High-contrast studio light palette with indigo/cobalt accent.
+   ═══════════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  --ff-bg: #FAFAFA;
+  --ff-bg-soft: #F4F4F5;
+  --ff-surface: #FFFFFF;
+  --ff-surface-solid: #FFFFFF;
+  --ff-surface-2: #F4F4F5;
+  --ff-glass: rgba(250, 250, 250, 0.92);
+  --ff-border: #E4E4E7;
+  --ff-border-strong: #D4D4D8;
+  --ff-text: #18181B;
+  --ff-text-secondary: #3F3F46;
+  --ff-muted: #71717A;
+  --ff-accent: #4F46E5;
+  --ff-accent-soft: rgba(79, 70, 229, 0.08);
+  --ff-accent-glow: rgba(79, 70, 229, 0.16);
+  --ff-accent-text: #4338CA;
+  --ff-accent-text-muted: rgba(67, 56, 202, 0.72);
+  --ff-danger: #DC2626;
+  --ff-danger-soft: rgba(220, 38, 38, 0.06);
+  --ff-warning: #B45309;
+  --ff-warning-soft: rgba(180, 83, 9, 0.06);
+  --ff-success: #16A34A;
+  --ff-info: #2563EB;
+  --ff-info-soft: rgba(37, 99, 235, 0.06);
+  --ff-card-bg: #FFFFFF;
+  --ff-card-bg-hover: #F4F4F5;
+  --ff-card-border: #E4E4E7;
+  --ff-card-border-hover: #D4D4D8;
+  --ff-card-border-strong: #D4D4D8;
+  --ff-sidebar-bg: #FFFFFF;
+  --ff-header-bg: rgba(255, 255, 255, 0.92);
+  --ff-code-bg: #F4F4F5;
+  --ff-code-bg-inline: #F4F4F5;
+  --ff-overlay: rgba(0, 0, 0, 0.25);
+  --ff-modal-bg: #FFFFFF;
+  --ff-ring-offset: #FAFAFA;
+  --ff-select-bg: #FFFFFF;
+  --ff-btn-secondary-bg: #FFFFFF;
+  --ff-btn-secondary-bg-hover: #F4F4F5;
+  --ff-btn-primary-text: #FFFFFF;
+  --ff-nav-hover: #F4F4F5;
+  --ff-avatar-bg: #E4E4E7;
+  --ff-bubble-bot-bg: #F4F4F5;
+  --ff-bubble-bot-border: #E4E4E7;
+  --ff-minimap-bg: #FFFFFF;
+  --ff-node-counter-bg: rgba(255, 255, 255, 0.95);
+  --ff-scrollbar-thumb: #D4D4D8;
+  --ff-scrollbar-thumb-hover: #A1A1AA;
+  --ff-edge-stroke: #A1A1AA;
+  --ff-dots-color: #D4D4D8;
+  --ff-surface-inset: #F4F4F5;
+  color-scheme: light;
+}
+
+/* ── Theme transition ──────────────────────────────────────── */
+html.ff-theme-transitioning,
+html.ff-theme-transitioning *,
+html.ff-theme-transitioning *::before,
+html.ff-theme-transitioning *::after {
+  transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, box-shadow 300ms ease, fill 300ms ease, stroke 300ms ease !important;
+}
+
+/* ── Base ──────────────────────────────────────────────────── */
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ff-text);
+  background: var(--ff-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;
+}
+
+#root { min-height: 100vh; }
+
+::selection {
+  background: var(--ff-accent-soft);
+  color: var(--ff-text);
+}
+
+/* ── App Shell ─────────────────────────────────────────────── */
+.ff-app-shell {
+  position: relative;
+  isolation: isolate;
+  background: var(--ff-bg);
+}
+
+/* ── Surfaces ──────────────────────────────────────────────── */
+.ff-surface {
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="dark"] .ff-surface {
+  backdrop-filter: blur(var(--ff-blur));
+  -webkit-backdrop-filter: blur(var(--ff-blur));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .ff-surface {
+  box-shadow: 0 0 0 1px var(--ff-border), 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ff-surface-soft {
+  background: var(--ff-surface-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+}
+
+[data-theme="light"] .ff-surface-soft {
+  background: #FFFFFF;
+  border-color: var(--ff-border);
+  box-shadow: 0 0 0 1px var(--ff-border);
+}
+
+/* ── Form Controls ─────────────────────────────────────────── */
+.ff-select {
+  background: var(--ff-select-bg);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+  color: var(--ff-text);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.8125rem;
+  transition: border-color var(--ff-transition), box-shadow var(--ff-transition);
+}
+
+.ff-select:focus {
+  outline: none;
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px var(--ff-accent-glow);
+}
+
+.ff-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}
+
+[data-theme="light"] .ff-select {
+  background: #FFFFFF;
+  border-color: var(--ff-border-strong);
+}
+
+.ff-input {
+  width: 100%;
+  background: var(--ff-select-bg);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  color: var(--ff-text);
+  font-size: 0.8125rem;
+  transition: border-color var(--ff-transition), box-shadow var(--ff-transition);
+}
+
+.ff-input::placeholder { color: var(--ff-muted); }
+
+.ff-input:focus {
+  outline: none;
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px var(--ff-accent-glow);
+}
+
+.ff-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}
+
+[data-theme="light"] .ff-input {
+  background: #FFFFFF;
+  border-color: var(--ff-border-strong);
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.ff-btn-primary {
+  background: var(--ff-accent);
+  border: 1px solid var(--ff-accent);
+  color: var(--ff-btn-primary-text);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--ff-transition);
+}
+
+.ff-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.ff-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.ff-btn-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}
+
+.ff-btn-primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+.ff-btn-secondary {
+  background: var(--ff-btn-secondary-bg);
+  border: 1px solid var(--ff-border);
+  color: var(--ff-text-secondary);
+  cursor: pointer;
+  transition: all var(--ff-transition);
+}
+
+.ff-btn-secondary:hover {
+  border-color: var(--ff-border-strong);
+  background: var(--ff-btn-secondary-bg-hover);
+  color: var(--ff-text);
+}
+
+.ff-btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.ff-btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}
+
+[data-theme="light"] .ff-btn-secondary {
+  background: #FFFFFF;
+  border-color: var(--ff-border-strong);
+}
+
+[data-theme="light"] .ff-btn-secondary:hover {
+  background: #F4F4F5;
+  border-color: #A1A1AA;
+}
+
+/* ── Navigation ────────────────────────────────────────────── */
+.ff-nav-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  color: var(--ff-text-secondary);
+  background: transparent;
+  border-radius: var(--ff-radius-sm);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--ff-transition);
+}
+
+.ff-nav-btn:hover {
+  background: var(--ff-nav-hover);
+  color: var(--ff-text);
+}
+
+.ff-nav-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}
+
+.ff-nav-btn-active {
+  background: var(--ff-accent-soft);
+  color: var(--ff-accent-text);
+  font-weight: 600;
+}
+
+[data-theme="light"] .ff-nav-btn-active {
+  background: var(--ff-accent-soft);
+  color: var(--ff-accent-text);
+  border-color: rgba(79, 70, 229, 0.18);
+}
+
+.ff-nav-btn-active:hover {
+  background: var(--ff-accent-soft);
+  filter: brightness(1.05);
+}
+
+.ff-nav-btn-compact {
+  width: auto;
+  white-space: nowrap;
+}
+
+/* ── Code ──────────────────────────────────────────────────── */
+.ff-code {
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+
+/* ── React Flow ────────────────────────────────────────────── */
+.react-flow__node { border-radius: 12px; font-size: 13px; }
+.react-flow__edge-path { stroke: var(--ff-edge-stroke); stroke-width: 1.5; }
+.react-flow__handle { width: 8px; height: 8px; }
+
+.react-flow__controls {
+  border: 1px solid var(--ff-border) !important;
+  background: var(--ff-surface-solid) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.react-flow__controls button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--ff-border) !important;
+  color: var(--ff-text-secondary) !important;
+}
+
+.react-flow__controls button:hover {
+  color: var(--ff-text) !important;
+  background: var(--ff-nav-hover) !important;
+}
+
+.react-flow__minimap {
+  background: var(--ff-surface-solid) !important;
+  border: 1px solid var(--ff-border) !important;
+  border-radius: 8px !important;
+}
+
+/* ── Animations ────────────────────────────────────────────── */
+.ff-enter { animation: ff-enter 200ms ease-out both; }
+
+@keyframes ff-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-enter { animation: none; }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ff-scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ff-scrollbar-thumb-hover); }
+
+/* ── Theme toggle (single crisp 32x32 icon button) ───────── */
+.ff-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ff-card-border-strong);
+  background: var(--ff-card-bg);
+  color: var(--ff-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--ff-transition), border-color var(--ff-transition), color var(--ff-transition);
+}
+
+.ff-theme-toggle:hover {
+  border-color: var(--ff-border-strong);
+  background: var(--ff-nav-hover);
+  color: var(--ff-text);
+}
+
+.ff-theme-toggle:active {
+  transform: scale(0.98);
+}
+
+.ff-theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ff-bg), 0 0 0 4px var(--ff-accent);
+}

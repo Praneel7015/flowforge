@@ -1,0 +1,408 @@
+const axios = require('axios');
+const { pathSegment, pathSegments } = require('../utils/url');
+
+const GITHUB_API = 'https://api.github.com';
+const DEFAULT_TIMEOUT = Number(process.env.GITHUB_TIMEOUT_MS || 60000);
+const MAX_FILE_SIZE = 100 * 1024; // 100KB per file
+
+function makeClient(token) {
+  return axios.create({
+    baseURL: GITHUB_API,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    timeout: DEFAULT_TIMEOUT,
+  });
+}
+
+function toApiError(action, err) {
+  // Our own validation errors (e.g. an invalid path segment) keep their 400.
+  if (err.status === 400 && !err.response) return err;
+  const status = err.response?.status;
+  const detail = err.response?.data?.message || err.message;
+  return new Error(`GitHub ${action} failed${status ? ` (${status})` : ''}: ${detail}`);
+}
+
+function ensureToken(token) {
+  if (!token) throw new Error('GitHub token is required');
+}
+
+// ─── Repo browsing ────────────────────────────────────────────────────────────
+
+async function listRepos(token) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.get('/user/repos', {
+      params: { sort: 'updated', per_page: 100, affiliation: 'owner,collaborator' },
+    });
+    return data.map((r) => ({
+      id: r.id,
+      name: r.name,
+      fullName: r.full_name,
+      owner: r.owner.login,
+      defaultBranch: r.default_branch,
+      private: r.private,
+      description: r.description || '',
+      language: r.language || '',
+      updatedAt: r.updated_at,
+    }));
+  } catch (err) {
+    throw toApiError('list repos', err);
+  }
+}
+
+async function listBranches(token, owner, repo) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/branches`, {
+      params: { per_page: 100 },
+    });
+    return data.map((b) => ({ name: b.name, sha: b.commit.sha }));
+  } catch (err) {
+    throw toApiError('list branches', err);
+  }
+}
+
+async function getRepoTree(token, owner, repo, branch) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    // Get the branch SHA first
+    const { data: branchData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/branches/${pathSegments(branch)}`);
+    const sha = branchData.commit.sha;
+
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/trees/${pathSegment(sha)}`, {
+      params: { recursive: '1' },
+    });
+
+    return data.tree
+      .filter((item) => item.type === 'blob' || item.type === 'tree')
+      .map((item) => ({
+        path: item.path,
+        type: item.type === 'tree' ? 'dir' : 'file',
+        size: item.size || 0,
+      }));
+  } catch (err) {
+    throw toApiError('get repo tree', err);
+  }
+}
+
+async function getFileContent(token, owner, repo, path, branch) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, {
+      params: branch ? { ref: branch } : {},
+    });
+
+    if (data.size > MAX_FILE_SIZE) {
+      return { path, content: null, skipped: true, reason: `File too large (${Math.round(data.size / 1024)}KB)` };
+    }
+
+    const content = Buffer.from(data.content, 'base64').toString('utf8');
+    return { path, content, sha: data.sha, encoding: 'utf8' };
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return { path, content: null, skipped: true, reason: 'File not found' };
+    }
+    throw toApiError('get file content', err);
+  }
+}
+
+async function getFileContents(token, owner, repo, paths, branch) {
+  const results = await Promise.allSettled(
+    paths.map((p) => getFileContent(token, owner, repo, p, branch))
+  );
+  return results
+    .map((r, i) => (r.status === 'fulfilled' ? r.value : { path: paths[i], content: null, skipped: true, reason: r.reason?.message }))
+    .filter((r) => !r.skipped);
+}
+
+// ─── Pipeline push ────────────────────────────────────────────────────────────
+
+async function getDefaultBranch(token, owner, repo) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}`);
+    return data.default_branch || 'main';
+  } catch (err) {
+    throw toApiError('get default branch', err);
+  }
+}
+
+async function getFileSha(token, owner, repo, path, branch) {
+  const client = makeClient(token);
+  try {
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, {
+      params: branch ? { ref: branch } : {},
+    });
+    return data.sha || null;
+  } catch {
+    return null;
+  }
+}
+
+async function pushFile(token, owner, repo, path, content, commitMessage, branch) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const existingSha = await getFileSha(token, owner, repo, path, branch);
+    const body = {
+      message: commitMessage || `ci: add ${path} via FlowForge`,
+      content: Buffer.from(content, 'utf8').toString('base64'),
+      branch,
+    };
+    if (existingSha) body.sha = existingSha;
+
+    const { data } = await client.put(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/contents/${pathSegments(path)}`, body);
+    return {
+      path,
+      sha: data.content?.sha,
+      commitSha: data.commit?.sha,
+      commitUrl: data.commit?.html_url,
+    };
+  } catch (err) {
+    throw toApiError('push file', err);
+  }
+}
+
+async function createBranch(token, owner, repo, branchName, fromRef) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    // Get the SHA of the source ref
+    const { data: refData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/ref/heads/${pathSegments(fromRef)}`);
+    const sha = refData.object.sha;
+
+    await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/git/refs`, {
+      ref: `refs/heads/${branchName}`,
+      sha,
+    });
+    return { name: branchName, sha };
+  } catch (err) {
+    if (err.response?.status === 422) {
+      throw new Error(`Branch "${branchName}" already exists`, { cause: err });
+    }
+    throw toApiError('create branch', err);
+  }
+}
+
+async function createPullRequest(token, owner, repo, { title, body, head, base }) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/pulls`, {
+      title,
+      body: body || '',
+      head,
+      base,
+    });
+    return {
+      number: data.number,
+      url: data.html_url,
+      title: data.title,
+      state: data.state,
+    };
+  } catch (err) {
+    throw toApiError('create pull request', err);
+  }
+}
+
+// ─── Actions / webhook support ────────────────────────────────────────────────
+
+const MAX_JOB_LOG_CHARS = 4000;
+
+function computeDurationSeconds(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return null;
+  const startMs = new Date(startedAt).getTime();
+  const endMs = new Date(completedAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return null;
+  }
+  return Math.round((endMs - startMs) / 1000);
+}
+
+async function listWorkflowRuns(token, owner, repo, { branch, perPage = 10 } = {}) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const params = { per_page: perPage };
+    if (branch) params.branch = branch;
+    const { data } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs`, { params });
+    const runs = Array.isArray(data?.workflow_runs) ? data.workflow_runs : [];
+    return runs.map((run) => ({
+      id: run.id,
+      runNumber: run.run_number,
+      name: run.name || run.display_title || `Run #${run.run_number || run.id}`,
+      status: run.status,
+      conclusion: run.conclusion,
+      branch: run.head_branch,
+      commitSha: run.head_sha,
+      event: run.event,
+      url: run.html_url,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+    }));
+  } catch (err) {
+    throw toApiError('list workflow runs', err);
+  }
+}
+
+async function getWorkflowRunStatus(token, owner, repo, runId) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const [runRes, jobsRes] = await Promise.all([
+      client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}`),
+      client
+        .get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}/jobs`, { params: { per_page: 100 } })
+        .catch(() => ({ data: { jobs: [] } })),
+    ]);
+
+    const data = runRes.data || {};
+    const rawJobs = Array.isArray(jobsRes?.data?.jobs) ? jobsRes.data.jobs : [];
+
+    const jobs = rawJobs.map((job) => ({
+      id: job.id,
+      name: job.name,
+      status: job.status,
+      conclusion: job.conclusion,
+      durationSeconds: computeDurationSeconds(job.started_at, job.completed_at),
+      startedAt: job.started_at || null,
+      completedAt: job.completed_at || null,
+      url: job.html_url || null,
+    }));
+
+    return {
+      id: data.id,
+      runNumber: data.run_number,
+      name: data.name || data.display_title || `Run #${data.id}`,
+      status: data.status,
+      conclusion: data.conclusion,
+      branch: data.head_branch,
+      commitSha: data.head_sha,
+      url: data.html_url,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      jobs,
+    };
+  } catch (err) {
+    throw toApiError('get workflow run status', err);
+  }
+}
+
+async function getWorkflowRunLogs(token, owner, repo, runId) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data: jobs } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/runs/${pathSegment(runId)}/jobs`);
+
+    const failedJobs = (jobs.jobs || []).filter(
+      (j) => j.conclusion === 'failure' || j.conclusion === 'timed_out' || j.conclusion === 'startup_failure'
+    );
+
+    const logs = await Promise.all(
+      failedJobs.map(async (job) => {
+        const stepSummary = (job.steps || [])
+          .filter((s) => s.conclusion === 'failure')
+          .map((s) => `Step: ${s.name}\nConclusion: ${s.conclusion}`)
+          .join('\n');
+
+        let rawLogText = '';
+        try {
+          const { data: logData } = await client.get(
+            `/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/jobs/${pathSegment(job.id)}/logs`,
+            {
+              responseType: 'text',
+              transformResponse: [(d) => d],
+            }
+          );
+          if (typeof logData === 'string' && logData.trim()) {
+            rawLogText =
+              logData.length > MAX_JOB_LOG_CHARS
+                ? logData.slice(-MAX_JOB_LOG_CHARS)
+                : logData;
+          }
+        } catch {
+          // Gracefully fall back to step summary when raw log download fails
+          rawLogText = '';
+        }
+
+        const combinedLog = rawLogText
+          ? stepSummary
+            ? `${stepSummary}\n\n${rawLogText}`
+            : rawLogText
+          : stepSummary || `Job "${job.name}" failed with conclusion: ${job.conclusion}`;
+
+        return {
+          jobId: job.id,
+          jobName: job.name,
+          stage: job.name,
+          log: combinedLog,
+        };
+      })
+    );
+
+    return { jobs: jobs.jobs || [], failedLogs: logs };
+  } catch (err) {
+    throw toApiError('get workflow run logs', err);
+  }
+}
+
+async function postPRComment(token, owner, repo, prNumber, body) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    const { data } = await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/issues/${pathSegment(prNumber)}/comments`, { body });
+    return { id: data.id, url: data.html_url };
+  } catch (err) {
+    throw toApiError('post PR comment', err);
+  }
+}
+
+async function triggerWorkflowDispatch(token, owner, repo, workflowId, ref = 'main', inputs = {}) {
+  ensureToken(token);
+  const client = makeClient(token);
+  try {
+    let resolvedWorkflowId = workflowId;
+    if (!resolvedWorkflowId) {
+      const { data: wfData } = await client.get(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/workflows`);
+      const workflows = Array.isArray(wfData?.workflows) ? wfData.workflows : [];
+      const activeWf = workflows.find((w) => w.state === 'active') || workflows[0];
+      if (!activeWf) {
+        throw new Error('No GitHub Actions workflows found in repository');
+      }
+      resolvedWorkflowId = activeWf.id;
+    }
+
+    await client.post(`/repos/${pathSegment(owner)}/${pathSegment(repo)}/actions/workflows/${pathSegment(resolvedWorkflowId)}/dispatches`, {
+      ref,
+      inputs,
+    });
+    return { triggered: true, ref, workflowId: resolvedWorkflowId };
+  } catch (err) {
+    throw toApiError('trigger workflow dispatch', err);
+  }
+}
+
+module.exports = {
+  listRepos,
+  listBranches,
+  getRepoTree,
+  getFileContent,
+  getFileContents,
+  getDefaultBranch,
+  pushFile,
+  createBranch,
+  createPullRequest,
+  listWorkflowRuns,
+  getWorkflowRunStatus,
+  getWorkflowRunLogs,
+  postPRComment,
+  triggerWorkflowDispatch,
+};
