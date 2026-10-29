@@ -26,10 +26,9 @@ function readN8nConfig() {
 
 const MODEL_PRESETS = {
   groq: [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'qwen-2.5-coder-32b',
-    'mixtral-8x7b-32768',
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b',
   ],
   openai: ['gpt-4o', 'gpt-4.1-mini', 'gpt-4o-mini'],
   anthropic: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-3-haiku-20240307'],
@@ -86,7 +85,7 @@ function LlmAndProviderStep({
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <RuntimeCard
           title="Cloud LLM"
-          description="Use hosted APIs like Groq (Llama 3.3 70B), Claude, Gemini, or OpenAI for high-speed pipeline synthesis."
+          description="Use hosted APIs like Groq (GPT-OSS 120B), Claude, Gemini, or OpenAI for high-speed pipeline synthesis."
           selected={llmType === 'cloud'}
           onSelect={() => onLlmTypeChange('cloud')}
         />

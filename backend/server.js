@@ -30,25 +30,42 @@ const allowedOrigins = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(',').map((u) => u.trim())
   : [];
 
+// First-party hosts are always allowed, so a subdomain missing from
+// FRONTEND_URL on the host can't take the production site down.
+const FIRST_PARTY_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*highcortisol\.xyz$/i;
+
+function isAllowedOrigin(origin) {
+  if (FIRST_PARTY_ORIGIN.test(origin)) return true;
+  // In dev (no FRONTEND_URL set), allow localhost
+  if (allowedOrigins.length === 0) {
+    return origin.includes('localhost') || origin.includes('127.0.0.1');
+  }
+  return (
+    allowedOrigins.includes(origin) ||
+    origin.endsWith('.vercel.app') ||
+    origin.endsWith('.onrender.com')
+  );
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, curl, health checks)
-    if (!origin) return callback(null, true);
-    // In dev (no FRONTEND_URL set), allow localhost
-    if (allowedOrigins.length === 0) {
-      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-        return callback(null, true);
-      }
-      return callback(new Error('CORS: Set FRONTEND_URL env var for production'));
-    }
-    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) {
-      return callback(null, true);
-    }
-    callback(new Error(`CORS: Origin ${origin} not allowed`));
+    if (!origin || isAllowedOrigin(origin)) return callback(null, true);
+    // 403 rather than a generic 500 so a misconfigured origin is diagnosable.
+    const err = new Error(`CORS: Origin ${origin} not allowed`);
+    err.status = 403;
+    callback(err);
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  // Keep the exact request bytes so webhook HMACs are checked against what the
+  // sender signed, not a re-serialisation of the parsed body.
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 // General API rate limit, plus a tighter limit on AI/compute-heavy routes that
 // consume the server's own provider credits.

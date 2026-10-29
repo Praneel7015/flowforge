@@ -29,7 +29,7 @@ async function convertPipeline(req, res) {
     return res.json(result);
   } catch (err) {
     console.error('convertPipeline error:', err.message);
-    return res.status(500).json({ error: 'Failed to convert pipeline: ' + err.message });
+    return res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to convert pipeline: ' + err.message });
   }
 }
 
@@ -49,7 +49,7 @@ async function convertJenkinsfile(req, res) {
     res.json(result);
   } catch (err) {
     console.error('convertJenkinsfile error:', err.message);
-    res.status(500).json({ error: 'Failed to convert Jenkinsfile: ' + err.message });
+    res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to convert Jenkinsfile: ' + err.message });
   }
 }
 

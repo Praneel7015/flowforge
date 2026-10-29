@@ -17,7 +17,7 @@ async function generatePipeline(req, res) {
     res.json(result);
   } catch (err) {
     console.error('generatePipeline error:', err.message);
-    res.status(500).json({ error: 'Failed to generate pipeline: ' + err.message });
+    res.status(err.status === 400 ? 400 : 500).json({ error: 'Failed to generate pipeline: ' + err.message });
   }
 }
 

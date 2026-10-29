@@ -169,7 +169,7 @@ function canUseProvider(providerList, name) {
 function getFallbackProviders() {
   return {
     ai: [
-      { name: 'groq', displayName: 'Groq (Llama 3.3 70B)', enabled: true },
+      { name: 'groq', displayName: 'Groq (GPT-OSS 120B)', enabled: true },
       { name: 'anthropic', displayName: 'Claude (Anthropic)', enabled: false },
       { name: 'gemini', displayName: 'Gemini (Google)', enabled: false },
       { name: 'openai', displayName: 'GPT (OpenAI)', enabled: false },

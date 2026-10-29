@@ -19,6 +19,18 @@ function readStoredCredentials() {
   }
 }
 
+// The diagnose API nests text inside objects (e.g. explanation is
+// { summary, explanation, rootCause, ... }); React can't render objects, so
+// always reduce a field to a string before it reaches JSX.
+function toText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    return toText(value.explanation ?? value.summary ?? value.rootCause ?? '');
+  }
+  return String(value);
+}
+
 function normalizeStatus(rawStatus, conclusion) {
   const combined = `${rawStatus || ''} ${conclusion || ''}`.toLowerCase();
   if (combined.includes('fail') || combined.includes('error') || combined.includes('timed_out')) {
@@ -341,19 +353,21 @@ export default function LiveRunsPanel({
         aiOptions,
       });
 
+      const changeLog = data?.changeLog ?? data?.remediation?.changeLog;
       setDiagnosis({
         rootCause:
-          data?.rootCause ||
-          data?.diagnosis?.rootCause ||
-          data?.summary ||
+          toText(data?.rootCause) ||
+          toText(data?.diagnosis?.rootCause) ||
+          toText(data?.summary) ||
           `Stage "${failedJob?.name || 'test'}" failed due to unpinned environment/cache state and missing retry guard.`,
         explanation:
-          data?.explanation ||
-          data?.diagnosis?.explanation ||
+          toText(data?.explanation) ||
+          toText(data?.diagnosis?.explanation) ||
           'Added deterministic dependency caching, pinned runtime flags, and non-blocking audit/retry guards.',
-        patchedYaml: data?.patchedYaml || data?.fixedYaml || currentYaml,
-        changeLog: Array.isArray(data?.changeLog)
-          ? data.changeLog
+        patchedYaml:
+          data?.patchedYaml || data?.remediation?.patchedYaml || data?.fixedYaml || currentYaml,
+        changeLog: Array.isArray(changeLog) && changeLog.length > 0
+          ? changeLog
           : [
               {
                 job: failedJob?.name || 'test',
@@ -653,8 +667,8 @@ export default function LiveRunsPanel({
             <ul className="space-y-1 pt-1">
               {diagnosis.changeLog.map((item, i) => (
                 <li key={i} className="text-[11px] text-[var(--ff-text-secondary)] flex gap-1.5">
-                  <span className="text-emerald-400 font-mono">[{item.job || 'fix'}]</span>
-                  <span>{item.change || String(item)}</span>
+                  <span className="text-emerald-400 font-mono">[{toText(item?.job) || 'fix'}]</span>
+                  <span>{toText(item?.change) || toText(item)}</span>
                 </li>
               ))}
             </ul>

@@ -16,7 +16,7 @@ services:
       - key: TRUST_PROXY
         value: "true"
       - key: FRONTEND_URL
-        value: "https://highcortisol.xyz,https://www.highcortisol.xyz,https://flowforge.vercel.app"
+        value: "https://flowforge.highcortisol.xyz,https://highcortisol.xyz,https://www.highcortisol.xyz,https://flowforge.vercel.app"
       - key: DEFAULT_AI_PROVIDER
         value: groq
       - key: DEFAULT_CICD_PLATFORM
@@ -26,10 +26,14 @@ services:
       - key: GROQ_BASE_URL
         value: "https://api.groq.com/openai/v1"
       - key: GROQ_MODEL
-        value: "llama-3.3-70b-versatile"
+        value: "openai/gpt-oss-120b"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: GITLAB_WEBHOOK_SECRET
         sync: false
