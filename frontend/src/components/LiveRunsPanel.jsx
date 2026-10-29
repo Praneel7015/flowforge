@@ -121,10 +121,21 @@ export default function LiveRunsPanel({
   // depends on it) keeps its identity across renders.
   const getPlatformCredentials = useCallback(() => readCredentialsFor(platform), [platform]);
 
+  // A status response is applied only if it is the newest request and its run
+  // is still the one shown; a slow poll for the previous run (or one that
+  // lands after a simulation starts) would otherwise overwrite its jobs.
+  const statusRequestRef = useRef(0);
+  const shownRunIdRef = useRef(null);
+  useEffect(() => {
+    shownRunIdRef.current = selectedRun?.id ?? null;
+  }, [selectedRun]);
+
   const fetchRunStatus = useCallback(
     async (runToInspect) => {
       const target = runToInspect || selectedRun;
       if (!target || String(target.id).startsWith('sim_')) return;
+      const request = ++statusRequestRef.current;
+      const isCurrent = () => request === statusRequestRef.current && shownRunIdRef.current === target.id;
 
       try {
         const [owner, repo] = repoSlug.trim().split('/');
@@ -136,11 +147,13 @@ export default function LiveRunsPanel({
           projectSlug: repoSlug.trim(),
           runId: target.id,
         });
+        if (!isCurrent()) return;
         const runJobs = Array.isArray(data?.jobs) ? data.jobs : [];
         setJobs(runJobs);
         const overlay = buildOverlayMapFromJobs(runJobs, canvasGraph?.nodes || []);
         onUpdateNodeStatuses?.(overlay);
       } catch (err) {
+        if (!isCurrent()) return;
         setError(err.response?.data?.error || 'Could not fetch run job details.');
       }
     },
@@ -155,10 +168,14 @@ export default function LiveRunsPanel({
       setSimulating(false);
       setDiagnosis(null);
       setJobs([]);
+      // The previous run's badges must not stay on the canvas if this run's
+      // status request fails.
+      onUpdateNodeStatuses?.({});
+      shownRunIdRef.current = run.id;
       setSelectedRun(run);
       await fetchRunStatus(run);
     },
-    [clearSimTimers, fetchRunStatus]
+    [clearSimTimers, fetchRunStatus, onUpdateNodeStatuses]
   );
 
   const fetchRunsList = useCallback(async () => {

@@ -293,6 +293,7 @@ export default function PromptPanel({ onGenerated, aiProvider, cicdPlatform, aiO
                   <RepoBrowser
                     platform={repoPlatform}
                     selectedRepo={selectedRepo}
+                    selectedOwner={repoOwner}
                     selectedBranch={selectedBranch}
                     onRepoSelect={(r, ownerFromRepo) => {
                       setSelectedRepo(r);

@@ -9,6 +9,20 @@ const SETTINGS_KEY = 'flowforge.platformSettings.v1';
 const LEGACY_KEY = 'flowforge.platformCredentials.v1';
 const SECRET_FIELDS = new Set(['token', 'appPassword']);
 
+// A URL like https://user:pass@gitlab.example.com carries a password, so it is
+// kept in memory with the tokens rather than saved as a setting.
+function hasUserinfo(value) {
+  if (typeof value !== 'string' || !value.includes('@')) return false;
+  try {
+    const url = new URL(value.trim());
+    return Boolean(url.username || url.password);
+  } catch {
+    return /^[a-z][a-z0-9+.-]*:\/\/[^/]*@/i.test(value.trim());
+  }
+}
+
+const isSecret = (name, value) => SECRET_FIELDS.has(name) || hasUserinfo(value);
+
 let secrets = {};
 let settings = {};
 const listeners = new Set();
@@ -19,7 +33,7 @@ function splitByPlatform(all) {
   for (const [platform, fields] of Object.entries(all || {})) {
     if (!fields || typeof fields !== 'object') continue;
     for (const [name, value] of Object.entries(fields)) {
-      const target = SECRET_FIELDS.has(name) ? nextSecrets : nextSettings;
+      const target = isSecret(name, value) ? nextSecrets : nextSettings;
       (target[platform] ||= {})[name] = value;
     }
   }

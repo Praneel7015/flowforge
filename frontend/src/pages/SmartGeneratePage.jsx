@@ -404,6 +404,7 @@ export default function SmartGeneratePage({ onGenerated, aiProvider, cicdPlatfor
                   <RepoBrowser
                     platform={platform}
                     selectedRepo={selectedRepo}
+                    selectedOwner={repoOwner}
                     selectedBranch={selectedBranch}
                     onRepoSelect={handleRepoSelect}
                     onBranchSelect={handleBranchSelect}

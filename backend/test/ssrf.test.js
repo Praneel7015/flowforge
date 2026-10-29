@@ -84,3 +84,25 @@ test('a trailing dot does not get a blocked hostname past the checks', () => {
     assert.strictEqual(isSafePublicUrl(url), false, url);
   }
 });
+
+test('embedded IPv4 is found in every IPv6 spelling (compressed or not)', () => {
+  const { isPrivateIPv6 } = require('../utils/ssrf');
+  const privateForms = [
+    '2002:a01::1', // 6to4 of 10.1.0.0, second group compressed
+    '2002:0a01:0000::1',
+    '2002:c0a8:101::', // 192.168.1.1
+    '64:ff9b::1', // NAT64 of 0.0.0.1
+    '64:ff9b:0:0:0:0:a00:1', // 10.0.0.1, uncompressed
+    '64:ff9b::10.0.0.1',
+    '0:0:0:0:0:ffff:7f00:1', // mapped loopback, uncompressed
+    '::ffff:169.254.169.254',
+    '0::1',
+    'fe80:0:0:0::1',
+    'fd12:3456::1',
+    'ff05::2',
+    'not-an-address',
+  ];
+  for (const addr of privateForms) assert.strictEqual(isPrivateIPv6(addr), true, addr);
+  const publicForms = ['2002:808:808::1', '64:ff9b::8.8.8.8', '64:ff9b::808:808', '2606:4700::1111', '::ffff:8.8.8.8'];
+  for (const addr of publicForms) assert.strictEqual(isPrivateIPv6(addr), false, addr);
+});

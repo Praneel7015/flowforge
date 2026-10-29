@@ -173,6 +173,7 @@ export default function PushToRepoModal({
                 <RepoBrowser
                   platform={platform}
                   selectedRepo={repo}
+                  selectedOwner={owner}
                   selectedBranch={branch}
                   onRepoSelect={handleRepoSelect}
                   onBranchSelect={setBranch}
