@@ -13,18 +13,19 @@ const VertexProvider = require('./VertexProvider');
 const BedrockProvider = require('./BedrockProvider');
 const OpenAICompatibleProvider = require('./OpenAICompatibleProvider');
 
-// Provider registry
-const providers = {
-  groq: GroqProvider,
-  anthropic: AnthropicProvider,
-  gemini: GeminiProvider,
-  openai: OpenAIProvider,
-  vertex: VertexProvider,
-  bedrock: BedrockProvider,
-  openai_compatible: OpenAICompatibleProvider,
-  ollama: OllamaProvider,
-  featherless: FeatherlessProvider,
-};
+// Provider registry. A Map: the provider name comes from the request, so a
+// lookup must only ever return one of these classes.
+const providers = new Map([
+  ['groq', GroqProvider],
+  ['anthropic', AnthropicProvider],
+  ['gemini', GeminiProvider],
+  ['openai', OpenAIProvider],
+  ['vertex', VertexProvider],
+  ['bedrock', BedrockProvider],
+  ['openai_compatible', OpenAICompatibleProvider],
+  ['ollama', OllamaProvider],
+  ['featherless', FeatherlessProvider],
+]);
 
 /** Factory errors describe the request (unknown provider, missing key), not a server fault. */
 function badRequest(message) {
@@ -61,7 +62,6 @@ function hasCredentials(name, cfg) {
 // Cached provider instances. A Map (not a plain object) so a request-supplied
 // provider name like "__proto__" can never touch Object.prototype.
 const instances = new Map();
-const hasProvider = (name) => Object.prototype.hasOwnProperty.call(providers, name);
 
 /**
  * Get an AI provider instance by name.
@@ -126,10 +126,10 @@ function getAIProvider(name, runtimeConfig = {}) {
     }
   }
 
-  const ProviderClass = hasProvider(resolvedName) ? providers[resolvedName] : null;
+  const ProviderClass = providers.get(resolvedName);
   if (!ProviderClass) {
     throw badRequest(
-      `Unknown AI provider: ${resolvedName}. Available: ${Object.keys(providers).join(', ')}`
+      `Unknown AI provider: ${resolvedName}. Available: ${[...providers.keys()].join(', ')}`
     );
   }
 
@@ -185,7 +185,7 @@ function getAIProvider(name, runtimeConfig = {}) {
  * @returns {string[]}
  */
 function getAvailableProviders() {
-  return Object.keys(providers);
+  return [...providers.keys()];
 }
 
 /**

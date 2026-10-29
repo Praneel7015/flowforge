@@ -9,14 +9,16 @@ const JenkinsGenerator = require('./JenkinsGenerator');
 const CircleCIGenerator = require('./CircleCIGenerator');
 const BitbucketPipelinesGenerator = require('./BitbucketPipelinesGenerator');
 
-// Generator registry
-const generators = {
-  gitlab: GitLabCIGenerator,
-  github: GitHubActionsGenerator,
-  jenkins: JenkinsGenerator,
-  circleci: CircleCIGenerator,
-  bitbucket: BitbucketPipelinesGenerator,
-};
+// Generator registry. A Map: the platform name comes from the request, so a
+// lookup must only ever return one of these classes (never an inherited
+// property such as "constructor").
+const generators = new Map([
+  ['gitlab', GitLabCIGenerator],
+  ['github', GitHubActionsGenerator],
+  ['jenkins', JenkinsGenerator],
+  ['circleci', CircleCIGenerator],
+  ['bitbucket', BitbucketPipelinesGenerator],
+]);
 
 // Cached generator instances. A Map so a request-supplied platform name like
 // "__proto__" can't reach Object.prototype.
@@ -36,13 +38,13 @@ function getCICDGenerator(name) {
     return instances.get(platformName);
   }
 
-  const GeneratorClass = Object.prototype.hasOwnProperty.call(generators, platformName)
-    ? generators[platformName]
-    : null;
+  const GeneratorClass = generators.get(platformName);
   if (!GeneratorClass) {
-    throw new Error(
-      `Unknown CI/CD platform: ${platformName}. Available: ${Object.keys(generators).join(', ')}`
+    const error = new Error(
+      `Unknown CI/CD platform: ${platformName}. Available: ${getAvailablePlatforms().join(', ')}`
     );
+    error.status = 400;
+    throw error;
   }
 
   // Create and cache the instance
@@ -56,7 +58,7 @@ function getCICDGenerator(name) {
  * @returns {string[]}
  */
 function getAvailablePlatforms() {
-  return Object.keys(generators);
+  return [...generators.keys()];
 }
 
 /**
@@ -64,7 +66,7 @@ function getAvailablePlatforms() {
  * @returns {Array<{name: string, displayName: string, fileName: string}>}
  */
 function getAllPlatformMetadata() {
-  return Object.keys(generators).map((name) => {
+  return getAvailablePlatforms().map((name) => {
     const generator = getCICDGenerator(name);
     return generator.getMetadata();
   });

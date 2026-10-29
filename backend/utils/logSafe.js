@@ -11,11 +11,13 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
 
 function logSafe(value, maxLength = 300) {
   return String(value ?? '')
-    // Line breaks are removed with an empty replacement, the form CodeQL's
-    // log-injection check recognises; a space is inserted first so words on
-    // either side stay readable.
+    // Insert a space before each run of line breaks so words stay apart, then
+    // remove CR and LF with single-character, empty replacements: the exact
+    // form CodeQL's log-injection check recognises (it can't analyse a
+    // quantified character class).
     .replace(/(?<![\r\n])(?=[\r\n])/g, ' ')
-    .replace(/[\r\n]+/g, '')
+    .replace(/\r/g, '')
+    .replace(/\n/g, '')
     .replace(ANSI_SEQUENCE, '')
     .replace(CONTROL_CHARS, ' ')
     .slice(0, maxLength);
