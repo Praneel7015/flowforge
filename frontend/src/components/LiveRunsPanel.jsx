@@ -494,7 +494,7 @@ export default function LiveRunsPanel({
               type="checkbox"
               checked={autoPoll}
               onChange={(e) => setAutoPoll(e.target.checked)}
-              className="rounded border-[var(--ff-border)]"
+              className="rounded-sm border-[var(--ff-border)]"
             />
             Auto-poll (6s)
           </label>
@@ -582,7 +582,7 @@ export default function LiveRunsPanel({
               )}
             </div>
             <span
-              className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+              className={`px-2 py-0.5 rounded-sm text-[10px] font-semibold uppercase tracking-wider ${
                 normalizeStatus(selectedRun.status, selectedRun.conclusion) === 'passed'
                   ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                   : normalizeStatus(selectedRun.status, selectedRun.conclusion) === 'failed'
@@ -604,7 +604,7 @@ export default function LiveRunsPanel({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      className={`w-2 h-2 rounded-full shrink-0 ${
                         st === 'passed'
                           ? 'bg-emerald-400'
                           : st === 'running'
@@ -616,7 +616,7 @@ export default function LiveRunsPanel({
                     />
                     <span className="font-medium text-[var(--ff-text)] truncate">{job.name}</span>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {job.duration && (
                       <span className="text-[11px] text-[var(--ff-muted)] ff-code">{job.duration}</span>
                     )}
@@ -672,7 +672,7 @@ export default function LiveRunsPanel({
         <div className="rounded-xl border border-emerald-500/30 bg-[var(--ff-card-bg)] p-3 space-y-2.5 ff-enter">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-emerald-400">AI Root-Cause Diagnosis</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-emerald-500/15 text-emerald-400 font-mono">
               {diagnosis.review?.changed ? 'Ready to patch' : 'No changes'}
             </span>
           </div>

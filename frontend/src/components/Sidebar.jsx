@@ -147,7 +147,7 @@ export default function Sidebar({ featureFlags, onAddNode, onLoadTemplate, onImp
         focus-visible:ring-2 focus-visible:ring-[var(--ff-accent)] focus-visible:ring-offset-1
         transition-all text-sm"
     >
-      <span className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${TONE_BG[node.tone] || TONE_BG.slate}`}>
+      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${TONE_BG[node.tone] || TONE_BG.slate}`}>
         {node.icon}
       </span>
       <span className="text-[var(--ff-text-secondary)] group-hover:text-[var(--ff-text)] font-medium text-[13px] truncate flex-1">

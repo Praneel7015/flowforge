@@ -74,7 +74,7 @@ function TreeNode({ name, node, depth, selectedPaths, onToggle, disabledPaths })
     return (
       <div>
         <div
-          className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-[var(--ff-card-bg-hover)] cursor-pointer group"
+          className="flex items-center gap-1.5 py-0.5 px-1 rounded-sm hover:bg-[var(--ff-card-bg-hover)] cursor-pointer group"
           style={{ paddingLeft: `${depth * 14 + 4}px` }}
         >
           <button
@@ -85,7 +85,7 @@ function TreeNode({ name, node, depth, selectedPaths, onToggle, disabledPaths })
             <span className="text-xs text-[var(--ff-text-secondary)] font-medium truncate">{name}/</span>
           </button>
           {allFilePaths.length > 0 && (
-            <label className="flex items-center flex-shrink-0 cursor-pointer" title={allSelected ? 'Deselect all' : 'Select all'}>
+            <label className="flex items-center shrink-0 cursor-pointer" title={allSelected ? 'Deselect all' : 'Select all'}>
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -121,7 +121,7 @@ function TreeNode({ name, node, depth, selectedPaths, onToggle, disabledPaths })
 
   return (
     <label
-      className={`flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer group ${
+      className={`flex items-center gap-2 py-0.5 px-1 rounded-sm cursor-pointer group ${
         selected ? 'bg-[var(--ff-accent-soft)]' : 'hover:bg-[var(--ff-card-bg-hover)]'
       } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
       style={{ paddingLeft: `${depth * 14 + 4}px` }}
@@ -132,14 +132,14 @@ function TreeNode({ name, node, depth, selectedPaths, onToggle, disabledPaths })
         checked={selected}
         disabled={disabled}
         onChange={() => onToggle([item.path], !selected)}
-        className="w-3 h-3 accent-[var(--ff-accent)] flex-shrink-0"
+        className="w-3 h-3 accent-[var(--ff-accent)] shrink-0"
       />
       <span className="text-xs">{getFileIcon(item.path)}</span>
       <span className={`text-xs truncate flex-1 ${selected ? 'text-[var(--ff-text)]' : 'text-[var(--ff-text-secondary)]'}`}>
         {name}
       </span>
       {item.size > 0 && (
-        <span className="text-[10px] text-[var(--ff-muted)] flex-shrink-0">{formatSize(item.size)}</span>
+        <span className="text-[10px] text-[var(--ff-muted)] shrink-0">{formatSize(item.size)}</span>
       )}
     </label>
   );

@@ -608,7 +608,7 @@ export default function App({ onBackToLanding }) {
                   onClick={() => setInspectorTab(tab.id)}
                   className={`flex-1 inline-flex items-center justify-center py-1 px-2 rounded-md text-xs font-medium transition-colors truncate ${
                     active
-                      ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-sm'
+                      ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-xs'
                       : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
                   }`}
                   title={`Switch inspector to ${tab.label}`}
@@ -619,7 +619,7 @@ export default function App({ onBackToLanding }) {
             })}
           </div>
 
-          <div className="flex items-center gap-0.5 flex-shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0">
             {(inspectorTab === 'health' || inspectorTab === 'copilot') && (
               <button
                 type="button"
@@ -857,7 +857,7 @@ export default function App({ onBackToLanding }) {
         title={isLocked ? lockedMessage : undefined}
       >
         {!compact && NAV_ICONS[item.id] && (
-          <span className="flex-shrink-0 opacity-70">{NAV_ICONS[item.id]}</span>
+          <span className="shrink-0 opacity-70">{NAV_ICONS[item.id]}</span>
         )}
         <span>{item.label}</span>
         {isLocked && <span className="ml-auto text-xs font-semibold opacity-80">LOCKED</span>}
@@ -950,7 +950,7 @@ export default function App({ onBackToLanding }) {
               <div className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={() => setSidebarOpen((v) => !v)}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors flex-shrink-0"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)] transition-colors shrink-0"
                   aria-label="Toggle navigation sidebar"
                   title="Toggle navigation sidebar"
                 >
@@ -1021,7 +1021,7 @@ export default function App({ onBackToLanding }) {
                       }}
                       className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                         isActive
-                          ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-sm'
+                          ? 'bg-[var(--ff-accent)] text-white font-semibold shadow-xs'
                           : 'text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:bg-[var(--ff-nav-hover)]'
                       } ${isLocked ? 'opacity-60' : ''}`}
                     >
@@ -1031,7 +1031,7 @@ export default function App({ onBackToLanding }) {
                 })}
               </nav>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 {(providers.ai?.length > 0 || providers.cicd?.length > 0) && (
                   <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--ff-card-border-strong)] bg-[var(--ff-card-bg)] p-0.5">
                     {providers.ai?.length > 0 && (

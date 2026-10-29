@@ -29,7 +29,7 @@ function ConditionalNode({ id, data, selected }) {
 
   const selectedTone = selected
     ? 'ring-2 ring-offset-2 ring-offset-[var(--ff-ring-offset)] ring-[var(--ff-accent)] shadow-lg'
-    : 'hover:border-[var(--ff-border-strong)] transition-all shadow-sm';
+    : 'hover:border-[var(--ff-border-strong)] transition-all shadow-xs';
 
   return (
     <div className={`px-3.5 py-2.5 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-surface-solid)] min-w-[195px] backdrop-blur-md ${selectedTone}`}>
@@ -59,7 +59,7 @@ function ConditionalNode({ id, data, selected }) {
             }}
             onClick={(e) => e.stopPropagation()}
             placeholder="e.g. $CI_COMMIT_BRANCH == 'main'"
-            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded px-1.5 py-0.5 text-[11px] ff-code text-[var(--ff-text)] focus:outline-none"
+            className="nodrag w-full bg-[var(--ff-surface-solid)] border border-[var(--ff-accent)] rounded-sm px-1.5 py-0.5 text-[11px] ff-code text-[var(--ff-text)] focus:outline-hidden"
           />
         ) : (
           <div
@@ -68,7 +68,7 @@ function ConditionalNode({ id, data, selected }) {
               setEditing(true);
             }}
             title="Double-click to edit condition expression"
-            className="text-[11px] text-[var(--ff-text-secondary)] ff-code bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded border border-[var(--ff-card-border-strong)] cursor-text truncate transition-colors"
+            className="text-[11px] text-[var(--ff-text-secondary)] ff-code bg-[var(--ff-surface-inset)] hover:bg-[var(--ff-card-bg-hover)] px-2 py-1 rounded-sm border border-[var(--ff-card-border-strong)] cursor-text truncate transition-colors"
           >
             {data.config?.condition || 'if: branch == main'}
           </div>

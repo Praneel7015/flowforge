@@ -1280,7 +1280,7 @@ function WorkflowEditorInner({
       {/* Top-right overlay: compact node/edge count pill + Share button when nodes > 0 */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         {blueprintToast && (
-          <div className="px-2.5 py-1 bg-emerald-500/15 backdrop-blur-sm border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-medium flex items-center gap-1.5 whitespace-nowrap ff-enter">
+          <div className="px-2.5 py-1 bg-emerald-500/15 backdrop-blur-xs border border-emerald-500/30 rounded-lg text-xs text-emerald-400 font-medium flex items-center gap-1.5 whitespace-nowrap ff-enter">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>{blueprintToast}</span>
           </div>
@@ -1295,7 +1295,7 @@ function WorkflowEditorInner({
         {nodes.length > 0 && (
           <button
             onClick={handleShareBlueprint}
-            className={`px-2.5 py-1 backdrop-blur-sm border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`px-2.5 py-1 backdrop-blur-xs border rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
               shareCopied
                 ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400 font-medium'
                 : 'bg-[var(--ff-node-counter-bg)] border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-strong)]'
@@ -1310,7 +1310,7 @@ function WorkflowEditorInner({
             <span>{shareCopied ? 'Copied!' : 'Share'}</span>
           </button>
         )}
-        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-sm border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap flex items-center gap-1.5">
+        <div className="px-2.5 py-1 bg-[var(--ff-node-counter-bg)] backdrop-blur-xs border border-[var(--ff-card-border-strong)] rounded-lg text-xs text-[var(--ff-text-secondary)] ff-code whitespace-nowrap flex items-center gap-1.5">
           {autoSync && nodes.length > 0 && (
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -1328,7 +1328,7 @@ function WorkflowEditorInner({
       </div>
 
       {/* Bottom-left toolbar: Undo, Redo, Delete, Clear | Auto-sync, Export YAML */}
-      <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-node-counter-bg)] backdrop-blur-sm p-1 max-w-[calc(100%-14rem)]">
+      <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-[var(--ff-card-border-strong)] bg-[var(--ff-node-counter-bg)] backdrop-blur-xs p-1 max-w-[calc(100%-14rem)]">
         <button
           onClick={handleUndo}
           disabled={!canUndo}
@@ -1399,7 +1399,7 @@ function WorkflowEditorInner({
 
       {selectionOverlay && (
         <div
-          className="absolute z-20 pointer-events-none rounded-sm border border-[var(--ff-border-strong)] border-dashed bg-[var(--ff-accent-soft)]"
+          className="absolute z-20 pointer-events-none rounded-xs border border-[var(--ff-border-strong)] border-dashed bg-[var(--ff-accent-soft)]"
           style={{
             left: selectionOverlay.left,
             top: selectionOverlay.top,
@@ -1427,7 +1427,7 @@ function WorkflowEditorInner({
                       edges: cloneWorkflow(tpl.edges),
                     });
                   }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--ff-surface)]/85 backdrop-blur-sm border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--ff-surface)]/85 backdrop-blur-xs border border-[var(--ff-card-border-strong)] text-[var(--ff-text-secondary)] hover:text-[var(--ff-text)] hover:border-[var(--ff-accent)] transition-colors"
                 >
                   + {tpl.name}
                 </button>
@@ -1450,7 +1450,7 @@ function WorkflowEditorInner({
 
       {/* Save template dialog */}
       {showSaveTemplate && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-xs">
           <div
             className="bg-[var(--ff-modal-bg)] rounded-2xl border border-[var(--ff-card-border-strong)] shadow-[0_20px_40px_rgba(0,0,0,0.4)] p-6 max-w-sm mx-4"
             role="dialog"
@@ -1502,7 +1502,7 @@ function WorkflowEditorInner({
 
       {/* Clear canvas confirmation modal */}
       {showClearConfirm && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-sm">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ff-overlay)] backdrop-blur-xs">
           <div
             className="bg-[var(--ff-modal-bg)] rounded-2xl border border-[var(--ff-card-border-strong)] shadow-[0_20px_40px_rgba(0,0,0,0.4)] p-6 max-w-sm mx-4"
             role="dialog"

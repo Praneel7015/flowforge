@@ -136,7 +136,7 @@ export default function YamlPreview({ yaml, onClose, onResizeDelta, platform, on
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <h2 className="text-xs font-semibold text-[var(--ff-text)] ff-code truncate">{shortFileName}</h2>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--ff-accent-soft)] text-[var(--ff-accent)]">
+            <span className="px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-[var(--ff-accent-soft)] text-[var(--ff-accent)]">
               {displayName}
             </span>
           </div>
@@ -250,7 +250,7 @@ export default function YamlPreview({ yaml, onClose, onResizeDelta, platform, on
           value={draftYaml}
           onChange={(e) => setDraftYaml(e.target.value)}
           spellCheck={false}
-          className="flex-1 w-full p-4 text-xs text-[var(--ff-text)] ff-code leading-relaxed bg-[var(--ff-code-bg)] focus:outline-none resize-none"
+          className="flex-1 w-full p-4 text-xs text-[var(--ff-text)] ff-code leading-relaxed bg-[var(--ff-code-bg)] focus:outline-hidden resize-none"
         />
       ) : (
         <pre className="flex-1 overflow-auto p-4 text-xs text-[var(--ff-text-secondary)] ff-code leading-relaxed bg-[var(--ff-code-bg)] m-0">
