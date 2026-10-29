@@ -626,6 +626,24 @@ function joinCommands(value) {
   return '';
 }
 
+// Jenkins `sh` steps in the forms people actually write:
+//   sh 'cmd'   sh "echo 'x'"   sh '''multi\nline'''   sh """..."""
+//   sh(script: 'cmd', returnStdout: true)   sh label: 'Build', script: 'cmd'
+// Triple quotes are tried first; each body runs to the matching delimiter.
+const JENKINS_SH_PATTERN =
+  /\bsh\s*\(?\s*(?:\w+\s*:\s*(?:'[^']*'|"[^"]*"|\w+)\s*,\s*)*(?:script\s*:\s*)?('''|"""|'|")([\s\S]*?)\1/g;
+
+function extractJenkinsShScripts(stageBody) {
+  const commands = [];
+  for (const match of String(stageBody || '').matchAll(JENKINS_SH_PATTERN)) {
+    for (const line of match[2].split('\n')) {
+      const command = line.trim();
+      if (command) commands.push(command);
+    }
+  }
+  return commands;
+}
+
 function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
   const supportedNodeTypes = getSupportedNodeTypes();
   const rawText = typeof configText === 'string' ? stripCodeFences(configText) : '';
@@ -652,13 +670,7 @@ function parseConfigToDAG(configText, cicdPlatform = 'gitlab') {
       const stageName = match[1].trim();
       const body = match[2] || '';
       const key = `stage_${rawJobs.length + 1}`;
-      const scripts = [];
-      const shRegex = /\bsh\s+(?:script:\s*)?['"]([^'"]+)['"]/g;
-      let shMatch = shRegex.exec(body);
-      while (shMatch) {
-        scripts.push(shMatch[1].trim());
-        shMatch = shRegex.exec(body);
-      }
+      const scripts = extractJenkinsShScripts(body);
 
       const config = { stage: stageName };
       if (scripts.length > 0) config.script = scripts.join('\n');

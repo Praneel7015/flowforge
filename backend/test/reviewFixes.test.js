@@ -167,3 +167,49 @@ test('custom base URLs must use https (keys never sent over plain HTTP)', () => 
     baseUrl: 'https://openrouter.ai/api/v1',
   });
 });
+
+const { isPrivateIPv6, safeAgents } = require('../utils/ssrf');
+
+test('IPv6 link-local covers the whole fe80::/10 range and nothing past it', () => {
+  for (const addr of ['fe80::1', 'fe90::1', 'feab::1', 'febf::1']) assert.strictEqual(isPrivateIPv6(addr), true, addr);
+  for (const addr of ['fec0::1', 'ff02::1', '2001:4860:4860::8888']) assert.strictEqual(isPrivateIPv6(addr), false, addr);
+});
+
+test('blocked lookups do not reveal the private address to callers', async () => {
+  const lookup = createSafeLookup(fakeDns([{ address: '10.1.2.3', family: 4 }]));
+  const err = await lookupAsync(lookup, {}).catch((e) => e);
+  assert.strictEqual(err.code, 'ESSRFBLOCKED');
+  assert.ok(!err.message.includes('10.1.2.3'), err.message);
+});
+
+test('safe agents bypass HTTP(S)_PROXY so the real destination is validated', () => {
+  assert.strictEqual(safeAgents.proxy, false);
+});
+
+test('Jenkins import keeps sh scripts in all common forms', () => {
+  const jenkinsfile = `pipeline {
+  agent any
+  stages {
+    stage('Build') {
+      steps {
+        sh 'npm ci'
+        sh "echo 'building' && npm run build"
+      }
+    }
+    stage('Test') {
+      steps {
+        sh '''
+          npm ci
+          npm test -- --ci
+        '''
+        sh(script: 'npm run lint', returnStdout: true)
+        sh label: 'Audit', script: "npm audit --audit-level=high"
+      }
+    }
+  }
+}`;
+  const dag = aiService.parseConfigToDAG(jenkinsfile, 'jenkins');
+  const scriptOf = (label) => dag.nodes.find((n) => n.data?.label === label)?.data?.config?.script;
+  assert.strictEqual(scriptOf('Build'), "npm ci\necho 'building' && npm run build");
+  assert.strictEqual(scriptOf('Test'), 'npm ci\nnpm test -- --ci\nnpm run lint\nnpm audit --audit-level=high');
+});

@@ -29,7 +29,8 @@ export async function openStudio(page, { workflow, cicd = 'gitlab', onboarding =
 /** Waits for the builder canvas and node library to be ready. */
 export async function waitForBuilder(page) {
   await expect(page.getByRole('button', { name: 'Import Pipeline' })).toBeVisible({ timeout: 15000 });
-  await expect(page.locator('.react-flow')).toBeVisible();
+  // The canvas is lazy-loaded; the default 5s wait flakes on slow machines.
+  await expect(page.locator('.react-flow')).toBeVisible({ timeout: 15000 });
 }
 
 /** Clicks a top-level nav item. The nav renders twice (off-screen mobile drawer, then the header), so use the last. */

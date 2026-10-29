@@ -878,11 +878,12 @@ export default function App({ onBackToLanding }) {
     if (!isOnline) {
       const hasOllama = providers.ai.some((p) => p.name === 'ollama');
       if (hasOllama && selectedProviders.ai !== 'ollama') {
-        setSelectedProviders((prev) => ({ ...prev, ai: 'ollama' }));
+        // Same path as manual switches, so a cloud key/model isn't sent to Ollama.
+        selectAiProvider('ollama');
         setLlmType('local');
       }
     }
-  }, [providers.ai, selectedProviders.ai]);
+  }, [providers.ai, selectedProviders.ai, selectAiProvider]);
 
   return (
     <div className="ff-app-shell">

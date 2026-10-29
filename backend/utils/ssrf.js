@@ -67,7 +67,7 @@ function normalizeIpv6(host) {
 function isPrivateIPv6(host) {
   const addr = normalizeIpv6(host);
   if (addr === '::1' || addr === '::') return true;
-  if (addr.startsWith('fe80')) return true; // link-local
+  if (/^fe[89ab][0-9a-f]:/.test(addr)) return true; // link-local fe80::/10 (fe80–febf)
   if (addr.startsWith('fc') || addr.startsWith('fd')) return true; // unique local
   // IPv4-mapped IPv6, e.g. ::ffff:127.0.0.1
   const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
@@ -141,9 +141,10 @@ function createSafeLookup(baseLookup = dns.lookup) {
       const list = Array.isArray(addresses) ? addresses : [];
       const blocked = list.find((a) => isPrivateAddress(a.address, a.family));
       if (list.length === 0 || blocked) {
-        const error = new Error(
-          `Blocked: ${hostname} resolves to a non-public address${blocked ? ` (${blocked.address})` : ''}`
-        );
+        // Callers can see this message, so it must not reveal internal DNS
+        // answers; the resolved address is only logged server-side.
+        console.warn(`[ssrf] blocked ${hostname} -> ${blocked ? blocked.address : 'no addresses'}`);
+        const error = new Error(`Blocked: ${hostname} does not resolve to a public address`);
         error.code = 'ESSRFBLOCKED';
         return callback(error);
       }
@@ -156,9 +157,12 @@ function createSafeLookup(baseLookup = dns.lookup) {
 const safeLookup = createSafeLookup();
 
 /** http/https agents for axios clients that call user-supplied URLs. */
+// proxy: false makes axios ignore HTTP(S)_PROXY env vars; through a proxy the
+// lookup would validate the proxy's address, not the real destination.
 const safeAgents = {
   httpAgent: new http.Agent({ lookup: safeLookup }),
   httpsAgent: new https.Agent({ lookup: safeLookup }),
+  proxy: false,
 };
 
 module.exports = {
